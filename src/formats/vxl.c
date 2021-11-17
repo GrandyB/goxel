@@ -22,6 +22,10 @@
 #include "file_format.h"
 #include <libvxl.h>
 
+#ifdef RGB
+#undef RGB
+#endif
+
 #define RGB(r, g, b) (((b) << 16) | ((g) << 8) | (r))
 #define RED(c) ((c)&0xFF)
 #define GREEN(c) (((c) >> 8) & 0xFF)

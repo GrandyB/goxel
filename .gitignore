@@ -11,3 +11,5 @@
 xcuserdata/
 /todo
 /.vimrc
+ext_src/libvxl/*
+goxel.exe

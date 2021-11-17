@@ -2,70 +2,22 @@
 Goxel
 =====
 
-Version 0.10.7
+This is a fork of Goxel, a voxel editor made by Guillaume Chereau.
+For original features and base code, visit [the official repository](
+https://github.com/guillaumechereau/goxel).
 
-By Guillaume Chereau <guillaume@noctua-software.com>
+Contributions
+------
+"Goxel", the original program, by Guillaume Chereau <guillaume@noctua-software.com> / https://goxel.xyz
 
-[![Build Status](
-    https://travis-ci.org/guillaumechereau/goxel.svg?branch=master)](
-    https://travis-ci.org/guillaumechereau/goxel)
-[![DebianBadge](https://badges.debian.net/badges/debian/unstable/goxel/version.svg)](https://packages.debian.org/unstable/goxel)
-
-Official webpage: https://goxel.xyz
-
-About
------
-
-You can use goxel to create voxel graphics (3D images formed of cubes).  It
-works on Linux, BSD, Windows and macOS.
-
-
-Download
---------
-
-The last release files can be downloaded from [there](
-https://github.com/guillaumechereau/goxel/releases/latest).
-
-Goxel is also available for [iOS](
-https://itunes.apple.com/us/app/goxel-3d-voxel-editor/id1259097826) and
-[Android](
-https://play.google.com/store/apps/details?id=com.noctuasoftware.goxel).
-
-
-![goxel screenshot 0](https://goxel.xyz/gallery/thibault-fisherman-house.jpg)
-Fisherman house, made with Goxel by
-[Thibault Simar](https://www.artstation.com/exm)
-
+"libvxl", the updated means by which Ace of Spades maps can be easily loaded/written to, by ByteBit/xtreme8000 / [repository](https://github.com/xtreme8000/libvxl).
 
 Licence
 -------
 
-Goxel is released under the GNU GPL3 licence.  If you want to use the code
-with a commercial project please contact me: I am willing to provide a
-version of the code under a commercial license.
+[goxel](https://github.com/guillaumechereau/goxel) is released under the GNU GPL3 licence.
 
-
-Features
---------
-
-- 24 bits RGB colors.
-- Unlimited scene size.
-- Unlimited undo buffer.
-- Layers.
-- Marching Cube rendering.
-- Procedural rendering.
-- Export to obj, pyl, png, magica voxel, qubicle.
-- Ray tracing.
-
-
-Usage
------
-
-- Left click: apply selected tool operation.
-- Middle click: rotate the view.
-- right click: pan the view.
-- Left/Right arrow: rotate the view.
-- Mouse wheel: zoom in and out.
+[libvxl](https://github.com/xtreme8000/libvxl) is released under the MIT license.
 
 
 Building
@@ -77,6 +29,11 @@ with [msys2](https://www.msys2.org/) or try prebuilt
 [goxel](https://packages.msys2.org/base/mingw-w64-goxel) package directly.
 The code is in C99, using some gnu extensions, so it does not compile
 with msvc.
+
+In order to compile, after cloning the repo you will need to manually place the contents of the [libvxl repository](https://github.com/xtreme8000/libvxl) into the following directory, otherwise it will not build.
+
+    ./ext_src/libvxl
+
 
 # Linux/BSD
 
