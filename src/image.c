@@ -426,7 +426,31 @@ void image_merge_visible_layers(image_t *img)
     }
     if (last) img->active_layer = last;
 }
-
+void image_merge_layer_down(image_t *img) {
+    assert(img);
+    layer_t *active_layer = img->active_layer;
+    layer_t *previous = NULL, *layer = NULL;
+    bool next = false;
+    DL_FOREACH(img->layers, layer) {
+        next = layer == active_layer;
+        if (next && previous != NULL) {
+            // Force the layer into view if not already;
+            previous->visible = true;
+            image_unclone_layer(img, previous);
+            image_unclone_layer(img, layer);
+            SWAP(layer->mesh, previous->mesh);
+            mesh_merge(layer->mesh, previous->mesh, MODE_OVER, NULL);
+            DL_DELETE(img->layers, previous);
+            layer_delete(previous);
+            break;
+        } else if (next) {
+            // We're on the active layer but there's no previous; no merging to do
+            break;
+        }
+        previous = layer;
+    }
+   img->active_layer = active_layer;
+}
 
 camera_t *image_add_camera(image_t *img, camera_t *cam)
 {
@@ -806,6 +830,17 @@ static void a_img_select_parent_layer(void)
 ACTION_REGISTER(img_select_parent_layer,
     .help = "Select the parent of a layer",
     .cfunc = a_img_select_parent_layer,
+    .flags = ACTION_TOUCH_IMAGE,
+)
+
+
+static void a_img_merge_layer_down(void)
+{
+    image_merge_layer_down(goxel.image);
+}
+ACTION_REGISTER(img_merge_layer_down,
+    .help = "Merge layer down",
+    .cfunc = a_img_merge_layer_down,
     .flags = ACTION_TOUCH_IMAGE,
 )
 
