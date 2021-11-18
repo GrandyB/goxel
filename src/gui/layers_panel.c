@@ -68,6 +68,8 @@ void gui_layers_panel(void)
     gui_same_line();
     gui_action_button(ACTION_img_del_layer, NULL, 0);
     gui_same_line();
+    gui_action_button(ACTION_img_merge_layer_down, NULL, 0);
+    gui_same_line();
     gui_action_button(ACTION_img_move_layer_up, NULL, 0);
     gui_same_line();
     gui_action_button(ACTION_img_move_layer_down, NULL, 0);
@@ -75,7 +77,6 @@ void gui_layers_panel(void)
     gui_group_begin(NULL);
     gui_action_button(ACTION_img_duplicate_layer, "Duplicate", 1);
     gui_action_button(ACTION_img_clone_layer, "Clone", 1);
-    gui_action_button(ACTION_img_merge_layer_down, "Merge layer down", 1);
     gui_action_button(ACTION_img_merge_visible_layers, "Merge visible", 1);
 
     layer = goxel.image->active_layer;

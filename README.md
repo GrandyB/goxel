@@ -62,3 +62,9 @@ Then to build:
 
     make release
 
+Assets
+--------
+
+Asset building is using python 2, and require extra modules to be installed, namely `fontforge` ([download](https://fontforge.org/)) and `PIL.image` ([download](https://github.com/python-pillow/Pillow/releases/tag/8.4.0)).
+
+I have not got this working.

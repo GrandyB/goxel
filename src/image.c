@@ -842,6 +842,7 @@ ACTION_REGISTER(img_merge_layer_down,
     .help = "Merge layer down",
     .cfunc = a_img_merge_layer_down,
     .flags = ACTION_TOUCH_IMAGE,
+    .icon = ICON_MENU,
 )
 
 static void a_img_merge_visible_layers(void)
