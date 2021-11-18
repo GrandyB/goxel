@@ -31,7 +31,11 @@ vars.AddVariables(
 
 target_os = str(Platform())
 
-env = Environment(variables = vars, ENV = os.environ)
+tool_list = []
+if target_os == 'msys' or target_os == 'win32':
+    tool_list = ['mingw']
+
+env = Environment(variables = vars, ENV = os.environ, tools = tool_list)
 conf = env.Configure()
 
 if env['mode'] == 'analyze':
@@ -100,7 +104,7 @@ if target_os == 'posix':
     env.ParseConfig('pkg-config --cflags --libs gtk+-3.0')
 
 # Windows compilation support.
-if target_os == 'msys':
+if target_os == 'msys' or target_os == 'win32':
     env.Append(CXXFLAGS=['-Wno-attributes', '-Wno-unused-variable',
                          '-Wno-unused-function'])
     env.Append(LIBS=['glfw3', 'opengl32', 'Imm32', 'gdi32', 'Comdlg32',
