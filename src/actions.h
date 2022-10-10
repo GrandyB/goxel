@@ -73,6 +73,13 @@ enum {
     X(save),
     X(reset),
 
+    X(move_plane_up),
+    X(move_plane_down),
+    X(toggle_plane_visible),
+
+    X(tool_size_increase),
+    X(tool_size_decrease),
+
     X(tool_set_brush),
     X(tool_set_laser),
     X(tool_set_shape),

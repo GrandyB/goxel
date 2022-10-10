@@ -1393,3 +1393,52 @@ ACTION_REGISTER(mode_paint,
     .cfunc = mode_paint,
     .default_shortcut = "O"
 )
+
+static void move_plane_up(void) { mat4_itranslate(goxel.plane, 0, 0, 1); }
+static void move_plane_down(void) { mat4_itranslate(goxel.plane, 0, 0, -1); }
+static void toggle_plane_visible(void) {
+    bool v = goxel.snap_mask & SNAP_PLANE;
+    set_flag(&goxel.snap_mask, SNAP_PLANE, !v);
+}
+
+ACTION_REGISTER(move_plane_up,
+    .help = "Plane - Move up",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = move_plane_up,
+    .default_shortcut = "."
+)
+ACTION_REGISTER(move_plane_down,
+    .help = "Plane - Move down",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = move_plane_down,
+    .default_shortcut = ","
+)
+ACTION_REGISTER(toggle_plane_visible,
+    .help = "Plane - Toggle visibility",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = toggle_plane_visible,
+    .default_shortcut = "/"
+)
+
+static void tool_size_change(float delta) {
+    if (delta != 0) {
+        goxel.radius_x = clamp(goxel.radius_x + delta, 0.5, 64);
+        goxel.radius_y = clamp(goxel.radius_y + delta, 0.5, 64);
+        goxel.radius_z = clamp(goxel.radius_z + delta, 0.5, 64);
+    }
+}
+static void tool_size_increase(void) { tool_size_change(0.5); }
+static void tool_size_decrease(void) { tool_size_change(-0.5); }
+
+ACTION_REGISTER(tool_size_increase,
+    .help = "Tool size - increase",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = tool_size_increase,
+    .default_shortcut = "]"
+)
+ACTION_REGISTER(tool_size_decrease,
+    .help = "Tool size - decrease",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = tool_size_decrease,
+    .default_shortcut = "["
+)
