@@ -50,8 +50,8 @@ if os.environ.get('CC') == 'clang':
     env.Replace(CC='clang', CXX='clang++')
 
 # Hack for gcc <= 5, since pragma diagnostic push doesn't seem to work.
-if env['CCVERSION'] and int(env['CCVERSION'].split('.')[0]) <= 5:
-    env.Append(CCFLAGS=['-Wno-unused-function'])
+#if env['CCVERSION'] and int(env['CCVERSION'].split('.')[0]) <= 5:
+#    env.Append(CCFLAGS=['-Wno-unused-function'])
 
 # Asan & Ubsan (need to come first).
 if env['mode'] == 'debug' and target_os == 'posix':
@@ -93,8 +93,8 @@ for root, dirnames, filenames in os.walk('src'):
             sources.append(os.path.join(root, filename))
 
 # Check for libpng.
-if conf.CheckLibWithHeader('libpng', 'png.h', 'c'):
-    env.Append(CPPDEFINES='HAVE_LIBPNG=1')
+#if conf.CheckLibWithHeader('libpng', 'png.h', 'c'):
+#    env.Append(CPPDEFINES='HAVE_LIBPNG=1')
 
 # Linux compilation support.
 if target_os == 'posix':

@@ -79,7 +79,7 @@ static int iter(tool_t *tool, const painter_t *painter,
         vec3_copy(curs->pos, laser->box[3]);
         // Just a large value for the size of the laser box.
         mat4_itranslate(laser->box, 0, 0, -1024);
-        mat4_iscale(laser->box, goxel.tool_radius, goxel.tool_radius, 1024);
+        mat4_iscale(laser->box, goxel.radius_x, goxel.radius_y, 1024);
         render_box(&goxel.rend, laser->box, NULL, EFFECT_WIREFRAME);
     }
 

@@ -168,12 +168,24 @@ int tool_gui_shape(const shape_t **shape)
 
 int tool_gui_radius(void)
 {
-    int i;
-    i = goxel.tool_radius * 2;
-    if (gui_input_int("Size", &i, 1, 128)) {
-        i = clamp(i, 1, 128);
-        goxel.tool_radius = i / 2.0;
+    gui_text("Size");
+    gui_group_begin(NULL);
+    int x = goxel.radius_x * 2;
+    if (gui_input_int("Diameter X", &x, 1, 128)) {
+        x = clamp(x, 1, 128);
+        goxel.radius_x = x / 2.0;
     }
+    int y = goxel.radius_y * 2;
+    if (gui_input_int("Diameter Y", &y, 1, 128)) {
+        y = clamp(y, 1, 128);
+        goxel.radius_y = y / 2.0;
+    }
+    int z = goxel.radius_z * 2;
+    if (gui_input_int("Diameter Z", &z, 1, 128)) {
+        z = clamp(z, 1, 128);
+        goxel.radius_z = z / 2.0;
+    }
+    gui_group_end();
     return 0;
 }
 

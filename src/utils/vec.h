@@ -201,6 +201,13 @@ DECL void vec2_mul(const float a[S 2], float k, float out[S 2])
     out[1] = a[1] * k;
 }
 
+DECL void vec3_mul3(const float a[S 3], float x, float y, float z, float out[S 3])
+{
+    out[0] = a[0] * x;
+    out[1] = a[1] * y;
+    out[2] = a[2] * z;
+}
+
 DECL void vec3_mul(const float a[S 3], float k, float out[S 3])
 {
     out[0] = a[0] * k;

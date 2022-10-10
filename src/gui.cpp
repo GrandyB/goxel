@@ -757,11 +757,13 @@ void gui_iter(const inputs_t *inputs)
         action_exec2(ACTION_layer_clear);
 
     if (!io.WantCaptureKeyboard) {
-        float last_tool_radius = goxel.tool_radius;
-        if (isCharPressed('[')) goxel.tool_radius -= 0.5;
-        if (isCharPressed(']')) goxel.tool_radius += 0.5;
-        if (goxel.tool_radius != last_tool_radius) {
-            goxel.tool_radius = clamp(goxel.tool_radius, 0.5, 64);
+        int delta = 0;
+        if (isCharPressed('[')) delta = -0.5;
+        if (isCharPressed(']')) delta = 0.5;
+        if (delta != 0) {
+            goxel.radius_x = clamp(goxel.radius_x + delta, 0.5, 64);
+            goxel.radius_y = clamp(goxel.radius_y + delta, 0.5, 64);
+            goxel.radius_z = clamp(goxel.radius_z + delta, 0.5, 64);
         }
         actions_iter(check_action_shortcut, NULL);
     }

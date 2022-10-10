@@ -497,7 +497,9 @@ typedef struct goxel
     cursor_t   cursor;
 
     tool_t     *tool;
-    float      tool_radius;
+    float      radius_x;
+    float      radius_y;
+    float      radius_z;
     bool       no_edit; // Disable editing.
 
     // Some state for the tool iter functions.

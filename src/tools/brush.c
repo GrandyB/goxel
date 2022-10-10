@@ -62,19 +62,21 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
     return false;
 }
 
-static void get_box(const float p0[3], const float p1[3], const float n[3],
-                    float r, const float plane[4][4], float out[4][4])
+// XXX: same as in brush.c.
+static void get_box3(const float p0[3], const float p1[3], const float n[3],
+                    float r_x, float r_y, float r_z, const float plane[4][4], float out[4][4])
 {
     float rot[4][4], box[4][4];
     float v[3];
 
     if (p1 == NULL) {
-        bbox_from_extents(box, p0, r, r, r);
+        bbox_from_extents(box, p0, r_x, r_y, r_z);
         box_swap_axis(box, 2, 0, 1, box);
         mat4_copy(box, out);
         return;
     }
-    if (r == 0) {
+    // Used to just check radius == 0
+    if (r_x == 0 || r_y == 0 || r_z == 0) {
         bbox_from_points(box, p0, p1);
         bbox_grow(box, 0.5, 0.5, 0.5, box);
         // Apply the plane rotation.
@@ -101,10 +103,10 @@ static void get_box(const float p0[3], const float p1[3], const float n[3],
         return;
     }
     vec3_normalize(box[0], v);
-    vec3_mul(v, r, box[0]);
+    vec3_mul3(v, r_x, r_y, r_z, box[0]);
     vec3_cross(box[2], box[0], v);
     vec3_normalize(v, v);
-    vec3_mul(v, r, box[1]);
+    vec3_mul3(v, r_x, r_y, r_z, box[1]);
     mat4_copy(box, out);
 }
 
@@ -115,7 +117,9 @@ static int on_drag(gesture3d_t *gest, void *user)
     float box[4][4];
     cursor_t *curs = gest->cursor;
     bool shift = curs->flags & CURSOR_SHIFT;
-    float r = goxel.tool_radius;
+    float r_x = goxel.radius_x;
+    float r_y = goxel.radius_y;
+    float r_z = goxel.radius_z;
     int nb, i;
     float pos[3];
 
@@ -130,7 +134,7 @@ static int on_drag(gesture3d_t *gest, void *user)
             painter.shape = &shape_cylinder;
             painter.mode = MODE_MAX;
             vec4_set(painter.color, 255, 255, 255, 255);
-            get_box(brush->start_pos, curs->pos, curs->normal, r, NULL, box);
+            get_box3(brush->start_pos, curs->pos, curs->normal, r_x, r_y, r_z, NULL, box);
             mesh_op(brush->mesh, &painter, box);
         }
     }
@@ -146,11 +150,12 @@ static int on_drag(gesture3d_t *gest, void *user)
 
     // Render several times if the space between the current pos
     // and the last pos is larger than the size of the tool shape.
-    nb = ceil(vec3_dist(curs->pos, brush->last_pos) / (2 * r));
+    // Base on radius x?
+    nb = ceil(vec3_dist(curs->pos, brush->last_pos) / 1); //(2 * goxel.radius_x));
     nb = max(nb, 1);
     for (i = 0; i < nb; i++) {
         vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
-        get_box(pos, NULL, curs->normal, r, NULL, box);
+        get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
         mesh_op(brush->mesh, &painter, box);
     }
 
@@ -192,7 +197,7 @@ static int on_hover(gesture3d_t *gest, void *user)
     if (goxel.tool_mesh && check_can_skip(brush, curs, painter->mode))
         return 0;
 
-    get_box(curs->pos, NULL, curs->normal, goxel.tool_radius, NULL, box);
+    get_box3(curs->pos, NULL, curs->normal, goxel.radius_x, goxel.radius_y, goxel.radius_z, NULL, box);
 
     if (!goxel.tool_mesh) goxel.tool_mesh = mesh_new();
     mesh_set(goxel.tool_mesh, mesh);
@@ -229,7 +234,8 @@ static int iter(tool_t *tool, const painter_t *painter,
         };
     }
 
-    curs->snap_offset = goxel.snap_offset * goxel.tool_radius +
+    // hnm, snap offsets when radiuses are split between x/y/z...
+    curs->snap_offset = goxel.snap_offset * goxel.radius_x +
         ((painter->mode == MODE_OVER) ? 0.5 : -0.5);
 
     gesture3d(&brush->gestures.hover, curs, USER_PASS(brush, painter));
