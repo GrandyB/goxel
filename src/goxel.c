@@ -1370,3 +1370,26 @@ ACTION_REGISTER(toggle_mode,
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = toggle_mode,
 )
+
+static void mode_over(void) { goxel.painter.mode = MODE_OVER; }
+static void mode_sub(void) { goxel.painter.mode = MODE_SUB; }
+static void mode_paint(void) { goxel.painter.mode = MODE_PAINT; }
+
+ACTION_REGISTER(mode_over,
+    .help = "Block mode - Add",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = mode_over,
+    .default_shortcut = "U"
+)
+ACTION_REGISTER(mode_sub,
+    .help = "Block mode - Subtract",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = mode_sub,
+    .default_shortcut = "I"
+)
+ACTION_REGISTER(mode_paint,
+    .help = "Block mode - Paint",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = mode_paint,
+    .default_shortcut = "O"
+)
