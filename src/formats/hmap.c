@@ -22,7 +22,7 @@
 // Heightmaps are a scale from lowest z (0) upwards, from black to white.
 // Bildramer's heightmap tool starts at RGB(8,8,8) for z1 and increments by 4 for each subsequent z value upwards.
 static int get_hmap_color(int z) {
-    return z == 0 ? 0 : 8 + ((z-1) * 4);
+    return clamp(z == 0 ? 0 : 8 + ((z-1) * 4), 0, 255);
 }
 
 static int export_as_heightmap(const image_t *image, const char *path)
