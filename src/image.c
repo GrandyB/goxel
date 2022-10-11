@@ -440,6 +440,7 @@ void image_merge_layer_down(image_t *img) {
             image_unclone_layer(img, layer);
             SWAP(layer->mesh, previous->mesh);
             mesh_merge(layer->mesh, previous->mesh, MODE_OVER, NULL);
+            memcpy(&layer->name, previous->name, sizeof(layer->name));
             DL_DELETE(img->layers, previous);
             layer_delete(previous);
             break;
