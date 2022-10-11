@@ -43,7 +43,7 @@ void gui_render(void);
 
 void gui_request_panel_width(float width);
 
-bool gui_panel_header(const char *label);
+bool gui_panel_header(const char *label, bool closable);
 
 void gui_canvas(float w, float h,
                 inputs_t *inputs, bool *has_mouse, bool *has_keyboard,
@@ -151,7 +151,7 @@ bool gui_menu_begin(const char *label);
 void gui_menu_end(void);
 bool gui_menu_item(int action, const char *label, bool enabled);
 
-void gui_scrollable_begin(int width);
+void gui_scrollable_begin(const char *str_id, int width);
 void gui_scrollable_end(void);
 
 void gui_tooltip(const char *str);

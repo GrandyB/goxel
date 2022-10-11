@@ -53,7 +53,7 @@ static const struct {
     {NULL},
     {"Tools", ICON_TOOLS, gui_tools_panel},
     {"Palette", ICON_PALETTE, gui_palette_panel},
-    {"Layers", ICON_LAYERS, gui_layers_panel},
+    //{"Layers", ICON_LAYERS, gui_layers_panel},
     {"View", ICON_VIEW, gui_view_panel},
     {"Material", ICON_MATERIAL, gui_material_panel},
     {"Light", ICON_LIGHT, gui_light_panel},
@@ -84,7 +84,7 @@ static void render_left_panel(void)
 
     left_pane_width = (goxel.gui.current_panel ? goxel.gui.panel_width : 0) +
                        panel_adjust_w + theme->sizes.icons_height + 4;
-    gui_scrollable_begin(left_pane_width);
+    gui_scrollable_begin("#scroll-left", left_pane_width);
     goxel.gui.panel_width = GUI_PANEL_WIDTH_NORMAL;
 
     // Small hack to adjust the size if the scrolling bar is visible.
@@ -108,7 +108,7 @@ static void render_left_panel(void)
         gui_div_begin();
         gui_push_id("panel");
         gui_push_id(PANELS[current_i].name);
-        if (gui_panel_header(PANELS[current_i].name))
+        if (gui_panel_header(PANELS[current_i].name, true))
             goxel.gui.current_panel = NULL;
         else
             goxel.gui.current_panel();
@@ -116,6 +116,24 @@ static void render_left_panel(void)
         gui_pop_id();
         gui_div_end();
     }
+
+    gui_scrollable_end();
+}
+
+static void render_right_panel(void)
+{
+    float right_pane_width = goxel.gui.panel_width;
+    gui_scrollable_begin("#scroll-right", right_pane_width);
+    
+    gui_same_line();
+    gui_div_begin();
+    gui_push_id("panel-rhs");
+    gui_push_id("Layers-rhs");
+    gui_panel_header("Layers", false);
+    gui_layers_panel();
+    gui_pop_id();
+    gui_pop_id();
+    gui_div_end();
 
     gui_scrollable_end();
 }
@@ -140,8 +158,9 @@ void gui_app(void)
     render_left_panel();
     gui_same_line();
 
+    // Crop right edge by the right panel width + potential scrollbar. TODO: Deduce if scroll is needed?
     gui_child_begin("3d view",
-                    GUI_HAS_ROTATION_BAR ? -theme->sizes.item_height : 0, 0);
+                    (GUI_HAS_ROTATION_BAR ? -theme->sizes.item_height : 0)-GUI_PANEL_WIDTH_NORMAL, 0);
 
     gui_canvas(0, GUI_HAS_HELP ? -20 : 0,
                &inputs, &has_mouse, &has_keyboard,
@@ -158,6 +177,9 @@ void gui_app(void)
         gui_text("%s", goxel.help_text ?: "");
     }
     gui_child_end();
+
+    gui_same_line();
+    render_right_panel();
 
     if (GUI_HAS_ROTATION_BAR) {
         gui_same_line();

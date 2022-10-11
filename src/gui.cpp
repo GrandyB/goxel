@@ -1539,7 +1539,7 @@ bool gui_menu_item(int action, const char *label, bool enabled)
     return false;
 }
 
-void gui_scrollable_begin(int width)
+void gui_scrollable_begin(const char *str_id, int width)
 {
     ImGuiWindowFlags flags = 0;
 
@@ -1550,7 +1550,7 @@ void gui_scrollable_begin(int width)
         if (gui->is_scrolling) flags |= ImGuiWindowFlags_NoInputs;
     }
 
-    ImGui::BeginChild("#scroll", ImVec2(width, 0), true, flags);
+    ImGui::BeginChild(str_id, ImVec2(width, 0), true, flags);
     ImGui::BeginGroup();
 }
 
@@ -1712,10 +1712,10 @@ bool gui_tab(const char *label, int icon, bool *v)
     return _selectable(label, v, NULL, 0, icon, THEME_GROUP_TAB);
 }
 
-bool gui_panel_header(const char *label)
+bool gui_panel_header(const char *label, bool closable)
 {
     const theme_t *theme = theme_get();
-    bool ret;
+    bool ret = false;
     float label_w = ImGui::CalcTextSize(label).x;
     float w = ImGui::GetContentRegionAvail().x - theme->sizes.item_height;
     gui_push_id("panel_header");
@@ -1723,7 +1723,10 @@ bool gui_panel_header(const char *label)
     gui_same_line();
     ImGui::AlignTextToFramePadding();
     gui_text(label);
-    ret = gui_button_right("", ICON_CLOSE);
+    if (closable)
+    {
+        ret = gui_button_right("", ICON_CLOSE);
+    }
     ImGui::Separator();
     gui_pop_id();
     return ret;
