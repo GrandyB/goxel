@@ -58,6 +58,7 @@ void gui_cameras_panel(void)
     gui_quat("Rotation", cam->rot);
     */
     gui_checkbox("Ortho", &cam->ortho, NULL);
+    gui_checkbox("First Person", &cam->fpv, NULL);
 
     gui_group_begin("Set");
     gui_action_button(ACTION_view_left, "left", 0.5); gui_same_line();

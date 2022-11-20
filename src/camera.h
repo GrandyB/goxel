@@ -34,6 +34,7 @@
  *   next, prev - Used for linked list of cameras in an image.
  *   name       - Name to show in the GUI.
  *   ortho      - Set to true for orthographic projection.
+ *   fpv        - Set to true for first person control.
  *   dist       - Distance used to compute the position.
  *   mat        - Position of the camera (the camera points toward -z).
  *   fovy       - Field of view in y direction.
@@ -47,6 +48,7 @@ struct camera
     camera_t  *next, *prev; // List of camera in an image.
     char   name[128];  // 127 chars max.
     bool   ortho; // Set to true for orthographic projection.
+    bool   fpv;   // Set to true for first person view.
     float  dist;  // Rotation distance.
     float  fovy;
     float  aspect;
@@ -122,5 +124,7 @@ void camera_fit_box(camera_t *camera, const float box[4][4]);
 uint32_t camera_get_key(const camera_t *camera);
 
 void camera_turntable(camera_t *camera, float rz, float rx);
+
+void camera_move(camera_t *camera, float rz, float rx);
 
 #endif // CAMERA_H

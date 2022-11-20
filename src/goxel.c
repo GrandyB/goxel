@@ -671,16 +671,32 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     if (!capture_keys) return;
 
     if (inputs->keys[KEY_LEFT]) {
-        camera_turntable(camera, +0.05, 0);
+        if(camera->fpv) {
+            camera_move(camera, 0, -0.05);
+        } else {
+            camera_turntable(camera, +0.05, 0);
+        }
     }
     if (inputs->keys[KEY_RIGHT]) {
-        camera_turntable(camera, -0.05, 0);
+        if(camera->fpv) {
+            camera_move(camera, 0, +0.05);
+        } else {
+            camera_turntable(camera, -0.05, 0);
+        }
     }
-    if (inputs->keys[KEY_UP]) {
-        camera_turntable(camera, 0, +0.05);
+    if (inputs->keys[KEY_PAGE_UP]) {
+        if(camera->fpv) {
+            camera_move(camera, +0.05, 0);
+        } else {
+            camera_turntable(camera, 0, +0.05);
+        }
     }
-    if (inputs->keys[KEY_DOWN]) {
-        camera_turntable(camera, 0, -0.05);
+    if (inputs->keys[KEY_PAGE_DOWN]) {
+        if(camera->fpv) {
+            camera_move(camera, -0.05, 0);
+        } else {
+            camera_turntable(camera, 0, -0.05);
+        }
     }
 
     // C: recenter the view:

@@ -396,6 +396,8 @@ void save_to_file(const image_t *img, const char *path)
         //                       sizeof(camera->ofs));
         chunk_write_dict_value(&c, out, "ortho", &camera->ortho,
                                sizeof(camera->ortho));
+        chunk_write_dict_value(&c, out, "fpv", &camera->fpv,
+                               sizeof(camera->fpv));
         chunk_write_dict_value(&c, out, "mat", &camera->mat,
                                sizeof(camera->mat));
         if (camera == img->active_camera)
@@ -621,6 +623,7 @@ int load_from_file(const char *path)
                 }
                 DICT_CPY("dist", camera->dist);
                 DICT_CPY("ortho", camera->ortho);
+                DICT_CPY("fpv", camera->fpv);
                 DICT_CPY("mat", camera->mat);
                 if (strcmp(dict_key, "active") == 0)
                     goxel.image->active_camera = camera;

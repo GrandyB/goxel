@@ -49,6 +49,7 @@ void camera_set(camera_t *cam, const camera_t *other)
 {
     cam->ortho = other->ortho;
     cam->dist = other->dist;
+    cam->fpv = other->fpv;
     mat4_copy(other->mat, cam->mat);
 }
 
@@ -162,6 +163,7 @@ uint32_t camera_get_key(const camera_t *cam)
     uint32_t key = 0;
     key = XXH32(&cam->name, sizeof(cam->name), key);
     key = XXH32(&cam->ortho, sizeof(cam->ortho), key);
+    key = XXH32(&cam->fpv, sizeof(cam->fpv), key);
     key = XXH32(&cam->dist, sizeof(cam->dist), key);
     key = XXH32(&cam->mat, sizeof(cam->mat), key);
     return key;
@@ -171,14 +173,38 @@ void camera_turntable(camera_t *camera, float rz, float rx)
 {
     float center[3], mat[4][4] = MAT4_IDENTITY;
 
-    mat4_mul_vec3(camera->mat, VEC(0, 0, -camera->dist), center);
-    mat4_itranslate(mat, center[0], center[1], center[2]);
-    mat4_irotate(mat, rz, 0, 0, 1);
-    mat4_itranslate(mat, -center[0], -center[1], -center[2]);
+    mat4_mul_vec3(camera->mat, VEC(0, 0, -camera->dist), center);   // center (target) = 'dist' units away from camera in current direction
+    mat4_itranslate(mat, center[0], center[1], center[2]);          // move camera to the target
+    mat4_irotate(mat, rz, 0, 0, 1);                                 // rotate the camera vertically around the center point
+    mat4_itranslate(mat, -center[0], -center[1], -center[2]);       // 
     mat4_imul(mat, camera->mat);
     mat4_copy(mat, camera->mat);
 
+    // Perform x rotation by moving to target, rotating, then moving out
     mat4_itranslate(camera->mat, 0, 0, -camera->dist);
     mat4_irotate(camera->mat, rx, 1, 0, 0);
     mat4_itranslate(camera->mat, 0, 0, camera->dist);
+}
+
+/* First person move; rz - up is +ve, down is -ve; rx - right is +ve, left is -ve. */
+void camera_move(camera_t *camera, float rz, float rx)
+{
+    float mat[4][4], center[3];
+    //float up[3] = VEC(0, 1, 0);
+    // float v[4][4] = {
+    //     {1, 0, 0, 0},
+    //     {0, 1, 0, 0},
+    //     {0, 0, 1, -rz},
+    //     {0, 0, 0, 1}};
+    mat4_copy(camera->mat, mat);
+    float eye[] = {mat[0][3], mat[1][3], mat[2][3]};
+
+    // 
+    mat4_mul_vec3(camera->mat, VEC(0, 0, -camera->dist), center);
+    // mat4_itranslate(mat, 0, 0, rz);
+    mat4_lookat(mat, eye, center, VEC(0, 1, 0));
+    //mat4_lookat(mat, )
+    //mat4_mul(mat, v, mat);
+
+    mat4_copy(mat, camera->mat);
 }
