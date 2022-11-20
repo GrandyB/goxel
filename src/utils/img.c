@@ -107,12 +107,11 @@ void img_write(const uint8_t *img, int w, int h, int bpp, enum image_format form
         case bmp: stbi_write_bmp(path, w, h, bpp, img); break;
         default: LOG_E("Cannot open %s", format); break;
     }
-    
 }
 
 #else
 
-void img_write(const uint8_t *img, int w, int h, int bpp, image_format format, const char *path)
+void img_write(const uint8_t *img, int w, int h, int bpp, enum image_format format, const char *path)
 {
     int i;
     FILE *fp;
@@ -164,7 +163,12 @@ void img_write(const uint8_t *img, int w, int h, int bpp, image_format format, c
 
 uint8_t *img_write_to_mem(const uint8_t *img, int w, int h, int bpp, int *size, enum image_format format)
 {
-    return stbi_write_png_to_mem((void*)img, 0, w, h, bpp, size);
+    switch(format)
+    {
+        case png: break;
+        default: LOG_E("Cannot img_write_to_mem %s", format); break;
+    }
+    return stbi_write_png_to_mem((void*)img, 0, w, h, bpp, size)
 }
 
 void img_downsample(const uint8_t *img, int w, int h, int bpp,
