@@ -10,6 +10,9 @@ release:
 profile:
 	scons mode=profile
 
+debug:
+	scons
+
 run:
 	./goxel
 
