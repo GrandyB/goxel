@@ -99,19 +99,30 @@ uint8_t *img_read(const char *path, int *width, int *height, int *bpp)
 
 #if !HAVE_LIBPNG
 
-void img_write(const uint8_t *img, int w, int h, int bpp, const char *path)
+void img_write(const uint8_t *img, int w, int h, int bpp, enum image_format format, const char *path)
 {
-    stbi_write_png(path, w, h, bpp, img, 0);
+    switch(format)
+    {
+        case png: stbi_write_png(path, w, h, bpp, img, 0); break;
+        case bmp: stbi_write_bmp(path, w, h, bpp, img); break;
+        default: LOG_E("Cannot open %s", format); break;
+    }
+    
 }
 
 #else
 
-void img_write(const uint8_t *img, int w, int h, int bpp, const char *path)
+void img_write(const uint8_t *img, int w, int h, int bpp, image_format format, const char *path)
 {
     int i;
     FILE *fp;
     png_structp png_ptr;
     png_infop info_ptr;
+
+    if (format != png) {
+        LOG_E("img_write only supports png");
+        return;
+    }
 
     fp = fopen(path, "wb");
     if (!fp) {
@@ -151,7 +162,7 @@ void img_write(const uint8_t *img, int w, int h, int bpp, const char *path)
 
 #endif
 
-uint8_t *img_write_to_mem(const uint8_t *img, int w, int h, int bpp, int *size)
+uint8_t *img_write_to_mem(const uint8_t *img, int w, int h, int bpp, int *size, enum image_format format)
 {
     return stbi_write_png_to_mem((void*)img, 0, w, h, bpp, size);
 }

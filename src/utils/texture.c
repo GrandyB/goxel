@@ -189,7 +189,7 @@ void texture_save_to_file(const texture_t *tex, const char *path)
     h = tex->tex_h;
     data = calloc(w * h, 4);
     texture_get_data(tex, w, h, 4, data);
-    img_write(data, w, h, 4, path);
+    img_write(data, w, h, 4, png, path);
     free(data);
 }
 */

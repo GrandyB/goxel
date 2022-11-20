@@ -67,13 +67,13 @@ static int export_as_colormap(const image_t *image, const char *path)
             img[img_index * 4 + 3] = c[3];
         }
     }
-    img_write(img, w, h, 4, path);
+    img_write(img, w, h, 4, bmp, path);
     free(img);
     return 0;
 }
 
 FILE_FORMAT_REGISTER(colormap,
     .name = "colormap",
-    .ext = "png\0*.png\0",
+    .ext = "bmp\0*.bmp\0",
     .export_func = export_as_colormap,
 )

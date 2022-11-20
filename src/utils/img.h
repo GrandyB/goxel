@@ -26,6 +26,8 @@
 
 #include <stdint.h>
 
+enum image_format { png, bmp };
+
 /*
  * Function: img_read
  * Read an image from a file.
@@ -43,14 +45,14 @@ uint8_t *img_read_from_mem(const char *data, int size,
  * Function: img_write
  * Write an image to a file.
  */
-void img_write(const uint8_t *img, int w, int h, int bpp, const char *path);
+void img_write(const uint8_t *img, int w, int h, int bpp, enum image_format format, const char *path);
 
 /*
  * Function: img_write_to_mem
  * Write an image to memory.
  */
 uint8_t *img_write_to_mem(const uint8_t *img, int w, int h, int bpp,
-                          int *size);
+                          int *size, enum image_format format);
 
 /*
  * Function: img_downsample
