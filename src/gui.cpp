@@ -1059,6 +1059,7 @@ bool gui_color(const char *label, uint8_t color[4])
     if (ImGui::ColorButton(label, color, 0, size))
         memcpy(backup_color, color, 4);
     if (ImGui::BeginPopupContextItem("color context menu", 0)) {
+        gui->capture_mouse = true;
         color_edit("##edit", color, backup_color);
         if (ImGui::Button("Close"))
             ImGui::CloseCurrentPopup();
@@ -1080,6 +1081,7 @@ bool gui_color_small(const char *label, uint8_t color[4])
     ImGui::PushID(label);
     ImGui::ColorButton(label, c);
     if (ImGui::BeginPopupContextItem("color context menu", 0)) {
+        gui->capture_mouse = true;
         color_edit("##edit", color, NULL);
         if (ImGui::Button("Close")) {
             ImGui::CloseCurrentPopup();
@@ -1090,6 +1092,10 @@ bool gui_color_small(const char *label, uint8_t color[4])
     ImGui::Text("%s", label);
     ImGui::PopID();
     return memcmp(color, orig, 4) != 0;
+}
+
+bool gui_color_inline(const char *label, uint8_t color[4]) {
+    return color_edit("##edit", color, NULL);
 }
 
 bool gui_color_small_f3(const char *label, float color[3])

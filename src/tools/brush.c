@@ -247,9 +247,9 @@ static int iter(tool_t *tool, const painter_t *painter,
 
 static int gui(tool_t *tool)
 {
-    tool_gui_color();
     tool_gui_radius();
     tool_gui_smoothness();
+    tool_gui_color();
     tool_gui_snap();
     tool_gui_shape(NULL);
     tool_gui_symmetry();
