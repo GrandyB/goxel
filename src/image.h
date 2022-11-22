@@ -81,4 +81,11 @@ void image_delete_camera(image_t *img, camera_t *cam);
  */
 uint32_t image_get_key(const image_t *img);
 
+void make_uniq_name(
+        char *buf, int size, const char *base, void *user,
+        bool (*name_exists)(void *user, const char *name));
+bool material_name_exists(void *user, const char *name);
+bool layer_name_exists(void *user, const char *name);
+bool camera_name_exists(void *user, const char *name);
+
 #endif // IMAGE_H

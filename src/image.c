@@ -49,8 +49,7 @@
 
 */
 
-
-static bool material_name_exists(void *user, const char *name)
+bool material_name_exists(void *user, const char *name)
 {
     const image_t *img = user;
     const material_t *m;
@@ -60,7 +59,7 @@ static bool material_name_exists(void *user, const char *name)
     return false;
 }
 
-static bool layer_name_exists(void *user, const char *name)
+bool layer_name_exists(void *user, const char *name)
 {
     const image_t *img = user;
     const layer_t *layer;
@@ -70,7 +69,7 @@ static bool layer_name_exists(void *user, const char *name)
     return false;
 }
 
-static bool camera_name_exists(void *user, const char *name)
+bool camera_name_exists(void *user, const char *name)
 {
     const image_t *img = user;
     const camera_t *cam;
@@ -80,7 +79,7 @@ static bool camera_name_exists(void *user, const char *name)
     return false;
 }
 
-static void make_uniq_name(
+void make_uniq_name(
         char *buf, int size, const char *base, void *user,
         bool (*name_exists)(void *user, const char *name))
 {
@@ -97,10 +96,18 @@ static void make_uniq_name(
         }
     }
 
-    for (;; i++) {
-        snprintf(buf, size, "%.*s.%d", len, base, i);
-        if (!name_exists(user, buf)) break;
+    char temp_buf[256];
+    strncpy(temp_buf, buf, (int)sizeof(temp_buf));
+    for (;i < 999; i++) {
+        snprintf(temp_buf, size, "%.*s.%d", len, base, i);
+        LOG_D("Attempting to create a unique name: %s", temp_buf);
+        if (!name_exists(user, temp_buf)) {
+            LOG_D("Name is unique: %s", temp_buf);
+            strncpy(buf, temp_buf, (int)sizeof(buf));
+            return;
+        }
     }
+    LOG_E("Error: unable to create a unique name, please report to the developer");
 }
 
 static layer_t *img_get_layer(const image_t *img, int id)

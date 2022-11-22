@@ -1138,7 +1138,12 @@ int goxel_import_file(const char *path, const char *format)
         path = noc_file_dialog_open(NOC_FILE_DIALOG_OPEN, f->ext, NULL, NULL);
         if (!path) return -1;
     }
+    
+    layer_t *layer = image_add_layer(goxel.image, NULL);
     err = f->import_func(goxel.image, path);
+    LOG_D("path: '%s'", path);
+    make_uniq_name(layer->name, sizeof(layer->name), "Import", goxel.image,
+                        layer_name_exists);
     if (err) return err;
     return 0;
 }
