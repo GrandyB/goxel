@@ -96,14 +96,14 @@ void make_uniq_name(
         }
     }
 
-    char temp_buf[256];
-    strncpy(temp_buf, buf, (int)sizeof(temp_buf));
+    char temp_buf[size];
+    strncpy(temp_buf, buf, size);
     for (;i < 999; i++) {
         snprintf(temp_buf, size, "%.*s.%d", len, base, i);
         LOG_D("Attempting to create a unique name: %s", temp_buf);
         if (!name_exists(user, temp_buf)) {
             LOG_D("Name is unique: %s", temp_buf);
-            strncpy(buf, temp_buf, (int)sizeof(buf));
+            strncpy(buf, temp_buf, size);
             return;
         }
     }

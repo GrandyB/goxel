@@ -1141,9 +1141,11 @@ int goxel_import_file(const char *path, const char *format)
     
     layer_t *layer = image_add_layer(goxel.image, NULL);
     err = f->import_func(goxel.image, path);
-    LOG_D("path: '%s'", path);
-    make_uniq_name(layer->name, sizeof(layer->name), "Import", goxel.image,
+    char *file_name = get_file_name_from_path(path);
+    LOG_D("path: '%s' - file_name: '%s'", path, file_name);
+    make_uniq_name(layer->name, sizeof(layer->name), file_name, goxel.image,
                         layer_name_exists);
+    //free(file_name);
     if (err) return err;
     return 0;
 }

@@ -95,6 +95,29 @@ char *read_file(const char *path, int *size)
     return ret;
 }
 
+char *strsep(char **stringp, const char *delim) {
+    if (*stringp == NULL) { return NULL; }
+    char *token_start = *stringp;
+    *stringp = strpbrk(token_start, delim);
+    if (*stringp) {
+        **stringp = '\0';
+        (*stringp)++;
+    }
+    return token_start;
+}
+
+char* get_file_name_from_path(const char *path) {
+    char *token, *str, *tofree, *toRet;
+
+    tofree = str = strdup(path);  // We own str's memory now.
+    while ((token = strsep(&str, "\\"))) {
+        //LOG_D("Token: %s", token);
+        toRet = token;
+    };
+    free(tofree);
+    return strsep(&toRet, ".");
+}
+
 bool str_endswith(const char *str, const char *end)
 {
     if (!str || !end) return false;

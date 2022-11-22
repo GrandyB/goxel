@@ -334,6 +334,12 @@ bool str_endswith(const char *str, const char *end);
  */
 bool str_startswith(const char *s1, const char *s2);
 
+/*
+ * Function get_file_name_from_path
+ * Return the last split of a file path.
+ */
+char* get_file_name_from_path(const char *path);
+
 
 /*
  * Function: unproject
