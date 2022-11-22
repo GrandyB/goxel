@@ -130,7 +130,7 @@ static void init_win(void)
 #include <TargetConditionals.h>
 #if TARGET_OS_MAC
 
-const char *sys_get_save_path(const char *filters, const char *default_name, const char *default_extension)
+const char *sys_get_save_path(const char *filters, const char *default_name)
 {
     return noc_file_dialog_open(NOC_FILE_DIALOG_SAVE, filters, NULL,
                                 default_name);
@@ -284,10 +284,10 @@ void sys_save_to_photos(const uint8_t *data, int size,
 
 
 #ifdef NOC_FILE_DIALOG_IMPLEMENTATION
-const char *sys_get_save_path(const char *filters, const char *default_name, const char *default_extension)
+const char *sys_get_save_path(const char *filters, const char *default_name)
 {
     return noc_file_dialog_open(NOC_FILE_DIALOG_SAVE, filters, NULL,
-                                default_name, default_extension);
+                                default_name);
 }
 
 void sys_on_saved(const char *path)
@@ -298,7 +298,7 @@ void sys_on_saved(const char *path)
 
 #ifdef ANDROID
 
-const char *sys_get_save_path(const char *filters, const char *default_name, const char *default_extension)
+const char *sys_get_save_path(const char *filters, const char *default_name)
 {
     return NULL;
 }

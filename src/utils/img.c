@@ -168,7 +168,7 @@ uint8_t *img_write_to_mem(const uint8_t *img, int w, int h, int bpp, int *size, 
         case png: break;
         default: LOG_E("Cannot img_write_to_mem %s", format); break;
     }
-    return stbi_write_png_to_mem((void*)img, 0, w, h, bpp, size);
+    return stbi_write_png_to_mem((void*)img, 0, w, h, bpp, size)
 }
 
 void img_downsample(const uint8_t *img, int w, int h, int bpp,

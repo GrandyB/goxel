@@ -44,7 +44,7 @@ enum {
     NOC_FILE_DIALOG_OPEN    = 1 << 0,   // Create an open file dialog.
     NOC_FILE_DIALOG_SAVE    = 1 << 1,   // Create a save file dialog.
     NOC_FILE_DIALOG_DIR     = 1 << 2,   // Open a directory.
-    NOC_FILE_DIALOG_OVERWRITE_CONFIRMATION = 1 << 3,
+    NOC_FILE_DIALOG_NO_OVERWRITE_CONFIRMATION = 1 << 3,
 };
 
 // There is a single function defined.
@@ -87,8 +87,7 @@ static char *g_noc_file_dialog_ret = NULL;
 const char *noc_file_dialog_open(int flags,
                                  const char *filters,
                                  const char *default_path,
-                                 const char *default_name,
-                                 const char *default_extension)
+                                 const char *default_name)
 {
     GtkWidget *dialog;
     GtkFileFilter *filter;
@@ -102,16 +101,18 @@ const char *noc_file_dialog_open(int flags,
     if (flags & NOC_FILE_DIALOG_DIR)
         action = GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER;
 
+    gtk_disable_setlocale();
     gtk_init_check(NULL, NULL);
     dialog = gtk_file_chooser_dialog_new(
             flags & NOC_FILE_DIALOG_SAVE ? "Save File" : "Open File",
             NULL,
             action,
             "_Cancel", GTK_RESPONSE_CANCEL,
-            flags & NOC_FILE_DIALOG_SAVE ? "_Save" : "_Open", GTK_RESPONSE_ACCEPT,
+            flags & NOC_FILE_DIALOG_SAVE ? "_Save" : "_Open",
+            GTK_RESPONSE_ACCEPT,
             NULL );
     chooser = GTK_FILE_CHOOSER(dialog);
-    if (flags & NOC_FILE_DIALOG_OVERWRITE_CONFIRMATION)
+    if (!(flags & NOC_FILE_DIALOG_NO_OVERWRITE_CONFIRMATION))
         gtk_file_chooser_set_do_overwrite_confirmation(chooser, TRUE);
 
     if (default_path)
@@ -132,7 +133,8 @@ const char *noc_file_dialog_open(int flags,
         patterns = buf;
         while (*patterns) {
             gtk_file_filter_add_pattern(filter, patterns);
-            patterns += strlen(patterns) + 1;
+            patterns += strlen(patterns);
+            if (*patterns) patterns++;
         }
 
         gtk_file_chooser_add_filter(chooser, filter);
@@ -162,35 +164,46 @@ const char *noc_file_dialog_open(int flags,
 const char *noc_file_dialog_open(int flags,
                                  const char *filters,
                                  const char *default_path,
-                                 const char *default_name,
-                                 const char *default_extension)
+                                 const char *default_name)
 {
     OPENFILENAME ofn;       // common dialog box structure
+    BROWSEINFO   bif;       // only used to open directory
+    LPITEMIDLIST lpItem;    // only for open directory
     char szFile[260];       // buffer for file name
     int ret;
 
-    // init default file name
-    if (default_name)
-        strncpy(szFile, default_name, sizeof(szFile) - 1);
-    else
-        szFile[0] = '\0';
+    if (!(flags & NOC_FILE_DIALOG_DIR)) {
+        ZeroMemory(&ofn, sizeof(ofn));
+        ofn.lStructSize = sizeof(ofn);
+        ofn.lpstrFile = szFile;
+        ofn.lpstrFile[0] = '\0';
+        ofn.nMaxFile = sizeof(szFile);
+        ofn.lpstrFilter = filters;
+        ofn.nFilterIndex = 1;
+        ofn.lpstrFileTitle = NULL;
+        ofn.nMaxFileTitle = 0;
+        ofn.lpstrInitialDir = NULL;
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+        if (default_name)
+            strcpy(ofn.lpstrFile, default_name);
 
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = filters;
-    ofn.nFilterIndex = 1;
-    ofn.lpstrFileTitle = NULL;
-    ofn.nMaxFileTitle = 0;
-    ofn.lpstrInitialDir = (LPSTR)default_path;
-    ofn.lpstrDefExt = default_extension;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 
-    if (flags & NOC_FILE_DIALOG_OPEN)
-        ret = GetOpenFileName(&ofn);
-    else
-        ret = GetSaveFileName(&ofn);
+        if (flags & NOC_FILE_DIALOG_OPEN)
+            ret = GetOpenFileName(&ofn);
+        else
+            ret = GetSaveFileName(&ofn);
+    } else {
+        ZeroMemory(&bif, sizeof(bif));
+        bif.pszDisplayName = szFile;
+
+        lpItem = SHBrowseForFolder(&bif);
+        if (lpItem) {
+            SHGetPathFromIDList(lpItem, szFile);
+            ret = 1;
+        } else {
+            ret = 0;
+        }
+    }
 
     free(g_noc_file_dialog_ret);
     g_noc_file_dialog_ret = ret ? strdup(szFile) : NULL;
@@ -217,7 +230,7 @@ const char *noc_file_dialog_open(int flags,
     char buf[128], *patterns;
     // XXX: I don't know about memory management with cococa, need to check
     // if I leak memory here.
-    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    // NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
     if (flags & NOC_FILE_DIALOG_OPEN) {
         panel = open_panel = [NSOpenPanel openPanel];
@@ -251,7 +264,8 @@ const char *noc_file_dialog_open(int flags,
                 assert(strncmp(patterns, "*.", 2) == 0);
                 patterns += 2; // Skip the "*."
                 [types_array addObject:[NSString stringWithUTF8String: patterns]];
-                patterns += strlen(patterns) + 1;
+                patterns += strlen(patterns);
+                if (*patterns) patterns++;
             }
             filters += strlen(filters) + 1;
         }
@@ -266,7 +280,7 @@ const char *noc_file_dialog_open(int flags,
         g_noc_file_dialog_ret = strdup(utf8_path);
     }
 
-    [pool release];
+    // [pool release];
     return g_noc_file_dialog_ret;
 }
 #endif
