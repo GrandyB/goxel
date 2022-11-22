@@ -158,7 +158,7 @@ static int kvx_import(image_t *image, const char *path)
     int i, r, ret = 0, nb, size, lastz = 0, len, visface;
     int w, h, d, px, py, pz, x, y, z;
     int offsetsize, voxdatasize;
-    int aabb[2][3];
+    //int aabb[2][3];
     uint8_t color = 0;
     uint8_t (*palette)[4] = NULL;
     uint32_t *xoffsets = NULL;
@@ -237,11 +237,11 @@ static int kvx_import(image_t *image, const char *path)
         }
     }
 
-    vec3_set(aabb[0], -px, -py, pz - d);
-    vec3_set(aabb[1], w - px, h - py, pz);
+    //vec3_set(aabb[0], -px, -py, pz - d);
+    //vec3_set(aabb[1], w - px, h - py, pz);
 
-    bbox_from_aabb(image->box, aabb);
-    bbox_from_aabb(image->active_layer->box, aabb);
+    //bbox_from_aabb(image->box, aabb);
+    //bbox_from_aabb(image->active_layer->box, aabb);
     mesh_blit(image->active_layer->mesh, (uint8_t*)cube,
               -px, -py, pz - d, w, h, d, NULL);
 
