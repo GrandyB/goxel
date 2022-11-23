@@ -337,6 +337,8 @@ bool str_startswith(const char *s1, const char *s2);
 /* Debug log a [4][4] float matrix. Looking at YOU, view matrices. */
 void debug_log_44_matrix(float mat[4][4]);
 
+double get_unix_time(void);
+
 
 /*
  * Function: unproject

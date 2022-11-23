@@ -26,6 +26,7 @@
 
 // The global goxel instance.
 goxel_t goxel = {};
+double time = 0.0;
 
 texture_t *texture_new_image(const char *path, int flags)
 {
@@ -544,6 +545,9 @@ static bool unproject_delta(const float win[3], const float model[4][4],
 static int on_pan(const gesture_t *gest, void *user)
 {
     camera_t *camera = get_camera();
+    if (camera->fpv) {
+        return on_rotate(gest, user);
+    }
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
         vec2_copy(gest->pos, goxel.move_origin.pos);
@@ -626,6 +630,9 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 {
     float p[3], n[3];
     camera_t *camera = get_camera();
+    double frameTime = get_unix_time();
+    double deltaTime = frameTime - time;
+    time = frameTime;
 
     painter_t painter = goxel.painter;
     gesture_update(goxel.gestures_count, goxel.gestures,
@@ -655,63 +662,61 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         tool_iter(goxel.tool, &painter, viewport);
     }
 
-    if (inputs->mouse_wheel) {
-        if(camera->fpv) {
-
-        } else {
-            mat4_itranslate(camera->mat, 0, 0,
-                    -camera->dist * (1 - pow(1.1, -inputs->mouse_wheel)));
-            camera->dist *= pow(1.1, -inputs->mouse_wheel);
-            // Auto adjust the camera rotation position.
-            if (goxel_unproject_on_mesh(viewport, inputs->touches[0].pos,
-                                    goxel_get_layers_mesh(goxel.image), p, n)) {
-                camera_set_target(camera, p);
-            }
-            return;
+    if (inputs->mouse_wheel && !camera->fpv) {
+        mat4_itranslate(camera->mat, 0, 0,
+                -camera->dist * (1 - pow(1.1, -inputs->mouse_wheel)));
+        camera->dist *= pow(1.1, -inputs->mouse_wheel);
+        // Auto adjust the camera rotation position.
+        if (goxel_unproject_on_mesh(viewport, inputs->touches[0].pos,
+                                goxel_get_layers_mesh(goxel.image), p, n)) {
+            camera_set_target(camera, p);
         }
+        return;
     }
 
     // handle keyboard rotations
     if (!capture_keys) return;
 
+    double t = deltaTime * 100;
+    //LOG_D("time: %f -- frame time: %f -- delta: %f -- t: %f", time, frameTime, deltaTime, t);
     if (inputs->keys[KEY_LEFT]) {
         if(camera->fpv) {
-            camera_move(camera, -1, 0, 0);
+            camera_move(camera, -t, 0, 0);
         } else {
             camera_turntable(camera, +0.05, 0);
         }
     }
     if (inputs->keys[KEY_RIGHT]) {
         if(camera->fpv) {
-            camera_move(camera, +1, 0, 0);
+            camera_move(camera, +t, 0, 0);
         } else {
             camera_turntable(camera, -0.05, 0);
         }
     }
     if (inputs->keys[KEY_UP]) {
         if(camera->fpv) {
-            camera_move(camera, 0, -1, 0);
+            camera_move(camera, 0, -t, 0);
         } else {
             camera_turntable(camera, +0.05, 0);
         }
     }
     if (inputs->keys[KEY_DOWN]) {
         if(camera->fpv) {
-            camera_move(camera, 0, +1, 0);
+            camera_move(camera, 0, +t, 0);
         } else {
             camera_turntable(camera, 0, -0.05);
         }
     }
     if (inputs->keys[KEY_PAGE_UP]) {
         if(camera->fpv) {
-            camera_move(camera, 0, 0, +1);
+            camera_move(camera, 0, 0, +t);
         } else {
             camera_turntable(camera, 0, +0.05);
         }
     }
     if (inputs->keys[KEY_PAGE_DOWN]) {
         if(camera->fpv) {
-            camera_move(camera, 0, 0, -1);
+            camera_move(camera, 0, 0, -t);
         } else {
             camera_turntable(camera, 0, -0.05);
         }

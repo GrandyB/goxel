@@ -52,7 +52,7 @@ void gui_cameras_panel(void)
 
     if (cam->fpv) {
         // Change camera speed
-        gui_input_float("Speed", &cam->speed, 0.5, 0, 10.0, NULL);
+        gui_input_float("Speed", &cam->speed, 0.5, 0, 30.0, NULL);
 
         // Manual X/Y/Z editing
         float xyz[4][4], x, y, z;

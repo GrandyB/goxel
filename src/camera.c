@@ -27,7 +27,7 @@ camera_t *camera_new(const char *name)
     mat4_set_identity(camera->mat);
     camera->dist = 96;
     camera->aspect = 1;
-    camera->speed = 5;
+    camera->speed = 10;
     camera->fovy = 40.;
     camera->fovy_fpv = 100.;
     mat4_itranslate(camera->mat, 0, 0, camera->dist);
