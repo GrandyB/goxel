@@ -58,17 +58,6 @@ void gui_cameras_panel(void)
     gui_quat("Rotation", cam->rot);
     */
     gui_checkbox("Ortho", &cam->ortho, NULL);
-    if(gui_checkbox("First Person", &cam->fpv, NULL)) {
-        if (cam->fpv) {
-            // If switching to first person
-            // Stash current dist and replace with 0 for duration
-            cam->prev_dist = cam->dist;
-            cam->dist = 0;
-        } else if (cam->prev_dist) {
-            // Switching off fpv, restore previous dist if applicable
-            cam->dist = cam->prev_dist;
-        }
-    };
 
     gui_group_begin("Set");
     gui_action_button(ACTION_view_left, "left", 0.5); gui_same_line();
@@ -103,28 +92,48 @@ void gui_cameras_panel(void)
     }
     gui_group_end();
 
-    // X/Y/Z editing
-    float xyz[4][4], x, y, z;
-    // camera x/y/z position is cam->mat[3][0]/[3][1]/[3][2]
-    mat4_copy(cam->mat, xyz);
     gui_group_begin(NULL);
-    x = xyz[3][0];
-    if(gui_input_float("X", &x, 1, 0, 0, "%.0f")) {
-        xyz[3][0] = x;
-        mat4_copy(xyz, cam->mat);
+    if(gui_checkbox("First Person", &cam->fpv, NULL)) {
+        if (cam->fpv) {
+            // If switching to first person
+            // Stash current dist and replace with 0 for duration
+            cam->prev_dist = cam->dist;
+            cam->dist = 0;
+            cam->fovy *= 1.5;
+        } else if (cam->prev_dist) {
+            // Switching off fpv, restore previous dist if applicable
+            cam->dist = cam->prev_dist;
+            cam->fovy *= (2/3);
+        }
     };
-    y = xyz[3][1];
-    if(gui_input_float("Y", &y, 1, 0, 0, "%.0f")) {
-        LOG_D("Changing y: %f", y);
-        xyz[3][1] = y;
-        mat4_copy(xyz, cam->mat);
-    };
-    z = xyz[3][2];
-    if(gui_input_float("Z", &z, 1, 0, 0, "%.0f")) {
-        LOG_D("Changing z: %f", z);
-        xyz[3][2] = z;
-        mat4_copy(xyz, cam->mat);
-    };
+
+    if (cam->fpv) {
+        // Change camera speed
+        gui_input_float("Speed", &cam->speed, 0.5, 0, 10.0, NULL);
+
+        // Manual X/Y/Z editing
+        float xyz[4][4], x, y, z;
+        // camera x/y/z position is cam->mat[3][0]/[3][1]/[3][2]
+        mat4_copy(cam->mat, xyz);
+
+        x = xyz[3][0];
+        if(gui_input_float("X", &x, 1, 0, 0, "%.0f")) {
+            xyz[3][0] = x;
+            mat4_copy(xyz, cam->mat);
+        };
+        y = xyz[3][1];
+        if(gui_input_float("Y", &y, 1, 0, 0, "%.0f")) {
+            LOG_D("Changing y: %f", y);
+            xyz[3][1] = y;
+            mat4_copy(xyz, cam->mat);
+        };
+        z = xyz[3][2];
+        if(gui_input_float("Z", &z, 1, 0, 0, "%.0f")) {
+            LOG_D("Changing z: %f", z);
+            xyz[3][2] = z;
+            mat4_copy(xyz, cam->mat);
+        };
+    }
     gui_group_end();
 }
 

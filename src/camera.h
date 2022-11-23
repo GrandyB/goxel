@@ -56,6 +56,7 @@ struct camera
 
     bool   fpv;   // Set to true for first person view.
     float  prev_dist; // Remember previous distance (set to 0 during fpv)
+    float  speed; // Camera move speed
 
     // Auto computed from other values:
     float view_mat[4][4];    // Model to view transformation.
@@ -128,6 +129,12 @@ uint32_t camera_get_key(const camera_t *camera);
 
 void camera_turntable(camera_t *camera, float rz, float rx);
 
-void camera_move(camera_t *camera, float rz, float rx);
+/* 
+ * First person strafing/camera motion.
+ * rz: up is +ve, down is -ve.
+ * ry: forward is +ve, backwards is -ve.
+ * rx - right is +ve, left is -ve.
+ */
+void camera_move(camera_t *camera, float rx, float ry, float rz);
 
 #endif // CAMERA_H

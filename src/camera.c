@@ -27,6 +27,7 @@ camera_t *camera_new(const char *name)
     mat4_set_identity(cam->mat);
     cam->dist = 128;
     cam->aspect = 1;
+    cam->speed = 5;
     mat4_itranslate(cam->mat, 0, 0, cam->dist);
     camera_turntable(cam, M_PI / 4, M_PI / 4);
     return cam;
@@ -50,6 +51,7 @@ void camera_set(camera_t *cam, const camera_t *other)
     cam->ortho = other->ortho;
     cam->dist = other->dist;
     cam->fpv = other->fpv;
+    cam->speed = other->speed;
     mat4_copy(other->mat, cam->mat);
 }
 
@@ -186,8 +188,12 @@ void camera_turntable(camera_t *camera, float rz, float rx)
     mat4_itranslate(camera->mat, 0, 0, camera->dist);
 }
 
-/* First person move; rz - up is +ve, down is -ve; rx - right is +ve, left is -ve. */
-void camera_move(camera_t *camera, float rz, float rx)
+/* First person move
+ * rz: up is +ve, down is -ve.
+ * ry: forward is +ve, backwards is -ve.
+ * rx - right is +ve, left is -ve.
+ */
+void camera_move(camera_t *camera, float rx, float ry, float rz)
 {
     float mat[4][4];
     mat4_copy(camera->mat, mat);
@@ -207,12 +213,15 @@ void camera_move(camera_t *camera, float rz, float rx)
     //mat4_lookat(mat, eye, center, VEC(0, 1, 0));
     //mat4_lookat(mat, )
     //mat4_mul(mat, v, mat);
+    float multiplier = camera->speed / 10;
 
+    mat4_itranslate(mat, 0, 0, ry*multiplier);
+    mat4_itranslate(mat, rx*multiplier, 0, 0);
 
     // in mat[4][4], camera x/y/z position is [3][0]/[3][1]/[3][2]
 
     // z is just up/down in world space
-    mat[3][2] += rz;
+    mat[3][2] += rz*multiplier;
 
     mat4_copy(mat, camera->mat);
 }

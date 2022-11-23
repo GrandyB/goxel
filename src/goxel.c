@@ -656,15 +656,19 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     }
 
     if (inputs->mouse_wheel) {
-        mat4_itranslate(camera->mat, 0, 0,
-                -camera->dist * (1 - pow(1.1, -inputs->mouse_wheel)));
-        camera->dist *= pow(1.1, -inputs->mouse_wheel);
-        // Auto adjust the camera rotation position.
-        if (goxel_unproject_on_mesh(viewport, inputs->touches[0].pos,
-                                goxel_get_layers_mesh(goxel.image), p, n)) {
-            camera_set_target(camera, p);
+        if(camera->fpv) {
+
+        } else {
+            mat4_itranslate(camera->mat, 0, 0,
+                    -camera->dist * (1 - pow(1.1, -inputs->mouse_wheel)));
+            camera->dist *= pow(1.1, -inputs->mouse_wheel);
+            // Auto adjust the camera rotation position.
+            if (goxel_unproject_on_mesh(viewport, inputs->touches[0].pos,
+                                    goxel_get_layers_mesh(goxel.image), p, n)) {
+                camera_set_target(camera, p);
+            }
+            return;
         }
-        return;
     }
 
     // handle keyboard rotations
@@ -672,28 +676,42 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 
     if (inputs->keys[KEY_LEFT]) {
         if(camera->fpv) {
-            camera_move(camera, 0, -0.05);
+            camera_move(camera, -1, 0, 0);
         } else {
             camera_turntable(camera, +0.05, 0);
         }
     }
     if (inputs->keys[KEY_RIGHT]) {
         if(camera->fpv) {
-            camera_move(camera, 0, +0.05);
+            camera_move(camera, +1, 0, 0);
         } else {
             camera_turntable(camera, -0.05, 0);
         }
     }
+    if (inputs->keys[KEY_UP]) {
+        if(camera->fpv) {
+            camera_move(camera, 0, -1, 0);
+        } else {
+            camera_turntable(camera, +0.05, 0);
+        }
+    }
+    if (inputs->keys[KEY_DOWN]) {
+        if(camera->fpv) {
+            camera_move(camera, 0, +1, 0);
+        } else {
+            camera_turntable(camera, 0, -0.05);
+        }
+    }
     if (inputs->keys[KEY_PAGE_UP]) {
         if(camera->fpv) {
-            camera_move(camera, +0.05, 0);
+            camera_move(camera, 0, 0, +1);
         } else {
             camera_turntable(camera, 0, +0.05);
         }
     }
     if (inputs->keys[KEY_PAGE_DOWN]) {
         if(camera->fpv) {
-            camera_move(camera, -0.05, 0);
+            camera_move(camera, 0, 0, -1);
         } else {
             camera_turntable(camera, 0, -0.05);
         }
