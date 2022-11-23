@@ -212,6 +212,7 @@ static int on_hover(gesture3d_t *gest, void *user)
 static int iter(tool_t *tool, const painter_t *painter,
                 const float viewport[4])
 {
+    goxel_set_help_text("Click to brush - there are hotkeys for changing modes etc! TIP: Holding shift will toggle line mode.");
     tool_brush_t *brush = (tool_brush_t*)tool;
     cursor_t *curs = &goxel.cursor;
     // XXX: for the moment we force rounded positions for the brush tool

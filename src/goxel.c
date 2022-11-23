@@ -26,6 +26,7 @@
 
 // The global goxel instance.
 goxel_t goxel = {};
+double time = 0.0;
 
 texture_t *texture_new_image(const char *path, int flags)
 {
@@ -544,6 +545,9 @@ static bool unproject_delta(const float win[3], const float model[4][4],
 static int on_pan(const gesture_t *gest, void *user)
 {
     camera_t *camera = get_camera();
+    if (camera->fpv) {
+        return on_rotate(gest, user);
+    }
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
         vec2_copy(gest->pos, goxel.move_origin.pos);
@@ -626,6 +630,9 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 {
     float p[3], n[3];
     camera_t *camera = get_camera();
+    double frameTime = get_unix_time();
+    double deltaTime = frameTime - time;
+    time = frameTime;
 
     painter_t painter = goxel.painter;
     gesture_update(goxel.gestures_count, goxel.gestures,
@@ -655,7 +662,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         tool_iter(goxel.tool, &painter, viewport);
     }
 
-    if (inputs->mouse_wheel) {
+    if (inputs->mouse_wheel && !camera->fpv) {
         mat4_itranslate(camera->mat, 0, 0,
                 -camera->dist * (1 - pow(1.1, -inputs->mouse_wheel)));
         camera->dist *= pow(1.1, -inputs->mouse_wheel);
@@ -670,17 +677,49 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     // handle keyboard rotations
     if (!capture_keys) return;
 
+    double t = deltaTime * 100;
+    //LOG_D("time: %f -- frame time: %f -- delta: %f -- t: %f", time, frameTime, deltaTime, t);
     if (inputs->keys[KEY_LEFT]) {
-        camera_turntable(camera, +0.05, 0);
+        if(camera->fpv) {
+            camera_move(camera, -t, 0, 0);
+        } else {
+            camera_turntable(camera, +0.05, 0);
+        }
     }
     if (inputs->keys[KEY_RIGHT]) {
-        camera_turntable(camera, -0.05, 0);
+        if(camera->fpv) {
+            camera_move(camera, +t, 0, 0);
+        } else {
+            camera_turntable(camera, -0.05, 0);
+        }
     }
     if (inputs->keys[KEY_UP]) {
-        camera_turntable(camera, 0, +0.05);
+        if(camera->fpv) {
+            camera_move(camera, 0, -t, 0);
+        } else {
+            camera_turntable(camera, +0.05, 0);
+        }
     }
     if (inputs->keys[KEY_DOWN]) {
-        camera_turntable(camera, 0, -0.05);
+        if(camera->fpv) {
+            camera_move(camera, 0, +t, 0);
+        } else {
+            camera_turntable(camera, 0, -0.05);
+        }
+    }
+    if (inputs->keys[KEY_PAGE_UP]) {
+        if(camera->fpv) {
+            camera_move(camera, 0, 0, +t);
+        } else {
+            camera_turntable(camera, 0, +0.05);
+        }
+    }
+    if (inputs->keys[KEY_PAGE_DOWN]) {
+        if(camera->fpv) {
+            camera_move(camera, 0, 0, -t);
+        } else {
+            camera_turntable(camera, 0, -0.05);
+        }
     }
 
     // C: recenter the view:
@@ -1448,4 +1487,17 @@ ACTION_REGISTER(tool_size_decrease,
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = tool_size_decrease,
     .default_shortcut = "["
+)
+
+static void toggle_first_person_camera(void)
+{
+    camera_t* cam = get_camera();
+    cam->fpv = !cam->fpv;
+    post_toggle_fpv(cam);
+}
+ACTION_REGISTER(toggle_first_person_camera,
+    .help = "Toggle first person camera",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = toggle_first_person_camera,
+    .default_shortcut = "#",
 )

@@ -72,7 +72,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.10.8-aos-0.1e"
+#define GOXEL_VERSION_STR "0.10.8-aos-0.1f"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "original"
 #endif
@@ -339,6 +339,12 @@ bool str_startswith(const char *s1, const char *s2);
  * Return the last split of a file path.
  */
 char* get_file_name_from_path(const char *path);
+
+/* Debug log a [4][4] float matrix. Looking at YOU, view matrices. */
+void debug_log_44_matrix(float mat[4][4]);
+
+/** Get the current unix time in seconds. */
+double get_unix_time(void);
 
 
 /*
