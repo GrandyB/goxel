@@ -59,6 +59,9 @@ void gui_cameras_panel(void)
     */
     gui_checkbox("Ortho", &cam->ortho, NULL);
 
+    // Change camera fov
+    gui_input_float("FOV", &cam->fovy, 1.0, 10.0, 150.0, NULL);
+
     gui_group_begin("Set");
     gui_action_button(ACTION_view_left, "left", 0.5); gui_same_line();
     gui_action_button(ACTION_view_right, "right", 1.0);
@@ -99,11 +102,12 @@ void gui_cameras_panel(void)
             // Stash current dist and replace with 0 for duration
             cam->prev_dist = cam->dist;
             cam->dist = 0;
-            cam->fovy *= 1.5;
-        } else if (cam->prev_dist) {
+            cam->prev_fovy = cam->fovy;
+            cam->fovy = 75.;
+        } else {
             // Switching off fpv, restore previous dist if applicable
             cam->dist = cam->prev_dist;
-            cam->fovy *= (2/3);
+            cam->fovy = cam->prev_fovy;
         }
     };
 

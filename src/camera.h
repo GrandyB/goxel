@@ -55,8 +55,9 @@ struct camera
     float  mat[4][4];
 
     bool   fpv;   // Set to true for first person view.
-    float  prev_dist; // Remember previous distance (set to 0 during fpv)
     float  speed; // Camera move speed
+    float  prev_dist; // Remember previous distance (set to 0 during fpv)
+    float  prev_fovy; // Remember previous fov (is editable during fpv)
 
     // Auto computed from other values:
     float view_mat[4][4];    // Model to view transformation.
