@@ -48,11 +48,14 @@ struct camera
     camera_t  *next, *prev; // List of camera in an image.
     char   name[128];  // 127 chars max.
     bool   ortho; // Set to true for orthographic projection.
-    bool   fpv;   // Set to true for first person view.
     float  dist;  // Rotation distance.
     float  fovy;
     float  aspect;
+    // in mat[4][4], camera x/y/z position is [3][0]/[3][1]/[3][2]
     float  mat[4][4];
+
+    bool   fpv;   // Set to true for first person view.
+    float  prev_dist; // Remember previous distance (set to 0 during fpv)
 
     // Auto computed from other values:
     float view_mat[4][4];    // Model to view transformation.

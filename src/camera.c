@@ -189,22 +189,30 @@ void camera_turntable(camera_t *camera, float rz, float rx)
 /* First person move; rz - up is +ve, down is -ve; rx - right is +ve, left is -ve. */
 void camera_move(camera_t *camera, float rz, float rx)
 {
-    float mat[4][4], center[3];
+    float mat[4][4];
+    mat4_copy(camera->mat, mat);
+    //, center[3];
     //float up[3] = VEC(0, 1, 0);
     // float v[4][4] = {
     //     {1, 0, 0, 0},
     //     {0, 1, 0, 0},
     //     {0, 0, 1, -rz},
     //     {0, 0, 0, 1}};
-    mat4_copy(camera->mat, mat);
-    float eye[] = {mat[0][3], mat[1][3], mat[2][3]};
+
+    //float eye[] = {mat[3][0], mat[1][3], mat[2][3]};
 
     // 
-    mat4_mul_vec3(camera->mat, VEC(0, 0, -camera->dist), center);
+    //mat4_mul_vec3(camera->mat, VEC(0, 0, -camera->dist), center);
     // mat4_itranslate(mat, 0, 0, rz);
-    mat4_lookat(mat, eye, center, VEC(0, 1, 0));
+    //mat4_lookat(mat, eye, center, VEC(0, 1, 0));
     //mat4_lookat(mat, )
     //mat4_mul(mat, v, mat);
+
+
+    // in mat[4][4], camera x/y/z position is [3][0]/[3][1]/[3][2]
+
+    // z is just up/down in world space
+    mat[3][2] += rz;
 
     mat4_copy(mat, camera->mat);
 }
