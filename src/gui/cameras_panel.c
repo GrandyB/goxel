@@ -43,24 +43,59 @@ void gui_cameras_panel(void)
     gui_action_button(ACTION_img_move_camera_down, NULL, 0);
 
     if (!goxel.image->cameras) image_add_camera(goxel.image, NULL);
-
-
     cam = goxel.image->active_camera;
-    gui_input_float("dist", &cam->dist, 10.0, 0, 0, NULL);
 
-    /*
-    gui_group_begin("Offset");
-    gui_input_float("x", &cam->ofs[0], 1.0, 0, 0, NULL);
-    gui_input_float("y", &cam->ofs[1], 1.0, 0, 0, NULL);
-    gui_input_float("z", &cam->ofs[2], 1.0, 0, 0, NULL);
+    gui_group_begin(NULL);
+    if(gui_checkbox("First Person", &cam->fpv, NULL)) {
+        post_toggle_fpv(cam);
+    };
+
+    if (cam->fpv) {
+        // Change camera speed
+        gui_input_float("Speed", &cam->speed, 0.5, 0, 10.0, NULL);
+
+        // Manual X/Y/Z editing
+        float xyz[4][4], x, y, z;
+        // camera x/y/z position is cam->mat[3][0]/[3][1]/[3][2]
+        mat4_copy(cam->mat, xyz);
+
+        x = xyz[3][0];
+        if(gui_input_float("X", &x, 1, 0, 0, "%.0f")) {
+            xyz[3][0] = x;
+            mat4_copy(xyz, cam->mat);
+        };
+        y = xyz[3][1];
+        if(gui_input_float("Y", &y, 1, 0, 0, "%.0f")) {
+            LOG_D("Changing y: %f", y);
+            xyz[3][1] = y;
+            mat4_copy(xyz, cam->mat);
+        };
+        z = xyz[3][2];
+        if(gui_input_float("Z", &z, 1, 0, 0, "%.0f")) {
+            LOG_D("Changing z: %f", z);
+            xyz[3][2] = z;
+            mat4_copy(xyz, cam->mat);
+        };
+    }
     gui_group_end();
-
-    gui_quat("Rotation", cam->rot);
-    */
-    gui_checkbox("Ortho", &cam->ortho, NULL);
-
     // Change camera fov
-    gui_input_float("FOV", &cam->fovy, 1.0, 10.0, 150.0, NULL);
+    gui_input_float("FOV", (cam->fpv) ? &cam->fovy_fpv : &cam->fovy, 1.0, 10.0, 150.0, NULL);
+
+    if (!cam->fpv) {
+        gui_input_float("dist", &cam->dist, 10.0, 0, 0, NULL);
+
+        /*
+        gui_group_begin("Offset");
+        gui_input_float("x", &cam->ofs[0], 1.0, 0, 0, NULL);
+        gui_input_float("y", &cam->ofs[1], 1.0, 0, 0, NULL);
+        gui_input_float("z", &cam->ofs[2], 1.0, 0, 0, NULL);
+        gui_group_end();
+
+        gui_quat("Rotation", cam->rot);
+        */
+
+        gui_checkbox("Ortho", &cam->ortho, NULL);
+    }
 
     gui_group_begin("Set");
     gui_action_button(ACTION_view_left, "left", 0.5); gui_same_line();
@@ -92,51 +127,6 @@ void gui_cameras_panel(void)
     if (gui_input_float("Yaw", &v, 1, -180, 180, "%.0f")) {
         v = (v - yaw) * DD2R;
         camera_turntable(cam, v, 0);
-    }
-    gui_group_end();
-
-    gui_group_begin(NULL);
-    if(gui_checkbox("First Person", &cam->fpv, NULL)) {
-        if (cam->fpv) {
-            // If switching to first person
-            // Stash current dist and replace with 0 for duration
-            cam->prev_dist = cam->dist;
-            cam->dist = 0;
-            cam->prev_fovy = cam->fovy;
-            cam->fovy = 75.;
-        } else {
-            // Switching off fpv, restore previous dist if applicable
-            cam->dist = cam->prev_dist;
-            cam->fovy = cam->prev_fovy;
-        }
-    };
-
-    if (cam->fpv) {
-        // Change camera speed
-        gui_input_float("Speed", &cam->speed, 0.5, 0, 10.0, NULL);
-
-        // Manual X/Y/Z editing
-        float xyz[4][4], x, y, z;
-        // camera x/y/z position is cam->mat[3][0]/[3][1]/[3][2]
-        mat4_copy(cam->mat, xyz);
-
-        x = xyz[3][0];
-        if(gui_input_float("X", &x, 1, 0, 0, "%.0f")) {
-            xyz[3][0] = x;
-            mat4_copy(xyz, cam->mat);
-        };
-        y = xyz[3][1];
-        if(gui_input_float("Y", &y, 1, 0, 0, "%.0f")) {
-            LOG_D("Changing y: %f", y);
-            xyz[3][1] = y;
-            mat4_copy(xyz, cam->mat);
-        };
-        z = xyz[3][2];
-        if(gui_input_float("Z", &z, 1, 0, 0, "%.0f")) {
-            LOG_D("Changing z: %f", z);
-            xyz[3][2] = z;
-            mat4_copy(xyz, cam->mat);
-        };
     }
     gui_group_end();
 }

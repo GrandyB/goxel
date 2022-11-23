@@ -44,6 +44,7 @@ enum {
     X(img_del_camera),
     X(img_move_camera_up),
     X(img_move_camera_down),
+    X(toggle_first_person_camera),
     X(img_image_layer_to_mesh),
     X(img_new_shape_layer),
     X(img_new_material),

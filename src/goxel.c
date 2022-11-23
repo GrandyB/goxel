@@ -1476,3 +1476,16 @@ ACTION_REGISTER(tool_size_decrease,
     .cfunc = tool_size_decrease,
     .default_shortcut = "["
 )
+
+static void toggle_first_person_camera(void)
+{
+    camera_t* cam = get_camera();
+    cam->fpv = !cam->fpv;
+    post_toggle_fpv(cam);
+}
+ACTION_REGISTER(toggle_first_person_camera,
+    .help = "Toggle first person camera",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = toggle_first_person_camera,
+    .default_shortcut = "#",
+)
