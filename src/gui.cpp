@@ -280,8 +280,8 @@ typedef struct gui_t {
 static gui_t *gui = NULL;
 
 static void on_click(void) {
-    if (DEFINED(GUI_SOUND))
-        sound_play("click", 1.0, 1.0);
+    // if (DEFINED(GUI_SOUND))
+    //     sound_play("click", 1.0, 1.0);
 }
 
 static bool isCharPressed(int c)

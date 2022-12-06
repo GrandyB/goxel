@@ -107,7 +107,7 @@ char *strsep(char **stringp, const char *delim) {
 }
 
 char* get_file_name_from_path(const char *path) {
-    char *token, *str, *tofree, *toRet;
+    char *token, *str, *tofree, *toRet = "Layer.";
 
     tofree = str = strdup(path);  // We own str's memory now.
     while ((token = strsep(&str, "\\"))) {

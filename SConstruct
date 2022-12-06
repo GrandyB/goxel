@@ -66,7 +66,7 @@ if env['mode'] == 'debug' and target_os == 'posix':
 # CXXFLAGS  : only C++
 env.Append(
     CFLAGS=['-std=gnu99', '-Wall',
-            '-Wno-unknow-pragma', '-Wno-unknown-warning-option'],
+            '-Wno-unknown-pragma', '-Wno-unknown-warning-option'],
     CXXFLAGS=['-std=gnu++17', '-Wall', '-Wno-narrowing']
 )
 

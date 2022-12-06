@@ -103,7 +103,7 @@ void make_uniq_name(
         LOG_D("Attempting to create a unique name: %s", temp_buf);
         if (!name_exists(user, temp_buf)) {
             LOG_D("Name is unique: %s", temp_buf);
-            strncpy(buf, temp_buf, size);
+            strncpy(buf, temp_buf, size-1);
             return;
         }
     }

@@ -287,14 +287,14 @@ static int on_zoom(const gesture_t *gest, void *user);
 static int on_rotate(const gesture_t *gest, void *user);
 static int on_hover(const gesture_t *gest, void *user);
 
-static void goxel_init_sound()
-{
-#ifdef SOUND
-    sound_init();
-    sound_register("build", assets_get("asset://data/sounds/build.wav", NULL));
-    sound_register("click", assets_get("asset://data/sounds/click.wav", NULL));
-#endif
-}
+// static void goxel_init_sound()
+// {
+// #ifdef SOUND
+//     sound_init();
+//     sound_register("build", assets_get("asset://data/sounds/build.wav", NULL));
+//     sound_register("click", assets_get("asset://data/sounds/click.wav", NULL));
+// #endif
+// }
 
 void goxel_add_gesture(int type, int button,
                        int (*fn)(const gesture_t *gest, void *user))
@@ -312,7 +312,7 @@ KEEPALIVE
 void goxel_init(void)
 {
     shapes_init();
-    goxel_init_sound();
+    //goxel_init_sound();
 
     // Load and set default palette.
     palette_load_all(&goxel.palettes);
@@ -437,8 +437,8 @@ KEEPALIVE
 int goxel_iter(inputs_t *inputs)
 {
     double time = sys_get_time();
-    uint64_t mesh_key;
-    float pitch;
+    //uint64_t mesh_key;
+    //float pitch;
     camera_t *camera = get_camera();
 
     if (!goxel.graphics_initialized)
@@ -459,20 +459,20 @@ int goxel_iter(inputs_t *inputs)
     mat4_copy(camera->proj_mat, goxel.rend.proj_mat);
     gui_iter(inputs);
 
-    if (DEFINED(SOUND) && time - goxel.last_click_time > 0.1) {
-        mesh_key = mesh_get_key(goxel_get_render_mesh(goxel.image));
-        if (goxel.last_mesh_key != mesh_key) {
-            if (goxel.last_mesh_key) {
-                pitch = goxel.painter.mode == MODE_OVER ? 1.0 :
-                        goxel.painter.mode == MODE_SUB ? 0.8 : 1.2;
-                sound_play("build", 0.2, pitch);
-                goxel.last_click_time = time;
-            }
-            goxel.last_mesh_key = mesh_key;
-        }
-    }
+    // if (DEFINED(SOUND) && time - goxel.last_click_time > 0.1) {
+    //     mesh_key = mesh_get_key(goxel_get_render_mesh(goxel.image));
+    //     if (goxel.last_mesh_key != mesh_key) {
+    //         if (goxel.last_mesh_key) {
+    //             pitch = goxel.painter.mode == MODE_OVER ? 1.0 :
+    //                     goxel.painter.mode == MODE_SUB ? 0.8 : 1.2;
+    //             sound_play("build", 0.2, pitch);
+    //             goxel.last_click_time = time;
+    //         }
+    //         goxel.last_mesh_key = mesh_key;
+    //     }
+    // }
 
-    sound_iter();
+    // sound_iter();
     update_window_title();
 
     goxel.frame_count++;

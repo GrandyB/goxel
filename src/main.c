@@ -17,6 +17,7 @@
  */
 
 #include "goxel.h"
+#include "framecap.h"
 #include <getopt.h>
 
 #ifdef GLES2
@@ -24,9 +25,15 @@
 #endif
 #include <GLFW/glfw3.h>
 
+bool shouldRender = true;
 static inputs_t     *g_inputs = NULL;
 static GLFWwindow   *g_window = NULL;
 static float        g_scale = 1;
+
+int g_framebuffSize[2], g_WinSize[2]; // Frame buffer size, window size
+double xpos, ypos;
+float scale;
+inputs_t inputs = {};
 
 static void on_glfw_error(int code, const char *msg)
 {
@@ -150,70 +157,6 @@ static void parse_options(int argc, char **argv, args_t *args)
     }
 }
 
-
-static void loop_function(void)
-{
-    int fb_size[2], win_size[2];
-    int i;
-    double xpos, ypos;
-    float scale;
-
-    if (    !glfwGetWindowAttrib(g_window, GLFW_VISIBLE) ||
-             glfwGetWindowAttrib(g_window, GLFW_ICONIFIED)) {
-        glfwWaitEvents();
-        goto end;
-    }
-    // The input struct gets all the values in framebuffer coordinates,
-    // On retina display, this might not be the same as the window
-    // size.
-    glfwGetWindowSize(g_window, &win_size[0], &win_size[1]);
-
-    glfwGetFramebufferSize(g_window, &fb_size[0], &fb_size[1]);
-    scale = g_scale * (float)fb_size[0] / win_size[0];
-
-    g_inputs->window_size[0] = win_size[0];
-    g_inputs->window_size[1] = win_size[1];
-    g_inputs->scale = scale;
-
-    GL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
-
-    for (i = GLFW_KEY_SPACE; i <= GLFW_KEY_LAST; i++) {
-        g_inputs->keys[i] = glfwGetKey(g_window, i) == GLFW_PRESS;
-    }
-    glfwGetCursorPos(g_window, &xpos, &ypos);
-    vec2_set(g_inputs->touches[0].pos, xpos, ypos);
-    g_inputs->touches[0].down[0] =
-        glfwGetMouseButton(g_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    g_inputs->touches[0].down[1] =
-        glfwGetMouseButton(g_window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
-    g_inputs->touches[0].down[2] =
-        glfwGetMouseButton(g_window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-
-    goxel_iter(g_inputs);
-    goxel_render();
-
-    memset(g_inputs, 0, sizeof(*g_inputs));
-    glfwSwapBuffers(g_window);
-end:
-    glfwPollEvents();
-}
-
-#ifndef __EMSCRIPTEN__
-static void start_main_loop(void (*func)(void))
-{
-    while (!glfwWindowShouldClose(g_window)) {
-        func();
-        if (goxel.quit) break;
-    }
-    glfwTerminate();
-}
-#else
-static void start_main_loop(void (*func)(void))
-{
-    emscripten_set_main_loop(func, 0, 1);
-}
-#endif
-
 #if GLFW_VERSION_MAJOR >= 3 && GLFW_VERSION_MINOR >= 2
 
 static void load_icon(GLFWimage *image, const char *path)
@@ -255,6 +198,19 @@ static void set_window_title(void *user, const char *title)
     glfwSetWindowTitle(g_window, title);
 }
 
+void window_size_cb(GLFWwindow* window, int width, int height) {
+	g_WinSize[0] = width;
+	g_WinSize[1] = height;
+}
+
+void window_iconify_callback(GLFWwindow* window, int iconified) {
+	shouldRender = !iconified;
+}
+
+void window_focus_callback(GLFWwindow* window, int focused) {
+	shouldRender = focused;
+}
+
 int main(int argc, char **argv)
 {
     args_t args = {.scale = 1};
@@ -262,8 +218,6 @@ int main(int argc, char **argv)
     GLFWmonitor *monitor;
     const GLFWvidmode *mode;
     int width = 640, height = 480, ret = 0;
-    inputs_t inputs = {};
-    g_inputs = &inputs;
 
     // Setup sys callbacks.
     sys_callbacks.set_window_title = set_window_title;
@@ -284,39 +238,94 @@ int main(int argc, char **argv)
     assert(window);
     g_window = window;
     glfwMakeContextCurrent(window);
+    glfwSwapInterval(0); // No Swap Interval, Swap ASAP
+	glfwSetInputMode(window, GLFW_STICKY_MOUSE_BUTTONS, false);
+	glfwGetWindowSize(g_window, &g_WinSize[0], &g_WinSize[1]);
+	set_window_icon(window);
     if (!DEFINED(EMSCRIPTEN))
         glfwSetScrollCallback(window, on_scroll);
     glfwSetDropCallback(window, on_drop);
     glfwSetCharCallback(window, on_char);
     glfwSetWindowCloseCallback(window, on_close);
-    glfwSetInputMode(window, GLFW_STICKY_MOUSE_BUTTONS, false);
-    set_window_icon(window);
+    glfwSetWindowSizeCallback(g_window, window_size_cb);
+	glfwSetWindowIconifyCallback(g_window, window_iconify_callback);
+	glfwSetWindowFocusCallback(g_window, window_focus_callback);
 
 #ifdef WIN32
-    glewInit();
+	glewInit();
 #endif
-    goxel_init();
-    // Run the unit tests in debug.
-    if (DEBUG) {
-        tests_run();
-        goxel_reset();
-    }
 
-    if (args.input)
-        goxel_import_file(args.input, NULL);
+	goxel_init();
+	// Run the unit tests in debug.
+	if (DEBUG) {
+		tests_run();
+		goxel_reset();
+	}
+	if (args.input)
+		goxel_import_file(args.input, NULL);
+	if (args.export) {
+		if (!args.input) {
+			LOG_E("trying to export an empty image");
+			ret = -1;
+		} else {
+			ret = goxel_export_to_file(args.export, NULL);
+		}
+		glfwTerminate();
+		goxel_release();
+		return ret;
+	}
 
-    if (args.export) {
-        if (!args.input) {
-            LOG_E("trying to export an empty image");
-            ret = -1;
-        } else {
-            ret = goxel_export_to_file(args.export, NULL);
-        }
-        goto end;
-    }
-    start_main_loop(loop_function);
-end:
-    glfwTerminate();
-    goxel_release();
-    return ret;
+	g_inputs = &inputs;
+	int i;
+
+	framecap_init();
+	while (!glfwWindowShouldClose(g_window)) {
+		framecap_sleep();
+		glfwPollEvents();
+
+		// If Window is Not Visible, Focused Or Iconified Don't Render Anything
+		if (!shouldRender || !glfwGetWindowAttrib(g_window, GLFW_VISIBLE)) {
+			glfwWaitEvents();
+			glfwPollEvents();
+
+			if (goxel.quit) {
+				break;
+			}
+			continue;
+		}
+
+		// The input struct gets all the values in framebuffer coordinates,
+		// On retina display, this might not be the same as the window
+		// size.
+		glfwGetFramebufferSize(window, &g_framebuffSize[0], &g_framebuffSize[1]);
+		scale = g_scale * (float)g_framebuffSize[0] / g_WinSize[0];
+
+		g_inputs->window_size[0] = g_WinSize[0];
+		g_inputs->window_size[1] = g_WinSize[1];
+		g_inputs->scale = scale;
+
+		GL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+
+		for (i = GLFW_KEY_SPACE; i <= GLFW_KEY_LAST; i++) {
+			g_inputs->keys[i] = glfwGetKey(g_window, i) == GLFW_PRESS;
+		}
+
+		glfwGetCursorPos(g_window, &xpos, &ypos);
+		vec2_set(g_inputs->touches[0].pos, xpos, ypos);
+
+		g_inputs->touches[0].down[0] = glfwGetMouseButton(g_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+		g_inputs->touches[0].down[1] = glfwGetMouseButton(g_window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
+		g_inputs->touches[0].down[2] = glfwGetMouseButton(g_window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
+		goxel_iter(g_inputs);
+		goxel_render();
+
+		memset(g_inputs, 0, sizeof(*g_inputs));
+		glfwSwapBuffers(g_window);
+
+		if (goxel.quit) break;
+	}
+	glfwTerminate();
+	goxel_release();
+	return ret;
 }

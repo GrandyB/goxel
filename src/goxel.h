@@ -72,7 +72,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.10.8-aos-0.1f"
+#define GOXEL_VERSION_STR "0.10.8-aos-0.1g"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "original"
 #endif
@@ -547,8 +547,8 @@ typedef struct goxel
     pathtracer_t pathtracer;
 
     // Used to check if the active mesh changed to play tick sound.
-    uint64_t    last_mesh_key;
-    double      last_click_time;
+    // uint64_t    last_mesh_key;
+    // double      last_click_time;
 
     // Some stats for the UI.
     struct {
