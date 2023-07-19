@@ -1,26 +1,21 @@
-
-Goxel
-=====
+# Goxel
 
 This is a fork of Goxel, a voxel editor made by Guillaume Chereau.
-For original features and base code, visit [the official repository](
-https://github.com/guillaumechereau/goxel).
+For original features and base code, visit [the official repository](https://github.com/guillaumechereau/goxel).
 
-Contributions
-------
+## Contributions
+
 "Goxel", the original program, by Guillaume Chereau <guillaume@noctua-software.com> / https://goxel.xyz
 
 "libvxl", the updated means by which Ace of Spades maps can be easily loaded/written to, by ByteBit/xtreme8000 / [repository](https://github.com/xtreme8000/libvxl).
 
-Licence
--------
+## Licence
 
 [goxel](https://github.com/guillaumechereau/goxel) is released under the GNU GPL3 licence.
 
 [libvxl](https://github.com/xtreme8000/libvxl) is released under the MIT license.
 
-Changes in this fork
--------
+## Changes in this fork
 
     - ByteBit's .vxl fix from his fork (xtreme8000)
     - Tools
@@ -48,11 +43,10 @@ Changes in this fork
         - Plane visibility = /
         - FPV Camera = #
 
-Building
---------
+## Building
 
-The building system uses scons.  You can compile in debug with 'scons', and in
-release with 'scons mode=release'.  On Windows, currently possible to build
+The building system uses scons. You can compile in debug with 'scons', and in
+release with 'scons mode=release'. On Windows, currently possible to build
 with [msys2](https://www.msys2.org/) or try prebuilt
 [goxel](https://packages.msys2.org/base/mingw-w64-goxel) package directly.
 The code is in C99, using some gnu extensions, so it does not compile
@@ -62,10 +56,9 @@ In order to compile, after cloning the repo you will need to manually place the 
 
     ./ext_src/libvxl
 
-
 # Linux/BSD
 
-Install dependencies using your package manager.  On Debian/Ubuntu:
+Install dependencies using your package manager. On Debian/Ubuntu:
 
     - scons
     - pkg-config
@@ -90,8 +83,9 @@ Then to build:
 
     make release
 
-Assets
---------
+EDIT: I am using MINGW64 externally, cd'ing into the goxel dir and then doing the above.
+
+## Assets
 
 Asset building is using python 2, and require extra modules to be installed, namely `fontforge` ([download](https://fontforge.org/)) and `PIL.image` ([download](https://github.com/python-pillow/Pillow/releases/tag/8.4.0)).
 
