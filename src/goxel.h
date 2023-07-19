@@ -118,7 +118,7 @@
 
 // I redefine asprintf so that if the function fails, we just crash the
 // application.  I don't see how we can recover from an asprintf fails
-// anyway.
+// anyway
 #define asprintf(...) CHECK(asprintf(__VA_ARGS__) != -1)
 #define vasprintf(...) CHECK(vasprintf(__VA_ARGS__) != -1)
 
