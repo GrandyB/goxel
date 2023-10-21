@@ -32,6 +32,7 @@
 typedef struct {
     int pos[3];
     int color;
+    uint8_t color_rgb[3];
     int vis;
 } voxel_t;
 
@@ -100,7 +101,7 @@ static int kv6_import(image_t *image, const char *path)
     READ(float, file);
     READ(float, file);
     READ(float, file);
-    blklen = READ(uint32_t, file);
+	blklen = READ(uint32_t, file);
     blocks = calloc(blklen, sizeof(*blocks));
     for (i = 0; i < blklen; i++) {
         blocks[i].color = READ(uint32_t, file);
@@ -310,7 +311,7 @@ static bool slab_append(slab_t *slab, voxel_t *vox)
 }
 
 
-static int kvx_export(const image_t *image, const char *path)
+static int export(const image_t *image, const char *path, bool kv6)
 {
     FILE *file;
     uint8_t (*palette)[4];
@@ -401,6 +402,9 @@ static int kvx_export(const image_t *image, const char *path)
         #undef vis_test
         if (!voxel.vis) continue; // No visible faces.
         voxel.color = get_color_index(v, palette, false);
+        voxel.color_rgb[0] = v[0];
+        voxel.color_rgb[1] = v[1];
+        voxel.color_rgb[2] = v[2];
         voxel.pos[0] -= orig[0];
         voxel.pos[1] -= orig[1];
         voxel.pos[2] -= orig[2];
@@ -417,89 +421,139 @@ static int kvx_export(const image_t *image, const char *path)
     // Sort the voxels by xy columns in order they will be in the slabs.
     utarray_sort(voxels, voxel_cmp);
 
-    // Iter the voxels and generates the slabs array.
-    utarray_new(slabs, &slab_icd);
-    utarray_extend_back(slabs); // Add an initial slab.
-    for (vox = (void*)utarray_front(voxels); vox;
-         vox = (void*)utarray_next(voxels, vox))
-    {
-        slab = (void*)utarray_back(slabs);
-        if (slab_append(slab, vox)) continue;
-        // Finished a slab, create a new one.
-        utarray_extend_back(slabs); // Add a new slab.
-        slab = (void*)utarray_back(slabs);
-        slab_append(slab, vox);     // Always works.
-    }
+    if (kv6) {
+        xoffsets = calloc(size[0], sizeof(*xoffsets));
+        xyoffsets = calloc(size[0] * size[1], sizeof(*xyoffsets));
 
-    // Compute xoffsets and xyoffsetx.
-    // Can we do it in a simpler way?
-    xoffsets = calloc(size[0] + 1, sizeof(*xoffsets));
-    xyoffsets = calloc(size[0] * (size[1] + 1), sizeof(*xyoffsets));
-    ofs = (size[0] + 1) * 4 + size[0] * (size[1] + 1) * 2;
-    xoffsets[0] = ofs;
-
-    ofs = (size[0] + 1) * 4 + size[0] * (size[1] + 1) * 2;
-    slab = (void*)utarray_front(slabs);
-    for (x = 0; x < size[0]; x++) {
-        while (slab && slab->pos[0] <= x) {
-            ofs += 3 + slab->len;
-            slab = (void*)utarray_next(slabs, slab);
+        for (vox = (void*)utarray_front(voxels); vox;
+             vox = (void*)utarray_next(voxels, vox)) {
+            xoffsets[vox->pos[0]]++;
+            xyoffsets[vox->pos[1] + vox->pos[0] * size[1]]++;
         }
-        xoffsets[x + 1] = ofs;
-    }
 
-    ofs = (size[0] + 1) * 4 + size[0] * (size[1] + 1) * 2;
-    slab = (void*)utarray_front(slabs);
-    for (x = 0; x < size[0]; x++) {
-        xyoffsets[x * (size[1] + 1)] = 0;
-        for (y = 0; y < size[1]; y++) {
-            while (slab && slab->pos[0] <= x && slab->pos[1] <= y) {
+        fwrite("Kvxl", 1, 4, file);
+
+        WRITE(uint32_t, size[0], file);
+        WRITE(uint32_t, size[1], file);
+        WRITE(uint32_t, size[2], file);
+
+        WRITE(float, size[0] / 2.0F, file);
+        WRITE(float, size[1] / 2.0F, file);
+        WRITE(float, size[2] / 2.0F, file);
+
+        WRITE(uint32_t, utarray_len(voxels), file);
+
+        for (vox = (void*)utarray_front(voxels); vox;
+             vox = (void*)utarray_next(voxels, vox)) {
+            WRITE(uint8_t, vox->color_rgb[2], file);
+            WRITE(uint8_t, vox->color_rgb[1], file);
+            WRITE(uint8_t, vox->color_rgb[0], file);
+            WRITE(uint8_t, 0x80, file);
+            WRITE(uint16_t, vox->pos[2], file);
+            WRITE(uint8_t, vox->vis, file);
+            WRITE(uint8_t, 0xFF, file); // TODO: voxel normal
+        }
+
+        for (i = 0; i < size[0]; i++) {
+            WRITE(uint32_t, xoffsets[i], file);
+        }
+
+        for (i = 0; i < size[0] * size[1]; i++)
+            WRITE(uint16_t, xyoffsets[i], file);
+
+        fwrite("SPal", 1, 4, file);
+
+        for (i = 0; i < 256; i++) {
+            WRITE(uint8_t, palette[i][0] / 4, file);
+            WRITE(uint8_t, palette[i][1] / 4, file);
+            WRITE(uint8_t, palette[i][2] / 4, file);
+        }
+    } else {
+        // Iter the voxels and generates the slabs array.
+        utarray_new(slabs, &slab_icd);
+        utarray_extend_back(slabs); // Add an initial slab.
+        for (vox = (void*)utarray_front(voxels); vox;
+             vox = (void*)utarray_next(voxels, vox))
+        {
+            slab = (void*)utarray_back(slabs);
+            if (slab_append(slab, vox)) continue;
+            // Finished a slab, create a new one.
+            utarray_extend_back(slabs); // Add a new slab.
+            slab = (void*)utarray_back(slabs);
+            slab_append(slab, vox);     // Always works.
+        }
+
+        // Compute xoffsets and xyoffsetx.
+        // Can we do it in a simpler way?
+        xoffsets = calloc(size[0] + 1, sizeof(*xoffsets));
+        xyoffsets = calloc(size[0] * (size[1] + 1), sizeof(*xyoffsets));
+        ofs = (size[0] + 1) * 4 + size[0] * (size[1] + 1) * 2;
+        xoffsets[0] = ofs;
+
+        ofs = (size[0] + 1) * 4 + size[0] * (size[1] + 1) * 2;
+        slab = (void*)utarray_front(slabs);
+        for (x = 0; x < size[0]; x++) {
+            while (slab && slab->pos[0] <= x) {
                 ofs += 3 + slab->len;
                 slab = (void*)utarray_next(slabs, slab);
             }
-            xyoffsets[x * (size[1] + 1) + y + 1] = ofs - xoffsets[x];
+            xoffsets[x + 1] = ofs;
         }
+
+        ofs = (size[0] + 1) * 4 + size[0] * (size[1] + 1) * 2;
+        slab = (void*)utarray_front(slabs);
+        for (x = 0; x < size[0]; x++) {
+            xyoffsets[x * (size[1] + 1)] = 0;
+            for (y = 0; y < size[1]; y++) {
+                while (slab && slab->pos[0] <= x && slab->pos[1] <= y) {
+                    ofs += 3 + slab->len;
+                    slab = (void*)utarray_next(slabs, slab);
+                }
+                xyoffsets[x * (size[1] + 1) + y + 1] = ofs - xoffsets[x];
+            }
+        }
+
+        // Now we have all the data ready to be saved.
+        // The byte size is the last x offset plus the header size (24).
+        WRITE(uint32_t, xoffsets[size[0]] + 24, file);
+        WRITE(uint32_t, size[0], file);
+        WRITE(uint32_t, size[1], file);
+        WRITE(uint32_t, size[2], file);
+
+        pivot[0] = -orig[0] + (size[0] % 2) / 2.;
+        pivot[1] = -orig[1] + (size[1] % 2) / 2.;
+        pivot[2] = size[2] - orig[2];
+
+        WRITE(int32_t, (int)(pivot[0] * 256), file);
+        WRITE(int32_t, (int)(pivot[1] * 256), file);
+        WRITE(int32_t, (int)(pivot[2] * 256), file);
+
+        for (i = 0; i < size[0] + 1; i++)
+            WRITE(uint32_t, xoffsets[i], file);
+        for (i = 0; i < size[0] * (size[1] + 1); i++)
+            WRITE(uint16_t, xyoffsets[i], file);
+
+        for (slab = (void*)utarray_front(slabs); slab;
+             slab = (void*)utarray_next(slabs, slab))
+        {
+            assert(slab->pos[2] >= 0);
+            assert(slab->pos[2] <= 255);
+            assert(slab->pos[2] + slab->len - 1 < size[2]);
+            WRITE(uint8_t, slab->pos[2], file);
+            WRITE(uint8_t, slab->len, file);
+            WRITE(uint8_t, slab->vis, file);
+            fwrite(slab->colors, 1, slab->len, file);
+        }
+
+        for (i = 0; i < 256; i++) {
+            WRITE(uint8_t, palette[i][0] / 4, file);
+            WRITE(uint8_t, palette[i][1] / 4, file);
+            WRITE(uint8_t, palette[i][2] / 4, file);
+        }
+
+        utarray_free(slabs);
     }
 
-    // Now we have all the data ready to be saved.
-    // The byte size is the last x offset plus the header size (24).
-    WRITE(uint32_t, xoffsets[size[0]] + 24, file);
-    WRITE(uint32_t, size[0], file);
-    WRITE(uint32_t, size[1], file);
-    WRITE(uint32_t, size[2], file);
-
-    pivot[0] = -orig[0] + (size[0] % 2) / 2.;
-    pivot[1] = -orig[1] + (size[1] % 2) / 2.;
-    pivot[2] = size[2] - orig[2];
-
-    WRITE(int32_t, (int)(pivot[0] * 256), file);
-    WRITE(int32_t, (int)(pivot[1] * 256), file);
-    WRITE(int32_t, (int)(pivot[2] * 256), file);
-
-    for (i = 0; i < size[0] + 1; i++)
-        WRITE(uint32_t, xoffsets[i], file);
-    for (i = 0; i < size[0] * (size[1] + 1); i++)
-        WRITE(uint16_t, xyoffsets[i], file);
-
-    for (slab = (void*)utarray_front(slabs); slab;
-         slab = (void*)utarray_next(slabs, slab))
-    {
-        assert(slab->pos[2] >= 0);
-        assert(slab->pos[2] <= 255);
-        assert(slab->pos[2] + slab->len - 1 < size[2]);
-        WRITE(uint8_t, slab->pos[2], file);
-        WRITE(uint8_t, slab->len, file);
-        WRITE(uint8_t, slab->vis, file);
-        fwrite(slab->colors, 1, slab->len, file);
-    }
-
-    for (i = 0; i < 256; i++) {
-        WRITE(uint8_t, palette[i][0] / 4, file);
-        WRITE(uint8_t, palette[i][1] / 4, file);
-        WRITE(uint8_t, palette[i][2] / 4, file);
-    }
-
-    utarray_free(slabs);
     utarray_free(voxels);
     free(xoffsets);
     free(xyoffsets);
@@ -508,10 +562,19 @@ static int kvx_export(const image_t *image, const char *path)
     return 0;
 }
 
+static int kvx_export(const image_t* image, const char* path) {
+    return export(image, path, false);
+}
+
+static int kv6_export(const image_t* image, const char* path) {
+    return export(image, path, true);
+}
+
 FILE_FORMAT_REGISTER(kv6,
     .name = "kv6",
     .ext = "slab\0*.kv6\0",
     .import_func = kv6_import,
+    .export_func = kv6_export,
 )
 
 FILE_FORMAT_REGISTER(kvx,
