@@ -24,6 +24,7 @@
 
 #include "goxel.h"
 #include "file_format.h"
+#include "voxlap_normals.h"
 
 /*
  * Structure that represents a single voxel and visible faces.
@@ -32,8 +33,9 @@
 typedef struct {
     int pos[3];
     int color;
-    uint8_t color_rgb[3];
     int vis;
+    uint8_t color_rgb[3];
+    uint8_t normal;
 } voxel_t;
 
 /*
@@ -310,6 +312,7 @@ static bool slab_append(slab_t *slab, voxel_t *vox)
     return true;
 }
 
+static bool export_kv6_palette = false;
 
 static int export(const image_t *image, const char *path, bool kv6)
 {
@@ -399,12 +402,60 @@ static int export(const image_t *image, const char *path, bool kv6)
         if (vis_test( 0,  0, +1)) voxel.vis |= 16;
         if (vis_test( 0,  0, -1)) voxel.vis |= 32;
 
-        #undef vis_test
         if (!voxel.vis) continue; // No visible faces.
         voxel.color = get_color_index(v, palette, false);
         voxel.color_rgb[0] = v[0];
         voxel.color_rgb[1] = v[1];
         voxel.color_rgb[2] = v[2];
+
+        if (kv6) {
+            // this computes a normal index quite similar to Slab6
+            const int box_size = 3;
+            float normal[3] = {0.0F, 0.0F, 0.0F};
+
+            for (int x = -box_size; x <= box_size; x++) {
+                for (int y = -box_size; y <= box_size; y++) {
+                    for (int z = -box_size; z <= box_size; z++) {
+                        if (x * x + y * y + z * z
+                                < (box_size + 1) * (box_size + 1)
+                            && vis_test(x, y, z)) {
+                            normal[0] += x;
+                            normal[1] += y;
+                            normal[2] += z;
+                        }
+                    }
+                }
+            }
+
+            float len = normal[0] * normal[0] + normal[1] * normal[1]
+                + normal[2] * normal[2];
+
+            if (len < 32.0F * 32.0F) {
+                voxel.normal = 255;
+            } else {
+                normal[0] /= len;
+                normal[1] /= len;
+                normal[2] /= len;
+
+                uint8_t best_entry;
+                float best_error;
+
+                for (int k = 0; k < 256; k++) {
+                    float angle = -(kv6_normals[k][0] * normal[0]
+                                    + kv6_normals[k][1] * normal[1]
+                                    + kv6_normals[k][2] * normal[2]);
+
+                    if (k == 0 || angle < best_error) {
+                        best_error = angle;
+                        best_entry = k;
+                    }
+                }
+
+                voxel.normal = best_entry;
+            }
+        }
+
+        #undef vis_test
         voxel.pos[0] -= orig[0];
         voxel.pos[1] -= orig[1];
         voxel.pos[2] -= orig[2];
@@ -451,7 +502,7 @@ static int export(const image_t *image, const char *path, bool kv6)
             WRITE(uint8_t, 0x80, file);
             WRITE(uint16_t, vox->pos[2], file);
             WRITE(uint8_t, vox->vis, file);
-            WRITE(uint8_t, 0xFF, file); // TODO: voxel normal
+            WRITE(uint8_t, vox->normal, file);
         }
 
         for (i = 0; i < size[0]; i++) {
@@ -461,12 +512,14 @@ static int export(const image_t *image, const char *path, bool kv6)
         for (i = 0; i < size[0] * size[1]; i++)
             WRITE(uint16_t, xyoffsets[i], file);
 
-        fwrite("SPal", 1, 4, file);
+        if (export_kv6_palette) {
+            fwrite("SPal", 1, 4, file);
 
-        for (i = 0; i < 256; i++) {
-            WRITE(uint8_t, palette[i][0] / 4, file);
-            WRITE(uint8_t, palette[i][1] / 4, file);
-            WRITE(uint8_t, palette[i][2] / 4, file);
+            for (i = 0; i < 256; i++) {
+                WRITE(uint8_t, palette[i][0] / 4, file);
+                WRITE(uint8_t, palette[i][1] / 4, file);
+                WRITE(uint8_t, palette[i][2] / 4, file);
+            }
         }
     } else {
         // Iter the voxels and generates the slabs array.
@@ -570,9 +623,15 @@ static int kv6_export(const image_t* image, const char* path) {
     return export(image, path, true);
 }
 
+static void kv6_export_gui() {
+    gui_checkbox("Export palette suggestion", &export_kv6_palette,
+                 "Not necessary and could result in messed up colors in Slab6");
+}
+
 FILE_FORMAT_REGISTER(kv6,
     .name = "kv6",
     .ext = "slab\0*.kv6\0",
+    .export_gui = kv6_export_gui,
     .import_func = kv6_import,
     .export_func = kv6_export,
 )
