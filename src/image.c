@@ -50,7 +50,7 @@
 */
 
 
-static bool material_name_exists(void *user, const char *name)
+bool material_name_exists(void *user, const char *name)
 {
     const image_t *img = user;
     const material_t *m;
@@ -60,7 +60,7 @@ static bool material_name_exists(void *user, const char *name)
     return false;
 }
 
-static bool layer_name_exists(void *user, const char *name)
+bool layer_name_exists(void *user, const char *name)
 {
     const image_t *img = user;
     const layer_t *layer;
@@ -70,7 +70,7 @@ static bool layer_name_exists(void *user, const char *name)
     return false;
 }
 
-static bool camera_name_exists(void *user, const char *name)
+bool camera_name_exists(void *user, const char *name)
 {
     const image_t *img = user;
     const camera_t *cam;
@@ -80,7 +80,7 @@ static bool camera_name_exists(void *user, const char *name)
     return false;
 }
 
-static void make_uniq_name(
+void make_uniq_name(
         char *buf, int size, const char *base, void *user,
         bool (*name_exists)(void *user, const char *name))
 {
@@ -97,13 +97,21 @@ static void make_uniq_name(
         }
     }
 
-    for (;; i++) {
-        snprintf(buf, size, "%.*s.%d", len, base, i);
-        if (!name_exists(user, buf)) break;
+    char temp_buf[size];
+    strncpy(temp_buf, buf, size);
+    for (;i < 999; i++) {
+        snprintf(temp_buf, size, "%.*s.%d", len, base, i);
+        LOG_D("Attempting to create a unique name: %s", temp_buf);
+        if (!name_exists(user, temp_buf)) {
+            LOG_D("Name is unique: %s", temp_buf);
+            strncpy(buf, temp_buf, size-1);
+            return;
+        }
     }
+    LOG_E("Error: unable to create a unique name, please report to the developer");
 }
 
-static layer_t *img_get_layer(const image_t *img, int id)
+layer_t *img_get_layer(const image_t *img, int id)
 {
     layer_t *layer;
     if (id == 0) return NULL;
@@ -429,6 +437,32 @@ void image_merge_visible_layers(image_t *img)
     if (last) img->active_layer = last;
 }
 
+void image_merge_layer_down(image_t *img) {
+    assert(img);
+    layer_t *active_layer = img->active_layer;
+    layer_t *previous = NULL, *layer = NULL;
+    bool next = false;
+    DL_FOREACH(img->layers, layer) {
+        next = layer == active_layer;
+        if (next && previous != NULL) {
+            // Force the layer into view if not already;
+            previous->visible = true;
+            image_unclone_layer(img, previous);
+            image_unclone_layer(img, layer);
+            SWAP(layer->volume, previous->volume);
+            volume_merge(layer->volume, previous->volume, MODE_OVER, NULL);
+            memcpy(&layer->name, previous->name, sizeof(layer->name));
+            DL_DELETE(img->layers, previous);
+            layer_delete(previous);
+            break;
+        } else if (next) {
+            // We're on the active layer but there's no previous; no merging to do
+            break;
+        }
+        previous = layer;
+    }
+   img->active_layer = active_layer;
+}
 
 camera_t *image_add_camera(image_t *img, camera_t *cam)
 {
@@ -829,6 +863,17 @@ ACTION_REGISTER(img_select_parent_layer,
     .help = "Select the parent of a layer",
     .cfunc = a_img_select_parent_layer,
     .flags = ACTION_TOUCH_IMAGE,
+)
+
+static void a_img_merge_layer_down(void)
+{
+    image_merge_layer_down(goxel.image);
+}
+ACTION_REGISTER(img_merge_layer_down,
+    .help = "Merge layer down",
+    .cfunc = a_img_merge_layer_down,
+    .flags = ACTION_TOUCH_IMAGE,
+    .icon = ICON_MENU,
 )
 
 static void a_img_merge_visible_layers(void)

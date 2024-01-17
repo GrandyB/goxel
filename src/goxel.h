@@ -340,6 +340,17 @@ bool str_startswith(const char *s1, const char *s2);
 bool str_replace_ext(const char *str, const char *new_ext,
                      char *out, size_t out_size);
 
+/*
+ * Function get_file_name_from_path
+ * Return the last split of a file path.
+ */
+char* get_file_name_from_path(const char *path);
+
+/* Debug log a [4][4] float matrix. Looking at YOU, view matrices. */
+void debug_log_44_matrix(float mat[4][4]);
+
+/** Get the current unix time in seconds. */
+double get_unix_time(void);
 
 /*
  * Function: unproject
@@ -503,7 +514,9 @@ typedef struct goxel
     cursor_t   cursor;
 
     tool_t     *tool;
-    float      tool_radius;
+    float      radius_x;
+    float      radius_y;
+    float      radius_z;
     bool       pathtrace; // Render pathtraced mode.
 
     // Some state for the tool iter functions.

@@ -28,7 +28,7 @@ static int png_export(const image_t *img, const char *path, int w, int h)
     LOG_I("Exporting to file %s", path);
     buf = calloc(w * h, bpp);
     goxel_render_to_buf(buf, w, h, bpp);
-    img_write(buf, w, h, bpp, path);
+    img_write(buf, w, h, bpp, png, path);
     free(buf);
     return 0;
 }

@@ -36,7 +36,7 @@ int tool_color_picker_iter(tool_t *tool, const painter_t *painter,
     curs->snap_mask = SNAP_VOLUME;
     curs->snap_offset = -0.5;
 
-    goxel_set_help_text("Click on a voxel to pick the color");
+    goxel_set_help_text("Click on a voxel to pick the color; TIP: You can also hold CTRL when using a placement tool to quick-switch into the picker!");
     if (!curs->snaped) return 0;
     volume_get_at(volume, NULL, pi, color);
     color[3] = 255;

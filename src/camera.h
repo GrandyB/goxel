@@ -51,7 +51,13 @@ struct camera
     float  dist;  // Rotation distance.
     float  fovy;
     float  aspect;
-    float  mat[4][4];
+    float  mat[4][4]; // camera x/y/z position is stored at [3][0]/[3][1]/[3][2]
+
+    float  fovy_fpv; // FOV to use during fpv.
+    bool   fpv;   // Set to true for first person view.
+    float  speed; // Camera move speed.
+    bool   prev_ortho;   // Remember if camera was previously in ortho mode.
+    float  prev_dist; // Remember previous distance (set to 0 during fpv).
 
     // Auto computed from other values:
     float view_mat[4][4];    // Model to view transformation.
@@ -123,5 +129,18 @@ void camera_fit_box(camera_t *camera, const float box[4][4]);
 uint32_t camera_get_key(const camera_t *camera);
 
 void camera_turntable(camera_t *camera, float rz, float rx);
+
+/* 
+ * First person strafing/camera motion.
+ * rz: up is +ve, down is -ve.
+ * ry: forward is +ve, backwards is -ve.
+ * rx - right is +ve, left is -ve.
+ */
+void camera_move(camera_t *camera, float rx, float ry, float rz);
+
+/*
+ * Perform some property caching and edits post switching fpv on/off.
+*/
+void post_toggle_fpv(camera_t *camera);
 
 #endif // CAMERA_H

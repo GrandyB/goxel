@@ -613,12 +613,6 @@ static void gui_iter(const inputs_t *inputs)
         action_exec2(ACTION_layer_clear);
 
     if (!io.WantCaptureKeyboard) {
-        float last_tool_radius = goxel.tool_radius;
-        if (isCharPressed('[')) goxel.tool_radius -= 0.5;
-        if (isCharPressed(']')) goxel.tool_radius += 0.5;
-        if (goxel.tool_radius != last_tool_radius) {
-            goxel.tool_radius = clamp(goxel.tool_radius, 0.5, 64);
-        }
         actions_iter(check_action_shortcut, NULL);
     }
     ImGui::EndFrame();
@@ -1087,7 +1081,7 @@ void gui_spacing(int w)
     ImGui::SameLine();
 }
 
-static bool color_picker(const char *label, uint8_t color[4])
+static bool color_picker(const char *label, uint8_t color[4], bool show_diff)
 {
     float colorf[4] = {color[0] / 255.f,
                        color[1] / 255.f,
@@ -1107,19 +1101,21 @@ static bool color_picker(const char *label, uint8_t color[4])
         color[2] = colorf[2] * 255;
         color[3] = colorf[3] * 255;
     }
-    ImGui::SameLine();
-    ImGui::BeginGroup();
-    ImGui::Text("Current");
-    ImGui::ColorButton("##current", color,
-            ImGuiColorEditFlags_NoPicker, ImVec2(60, 40));
-    ImGui::Text("Original");
-    if (ImGui::ColorButton("##previous", backup_color,
-                ImGuiColorEditFlags_NoPicker, ImVec2(60, 40))) {
-        memcpy(color, backup_color, sizeof(backup_color));
-        ret = true;
+    if (show_diff) {
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::Text("Current");
+        ImGui::ColorButton("##current", color,
+                ImGuiColorEditFlags_NoPicker, ImVec2(60, 40));
+        ImGui::Text("Original");
+        if (ImGui::ColorButton("##previous", backup_color,
+                    ImGuiColorEditFlags_NoPicker, ImVec2(60, 40))) {
+            memcpy(color, backup_color, sizeof(backup_color));
+            ret = true;
+        }
+        ImGui::EndGroup();
     }
 
-    ImGui::EndGroup();
     return ret;
 }
 
@@ -1134,7 +1130,7 @@ bool gui_color(const char *label, uint8_t color[4])
     }
 
     if (ImGui::BeginPopupContextItem("GoxelPicker")) {
-        if (color_picker(label, color)) {
+        if (color_picker(label, color, true)) {
             ret = true;
         }
         ImGui::EndPopup();
@@ -1162,6 +1158,10 @@ bool gui_color_small(const char *label, uint8_t color[4])
         color[3] = colorf[3] * 255;
     }
     return ret;
+}
+
+bool gui_color_inline(const char *label, uint8_t color[4]) {
+    return color_picker(label, color, false);
 }
 
 bool gui_color_small_f3(const char *label, float color[3])

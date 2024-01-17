@@ -22,12 +22,14 @@
 camera_t *camera_new(const char *name)
 {
     camera_t *cam = calloc(1, sizeof(*cam));
-    cam->ref = 1;
     if (name)
         strncpy(cam->name, name, sizeof(cam->name) - 1);
     mat4_set_identity(cam->mat);
-    cam->dist = 128;
+    cam->dist = 96;
     cam->aspect = 1;
+    cam->speed = 10;
+    cam->fovy = 40.;
+    cam->fovy_fpv = 100.;
     mat4_itranslate(cam->mat, 0, 0, cam->dist);
     camera_turntable(cam, M_PI / 4, M_PI / 4);
     return cam;
@@ -53,6 +55,12 @@ void camera_set(camera_t *cam, const camera_t *other)
 {
     cam->ortho = other->ortho;
     cam->dist = other->dist;
+    cam->fpv = other->fpv;
+    cam->speed = other->speed;
+    cam->fovy = other->fovy;
+    cam->fovy_fpv = other->fovy_fpv;
+    cam->prev_dist = other->prev_dist;
+    cam->prev_ortho = other->prev_ortho;
     mat4_copy(other->mat, cam->mat);
 }
 
@@ -98,7 +106,6 @@ void camera_update(camera_t *camera)
     float size;
     float clip_near, clip_far;
 
-    camera->fovy = 20.;
     mat4_invert(camera->mat, camera->view_mat);
     compute_clip(camera->view_mat, &clip_near, &clip_far);
     if (camera->ortho) {
@@ -109,7 +116,8 @@ void camera_update(camera_t *camera)
                 clip_near, clip_far);
     } else {
         mat4_perspective(camera->proj_mat,
-                camera->fovy, camera->aspect, clip_near, clip_far);
+                (camera->fpv) ? camera->fovy_fpv : camera->fovy,
+                camera->aspect, clip_near, clip_far);
     }
 }
 
@@ -167,7 +175,10 @@ uint32_t camera_get_key(const camera_t *cam)
     key = XXH32(&cam->name, sizeof(cam->name), key);
     key = XXH32(&cam->ortho, sizeof(cam->ortho), key);
     key = XXH32(&cam->dist, sizeof(cam->dist), key);
-    key = XXH32(&cam->mat, sizeof(cam->mat), key);
+    key = XXH32(&cam->mat, sizeof(cam->mat), key);    
+    key = XXH32(&cam->fpv, sizeof(cam->fpv), key);
+    key = XXH32(&cam->fovy, sizeof(cam->fovy), key);
+    key = XXH32(&cam->fovy_fpv, sizeof(cam->fovy_fpv), key);
     return key;
 }
 
@@ -175,9 +186,9 @@ void camera_turntable(camera_t *camera, float rz, float rx)
 {
     float center[3], mat[4][4] = MAT4_IDENTITY;
 
-    mat4_mul_vec3(camera->mat, VEC(0, 0, -camera->dist), center);
-    mat4_itranslate(mat, center[0], center[1], center[2]);
-    mat4_irotate(mat, rz, 0, 0, 1);
+    mat4_mul_vec3(camera->mat, VEC(0, 0, -camera->dist), center);   // center (target) = 'dist' units away from camera in current direction
+    mat4_itranslate(mat, center[0], center[1], center[2]);          // move camera to the target
+    mat4_irotate(mat, rz, 0, 0, 1);                                 // rotate the camera vertically around the center point
     mat4_itranslate(mat, -center[0], -center[1], -center[2]);
     mat4_imul(mat, camera->mat);
     mat4_copy(mat, camera->mat);
@@ -185,4 +196,43 @@ void camera_turntable(camera_t *camera, float rz, float rx)
     mat4_itranslate(camera->mat, 0, 0, -camera->dist);
     mat4_irotate(camera->mat, rx, 1, 0, 0);
     mat4_itranslate(camera->mat, 0, 0, camera->dist);
+}
+
+/* First person move
+ * rz: up is +ve, down is -ve.
+ * ry: forward is +ve, backwards is -ve.
+ * rx - right is +ve, left is -ve.
+ */
+void camera_move(camera_t *cam, float rx, float ry, float rz)
+{
+    float mat[4][4];
+    mat4_copy(cam->mat, mat);
+
+    float multiplier = cam->speed / 10;
+
+    mat4_itranslate(mat, 0, 0, ry*multiplier);
+    mat4_itranslate(mat, rx*multiplier, 0, 0);
+
+    // in mat[4][4], camera x/y/z position is [3][0]/[3][1]/[3][2]
+    // z is just up/down in world space
+    mat[3][2] += rz*multiplier;
+
+    mat4_copy(mat, cam->mat);
+}
+
+/* Perform some property caching and edits post switching fpv on/off. */
+void post_toggle_fpv(camera_t *cam)
+{
+    if (cam->fpv) {
+        // If switching to first person
+        // Stash current dist and replace with 0 for duration
+        cam->prev_dist = cam->dist;
+        cam->dist = 0;
+        cam->prev_ortho = cam->ortho;
+        cam->ortho = false;
+    } else {
+        // Switching off fpv, restore previous dist if applicable
+        cam->dist = cam->prev_dist;
+        cam->ortho = cam->prev_ortho;
+    }
 }

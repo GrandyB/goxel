@@ -263,7 +263,7 @@ void save_to_file(const image_t *img, const char *path)
     int nb_blocks, index, size, bpos[3], material_idx;
     uint64_t uid;
     FILE *out;
-    uint8_t *png, *preview;
+    uint8_t *png_file, *preview;
     camera_t *camera;
     material_t *material;
     volume_iterator_t iter;
@@ -285,10 +285,10 @@ void save_to_file(const image_t *img, const char *path)
 
     preview = calloc(128 * 128, 4);
     goxel_render_to_buf(preview, 128, 128, 4);
-    png = img_write_to_mem(preview, 128, 128, 4, &size);
-    chunk_write_all(out, "PREV", (char*)png, size);
+    png_file = img_write_to_mem(preview, 128, 128, 4, &size, png);
+    chunk_write_all(out, "PREV", (char*)png_file, size);
     free(preview);
-    free(png);
+    free(png_file);
 
     // Add all the blocks data into the hash table.
     index = 0;
@@ -309,9 +309,9 @@ void save_to_file(const image_t *img, const char *path)
 
     // Write all the blocks chunks.
     HASH_ITER(hh, blocks_table, data, data_tmp) {
-        png = img_write_to_mem((uint8_t*)data->v, 64, 64, 4, &size);
-        chunk_write_all(out, "BL16", (char*)png, size);
-        free(png);
+        png_file = img_write_to_mem((uint8_t*)data->v, 64, 64, 4, &size, png);
+        chunk_write_all(out, "BL16", (char*)png_file, size);
+        free(png_file);
     }
 
     // Write all the materials.
@@ -438,7 +438,7 @@ int gox_iter_infos(const char *path,
 {
     FILE *in;
     chunk_t c;
-    uint8_t *png;
+    uint8_t *png_file;
     char magic[4];
 
     in = fopen(path, "rb");
@@ -451,10 +451,10 @@ int gox_iter_infos(const char *path,
         if (strncmp(c.type, "BL16", 4) == 0) break;
         if (strncmp(c.type, "LAYR", 4) == 0) break;
         if (strncmp(c.type, "PREV", 4) == 0) {
-            png = calloc(1, c.length);
-            chunk_read(&c, in, (char*)png, c.length, __LINE__);
-            callback(c.type, c.length, png, user);
-            free(png);
+            png_file = calloc(1, c.length);
+            chunk_read(&c, in, (char*)png_file, c.length, __LINE__);
+            callback(c.type, c.length, png_file, user);
+            free(png_file);
         } else {
             // Ignore other blocks.
             chunk_read(&c, in, NULL, c.length, __LINE__);
@@ -504,7 +504,7 @@ int load_from_file(const char *path, bool replace)
     uint8_t *voxel_data;
     int nb_blocks;
     int w, h, bpp;
-    uint8_t *png;
+    uint8_t *png_file;
     chunk_t c;
     int i, index, version, x, y, z, material_idx = 0;
     int  dict_value_size;
@@ -551,10 +551,10 @@ int load_from_file(const char *path, bool replace)
 
     while (chunk_read_start(&c, in)) {
         if (strncmp(c.type, "BL16", 4) == 0) {
-            png = calloc(1, c.length);
-            chunk_read(&c, in, (char*)png, c.length, __LINE__);
+            png_file = calloc(1, c.length);
+            chunk_read(&c, in, (char*)png_file, c.length, __LINE__);
             bpp = 4;
-            voxel_data = img_read_from_mem((void*)png, c.length, &w, &h, &bpp);
+            voxel_data = img_read_from_mem((void*)png_file, c.length, &w, &h, &bpp);
             assert(w == 64 && h == 64 && bpp == 4);
             data = calloc(1, sizeof(*data));
             data->v = calloc(1, 64 * 64 * 4);
@@ -562,7 +562,7 @@ int load_from_file(const char *path, bool replace)
             data->uid = ++uid;
             HASH_ADD(hh, blocks_table, uid, sizeof(data->uid), data);
             free(voxel_data);
-            free(png);
+            free(png_file);
 
         } else if (strncmp(c.type, "LAYR", 4) == 0) {
             layer = image_add_layer(goxel.image, NULL);

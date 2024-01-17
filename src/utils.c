@@ -95,6 +95,29 @@ char *read_file(const char *path, int *size)
     return ret;
 }
 
+char *strsep(char **stringp, const char *delim) {
+    if (*stringp == NULL) { return NULL; }
+    char *token_start = *stringp;
+    *stringp = strpbrk(token_start, delim);
+    if (*stringp) {
+        **stringp = '\0';
+        (*stringp)++;
+    }
+    return token_start;
+}
+
+char* get_file_name_from_path(const char *path) {
+    char *token, *str, *tofree, *toRet = "Layer.";
+
+    tofree = str = strdup(path);  // We own str's memory now.
+    while ((token = strsep(&str, "\\"))) {
+        //LOG_D("Token: %s", token);
+        toRet = token;
+    };
+    free(tofree);
+    return strsep(&toRet, ".");
+}
+
 bool str_endswith(const char *str, const char *end)
 {
     if (!str || !end) return false;
@@ -203,4 +226,11 @@ int utf_16_to_8(const wchar_t *in16, char *out8, size_t size8)
     *out8 = *out8end = 0;
     if (*in16) err = -1;
     return err;
+}
+
+void debug_log_44_matrix(float mat[4][4]) {
+        LOG_D("[%f][%f][%f][%f]", mat[0][0], mat[0][1], mat[0][2], mat[0][3]);
+        LOG_D("[%f][%f][%f][%f]", mat[1][0], mat[1][1], mat[1][2], mat[1][3]);
+        LOG_D("[%f][%f][%f][%f]", mat[2][0], mat[2][1], mat[2][2], mat[2][3]);
+        LOG_D("[%f][%f][%f][%f]", mat[3][0], mat[3][1], mat[3][2], mat[3][3]);
 }

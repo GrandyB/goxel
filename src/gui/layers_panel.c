@@ -68,6 +68,7 @@ void gui_layers_panel(void)
     gui_row_begin(0);
     gui_action_button(ACTION_img_new_layer, NULL, 0);
     gui_action_button(ACTION_img_del_layer, NULL, 0);
+    gui_action_button(ACTION_img_merge_layer_down, NULL, 0);
     gui_action_button(ACTION_img_move_layer_up, NULL, 0);
     gui_action_button(ACTION_img_move_layer_down, NULL, 0);
     gui_row_end();

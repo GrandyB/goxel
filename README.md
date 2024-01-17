@@ -55,6 +55,31 @@ Features
 - Export to obj, pyl, png, magica voxel, qubicle.
 - Ray tracing.
 
+Changes in this fork
+--------
+
+    - ByteBit's .vxl fix from his fork (xtreme8000)
+    - Tools
+        - Brush can set width/height/depth separately
+    - Colours
+        - Colour picker also integrated directly into the tools panel for tools like the brush
+    - Camera
+        - First person camera (#)
+            - Arrow keys for forward/back/left/right, Page Up/Down for up/down, RMB or MMB for look
+            - Speed
+            - FOV
+            - Manual X/Y/Z
+        - Rotational camera (default) FOV setting (and its base value is higher than it was before)
+    - Import/Export
+        - Heightmap export .bmp file in greyscale, z0 = black, (zN = 8 + ((zN-1) * 4) = max 64 height
+        - Colourmap export .bmp file
+        - voxlap import (e.g. kvx) no longer retains bounding box bg on import
+        - Imports now automatically add to a new layer, which is named after the file
+    - Hotkeys
+        - Move plane up/down = < >
+        - Plane visibility = /
+        - FPV Camera = #
+
 
 Usage
 -----

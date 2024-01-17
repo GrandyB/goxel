@@ -38,11 +38,13 @@ enum {
     X(img_clone_layer),
     X(img_unclone_layer),
     X(img_select_parent_layer),
+    X(img_merge_layer_down),
     X(img_merge_visible_layers),
     X(img_new_camera),
     X(img_del_camera),
     X(img_move_camera_up),
     X(img_move_camera_down),
+    X(toggle_first_person_camera),
     X(img_image_layer_to_volume),
     X(img_new_shape_layer),
     X(img_new_material),
@@ -74,6 +76,13 @@ enum {
     X(save_as),
     X(save),
     X(reset),
+
+    X(move_plane_up),
+    X(move_plane_down),
+    X(toggle_plane_visible),
+
+    X(tool_size_increase),
+    X(tool_size_decrease),
 
     X(tool_set_brush),
     X(tool_set_laser),

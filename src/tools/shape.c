@@ -127,8 +127,8 @@ static int iter(tool_t *tool, const painter_t *painter,
 static int gui(tool_t *tool)
 {
     tool_shape_t *tool_shape = (void*)tool;
-    tool_gui_color();
     tool_gui_smoothness();
+    tool_gui_color();
     gui_checkbox("Planar", &tool_shape->planar, "Stay on original plane");
     tool_gui_snap();
     tool_gui_shape(NULL);
