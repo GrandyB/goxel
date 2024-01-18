@@ -58,7 +58,6 @@ Features
 Changes in this fork
 --------
 
-    - ByteBit's .vxl fix from his fork (xtreme8000)
     - Tools
         - Brush can set width/height/depth separately
     - Colours

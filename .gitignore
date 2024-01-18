@@ -12,3 +12,5 @@ xcuserdata/
 /todo
 /.vimrc
 goxel.exe
+callgrind.out.*
+*.gox
