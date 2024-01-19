@@ -853,7 +853,7 @@ bool gui_input_float(const char *label, float *v, float step,
         show_arrows = storage->GetBool(key, false);
     }
 
-    if (show_arrows || step == 1) {
+    if (show_arrows) {
         if (ImGui::Button(left_utf)) {
             (*v) -= step;
             ret = true;

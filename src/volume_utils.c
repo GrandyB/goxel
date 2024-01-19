@@ -409,9 +409,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
 
         // Apply colours
         uint8_t col[4];
-        if (painter->color_blend == COLOR_USER) {
-            memcpy(col, painter->color, 4);
-        }
+        memcpy(col, painter->color, 4);
         if(painter->color_blend == COLOR_INHERITED || painter->color_blend == COLOR_INTERP_INHERITED) {
             get_color_beneath(vp, col);
         }
