@@ -309,12 +309,6 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     // box[1][0] = 1/2 x size
     // box[2][1] = 1/2 y size
     // box[0][2] = 1/2 z size
-    // Position x/y/z = box[3][0] / box[3][1] / box[3][2]
-    // int pi[3] = {floor(box[3][0]),
-    //              floor(box[3][1]),
-    //              floor(box[3][2])};
-    // uint8_t color[4];
-    // get_color_beneath(pi, color);
 
     int i, vp[3];
     uint8_t value[4], new_value[4], c[4];
@@ -412,22 +406,28 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
             v = (k >= 0.f) ? 1.f : 0.f;
         }
         if (!v && skip_src_empty) continue;
-        if (painter->inherit) {
-            //debug_log_44_matrix(mat);
-            uint8_t col[4];
-            get_color_beneath(vp, col);
-            //LOG_D("Position: %f/%f/%f = %f/%f/%f/%f", p[0], p[1], p[2], col);
-            memcpy(c, col, 4);
-        } else {
-            memcpy(c, painter->color, 4);
+
+        // Apply colours
+        uint8_t col[4];
+        if (painter->color_blend == COLOR_USER) {
+            memcpy(col, painter->color, 4);
         }
+        if(painter->color_blend == COLOR_INHERITED || painter->color_blend == COLOR_INTERP_INHERITED) {
+            get_color_beneath(vp, col);
+        }
+        if(painter->color_blend == COLOR_INTERP_INHERITED) {
+            color_mul(painter->color, col, col);
+        }
+        memcpy(c, col, 4);
+
         c[3] *= v;
         if (!c[3] && skip_src_empty) continue;
         volume_get_at(volume, &accessor, vp, value);
         if (!value[3] && skip_dst_empty) continue;
         combine(value, c, mode, new_value);
-        if (!vec4_equal(value, new_value))
+        if (!vec4_equal(value, new_value)) {
             volume_set_at(volume, &accessor, vp, new_value);
+        }
     }
 
     cache_add(cache, &key, sizeof(key), volume_copy(volume), 1, volume_del);

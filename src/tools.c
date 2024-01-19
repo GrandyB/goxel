@@ -226,22 +226,34 @@ int tool_gui_smoothness(void)
     return 0;
 }
 
-int tool_gui_color(void)
+static bool color_blend_button(const char *label, int s)
 {
-    float alpha;
-    gui_color_inline("", goxel.painter.color);
-    if (goxel.painter.mode == MODE_PAINT) {
-        alpha = goxel.painter.color[3] / 255.;
-        if (gui_input_float("Alpha", &alpha, 0.1, 0, 1, "%.1f"))
-            goxel.painter.color[3] = alpha * 255;
+    bool v = goxel.painter.color_blend == s;
+    if (gui_selectable(label, &v, NULL, -1)) {
+        goxel.painter.color_blend = s;
+        return true;
     }
-    return 0;
+    return false;
 }
 
-int tool_gui_inherit(void) {
-    bool i = goxel.painter.inherit;
-    if (gui_checkbox("Inherit color beneath", &i, NULL)) {
-        goxel.painter.inherit = i;
+int tool_gui_color(void)
+{
+    if (gui_section_begin("Color", true)) {
+        float alpha;
+        gui_color_inline("", goxel.painter.color);
+        if (goxel.painter.mode == MODE_PAINT) {
+            alpha = goxel.painter.color[3] / 255.;
+            if (gui_input_float("Alpha", &alpha, 0.1, 0, 1, "%.1f"))
+                goxel.painter.color[3] = alpha * 255;
+        }
+        gui_text("Blend mode");
+        gui_group_begin(NULL);
+        gui_row_begin(3);
+        color_blend_button("User", COLOR_USER);
+        color_blend_button("Inherited", COLOR_INHERITED);
+        color_blend_button("Interpolate", COLOR_INTERP_INHERITED);
+        gui_row_end();
+        gui_group_end();
     }
     return 0;
 }

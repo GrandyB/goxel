@@ -54,6 +54,20 @@ enum {
     MODE_REPLACE,
 };
 
+/*
+ * Enum: COLOR
+ * Define how color is applied.
+ * 
+ * COLOR_USER           - Use user selected color
+ * COLOR_INHERITED      - Use nearest color found beneath position
+ * COLOR_INTERP_INHERITED - Interpolate between USER and INHERIT
+ */
+enum {
+    COLOR_USER,
+    COLOR_INHERITED,
+    COLOR_INTERP_INHERITED,
+};
+
 
 // Structure used for the OpenGL array data of blocks.
 // XXX: we can probably make it smaller.
@@ -98,7 +112,7 @@ typedef struct painter {
     int             mode;
     const shape_t   *shape;
     uint8_t         color[4];
-    bool            inherit;
+    int             color_blend;
     float           smoothness;
     int             symmetry; // bitfield X Y Z
     float           symmetry_origin[3];

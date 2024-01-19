@@ -830,7 +830,6 @@ bool gui_input_float(const char *label, float *v, float step,
 
     ImGui::PushID(label);
 
-
     ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR(NUMBER_INPUT, INNER, false));
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
                     color_lighten(COLOR(NUMBER_INPUT, INNER, false)));
@@ -854,7 +853,7 @@ bool gui_input_float(const char *label, float *v, float step,
         show_arrows = storage->GetBool(key, false);
     }
 
-    if (show_arrows) {
+    if (show_arrows || step == 1) {
         if (ImGui::Button(left_utf)) {
             (*v) -= step;
             ret = true;

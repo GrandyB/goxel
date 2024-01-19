@@ -163,7 +163,8 @@ static int on_drag(gesture3d_t *gest, void *user)
     painter = *(painter_t*)USER_GET(user, 1);
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, brush->volume_orig);
-    volume_merge(goxel.tool_volume, brush->volume, painter.mode, painter.color);
+    volume_merge(goxel.tool_volume, brush->volume, painter.mode,
+        painter.color_blend == COLOR_INHERITED ? NULL : painter.color);
     vec3_copy(curs->pos, brush->start_pos);
     brush->last_op.volume_key = volume_get_key(goxel.tool_volume);
 
@@ -252,11 +253,7 @@ static int gui(tool_t *tool)
 {
     tool_gui_radius();
     tool_gui_smoothness();
-
-    if (gui_section_begin("Color", true)) {
-        tool_gui_inherit();
-        tool_gui_color();
-    }
+    tool_gui_color();
     gui_section_end();
 
     tool_gui_snap();
