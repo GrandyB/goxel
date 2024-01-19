@@ -24,6 +24,7 @@ typedef struct {
 
     volume_t *volume_orig; // Original volume.
     volume_t *volume;      // Volume containing only the tool path.
+    bool inherit; // Tell the painter to use the colour beneath to guide the colour
 
     // Gesture start and last pos (should we put it in the 3d gesture?)
     float start_pos[3];
@@ -251,7 +252,13 @@ static int gui(tool_t *tool)
 {
     tool_gui_radius();
     tool_gui_smoothness();
-    tool_gui_color();
+
+    if (gui_section_begin("Color", true)) {
+        tool_gui_inherit();
+        tool_gui_color();
+    }
+    gui_section_end();
+
     tool_gui_snap();
     tool_gui_shape(NULL);
     tool_gui_symmetry();

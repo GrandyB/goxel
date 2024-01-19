@@ -274,9 +274,48 @@ static void combine(const uint8_t a[4], const uint8_t b[4], int mode,
     memcpy(out, ret, 4);
 }
 
+/** Beginning at the given world position, burrow downwards until you find a block and funnel out its color. */
+void get_color_beneath(int start_pos[3], uint8_t* out) {
+    uint8_t color[4];
+    volume_iterator_t iter = {0};
+    int z, pos[3];
+    pos[0] = start_pos[0];
+    pos[1] = start_pos[1];
+    pos[2] = start_pos[2];
+    const volume_t *volume = goxel_get_layers_volume(goxel.image);
+
+    // Grab the image box extents
+    float box[4][4];
+    mat4_copy(goxel.image->box, box);
+    if (box_is_null(box))
+        volume_get_box(volume, true, box);
+    int lowest_z = box[3][2] - box[2][2];
+
+    for (z = start_pos[2]; z >= lowest_z; z--) {
+        pos[2] = z;
+        volume_get_at(volume, &iter, pos, color);
+        bool hasBlock = color[3] != 0; // Completely transparent colour of block
+        if (hasBlock) {
+            //LOG_D("FOUND : %i / %i / %i / %i", color[0], color[1], color[2], color[3]);
+            break;
+        }
+    }
+    //LOG_D("Color @ %i/%i/%i : %i / %i / %i / %i (lowest: %i, start: %i)", pos[0], pos[1], pos[2], color[0], color[1], color[2], color[3], lowest_z, start_pos[2]);
+    memcpy(out, color, 4);
+}
 
 void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4])
-{
+{   
+    // box[1][0] = 1/2 x size
+    // box[2][1] = 1/2 y size
+    // box[0][2] = 1/2 z size
+    // Position x/y/z = box[3][0] / box[3][1] / box[3][2]
+    // int pi[3] = {floor(box[3][0]),
+    //              floor(box[3][1]),
+    //              floor(box[3][2])};
+    // uint8_t color[4];
+    // get_color_beneath(pi, color);
+
     int i, vp[3];
     uint8_t value[4], new_value[4], c[4];
     volume_iterator_t iter;
@@ -359,6 +398,9 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     // XXX: for the moment we cannot use the same accessor for both
     // setting and getting!  Need to fix that!!
     accessor = volume_get_accessor(volume);
+    
+    
+    // For every tile in the volume, iterate
     while (volume_iter(&iter, vp)) {
         vec3_set(p, vp[0] + 0.5, vp[1] + 0.5, vp[2] + 0.5);
         if (use_box && !bbox_contains_vec(*painter->box, p)) continue;
@@ -370,7 +412,15 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
             v = (k >= 0.f) ? 1.f : 0.f;
         }
         if (!v && skip_src_empty) continue;
-        memcpy(c, painter->color, 4);
+        if (painter->inherit) {
+            //debug_log_44_matrix(mat);
+            uint8_t col[4];
+            get_color_beneath(vp, col);
+            //LOG_D("Position: %f/%f/%f = %f/%f/%f/%f", p[0], p[1], p[2], col);
+            memcpy(c, col, 4);
+        } else {
+            memcpy(c, painter->color, 4);
+        }
         c[3] *= v;
         if (!c[3] && skip_src_empty) continue;
         volume_get_at(volume, &accessor, vp, value);

@@ -98,6 +98,7 @@ typedef struct painter {
     int             mode;
     const shape_t   *shape;
     uint8_t         color[4];
+    bool            inherit;
     float           smoothness;
     int             symmetry; // bitfield X Y Z
     float           symmetry_origin[3];

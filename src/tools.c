@@ -229,15 +229,20 @@ int tool_gui_smoothness(void)
 int tool_gui_color(void)
 {
     float alpha;
-    if (gui_section_begin("Color", true)) {
-        gui_color_inline("", goxel.painter.color);
-        if (goxel.painter.mode == MODE_PAINT) {
-            alpha = goxel.painter.color[3] / 255.;
-            if (gui_input_float("Alpha", &alpha, 0.1, 0, 1, "%.1f"))
-                goxel.painter.color[3] = alpha * 255;
-        }
+    gui_color_inline("", goxel.painter.color);
+    if (goxel.painter.mode == MODE_PAINT) {
+        alpha = goxel.painter.color[3] / 255.;
+        if (gui_input_float("Alpha", &alpha, 0.1, 0, 1, "%.1f"))
+            goxel.painter.color[3] = alpha * 255;
     }
-    gui_section_end();
+    return 0;
+}
+
+int tool_gui_inherit(void) {
+    bool i = goxel.painter.inherit;
+    if (gui_checkbox("Inherit color beneath", &i, NULL)) {
+        goxel.painter.inherit = i;
+    }
     return 0;
 }
 
