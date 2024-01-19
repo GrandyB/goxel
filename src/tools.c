@@ -226,18 +226,35 @@ int tool_gui_smoothness(void)
     return 0;
 }
 
+static bool color_blend_button(const char *label, int s)
+{
+    bool v = goxel.painter.color_blend == s;
+    if (gui_selectable(label, &v, NULL, -1)) {
+        goxel.painter.color_blend = s;
+        return true;
+    }
+    return false;
+}
+
 int tool_gui_color(void)
 {
-    float alpha;
     if (gui_section_begin("Color", true)) {
+        float alpha;
         gui_color_inline("", goxel.painter.color);
         if (goxel.painter.mode == MODE_PAINT) {
             alpha = goxel.painter.color[3] / 255.;
             if (gui_input_float("Alpha", &alpha, 0.1, 0, 1, "%.1f"))
                 goxel.painter.color[3] = alpha * 255;
         }
+        gui_text("Blend mode");
+        gui_group_begin(NULL);
+        gui_row_begin(3);
+        color_blend_button("User", COLOR_USER);
+        color_blend_button("Inherited", COLOR_INHERITED);
+        color_blend_button("Interpolate", COLOR_INTERP_INHERITED);
+        gui_row_end();
+        gui_group_end();
     }
-    gui_section_end();
     return 0;
 }
 

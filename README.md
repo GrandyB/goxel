@@ -62,6 +62,10 @@ Changes in this fork
         - Brush can set width/height/depth separately
     - Colours
         - Colour picker also integrated directly into the tools panel for tools like the brush
+        - Blend mode added
+            - User = the user's chosen color
+            - Inherited = the colour of the block beneath
+            - Interpolated = USER <> INHERITED, the midpoint
     - Camera
         - First person camera (#)
             - Arrow keys for forward/back/left/right, Page Up/Down for up/down, RMB or MMB for look
@@ -78,6 +82,8 @@ Changes in this fork
         - Move plane up/down = < >
         - Plane visibility = /
         - FPV Camera = #
+    - UI
+        - Always add < > for '1' step int fields
 
 
 Usage

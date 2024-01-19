@@ -16,6 +16,9 @@ release:
 profile:
 	scons $(JOBS) mode=profile
 
+debug:
+	scons $(JOBS) mode=debug
+
 run:
 	./goxel
 
