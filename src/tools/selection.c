@@ -133,8 +133,11 @@ static int iter(tool_t *tool, const painter_t *painter,
             .callback = on_drag,
         };
     }
-    if (box_edit(SNAP_SELECTION_OUT, g_drag_mode == DRAG_RESIZE ? 1 : 0,
-                 transf, NULL)) {
+
+    // Render a box, its coords being piped to 'transf'
+    goxel.selection_gdata = box_edit(SNAP_SELECTION_OUT, g_drag_mode == DRAG_RESIZE ? 1 : 0,
+                 transf, NULL);
+    if (goxel.selection_gdata) {
         mat4_mul(transf, goxel.selection, goxel.selection);
         return 0;
     }
@@ -155,6 +158,13 @@ static int gui(tool_t *tool)
 {
     float x_mag, y_mag, z_mag;
     int x, y, z, w, h, d;
+
+    if(gui_button("Select layer content", 0, 0)) {
+        float box[4][4];
+        volume_get_box(goxel.image->active_layer->volume, true, box);
+        mat4_copy(box, goxel.selection);
+    }
+
     float (*box)[4][4] = &goxel.selection;
     if (box_is_null(*box)) return 0;
 

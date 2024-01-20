@@ -523,6 +523,7 @@ typedef struct goxel
     float      tool_plane[4][4];
     int        tool_drag_mode; // 0: move, 1: resize.
 
+    int        selection_gdata;
     float      selection[4][4];   // The selection box.
     volume_t   *mask; // Global selection mask volume.
     int        mask_mode;

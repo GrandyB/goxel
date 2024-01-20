@@ -75,26 +75,30 @@ static void do_move(layer_t *layer, const float mat[4][4],
             }
         }
     }
+
+    mat4_copy(mat, goxel.selection);
 }
 
 static void update_view(void)
 {
-    float transf[4][4];
+    //float transf[4][4];
     float origin_box[4][4] = MAT4_IDENTITY;
-    bool first;
+    //bool first;
     uint8_t color[4] = {255, 0, 0, 255};
-
 
     layer_t *layer = goxel.image->active_layer;
 
     if (layer_is_volume(layer)) {
         goxel.tool_drag_mode = DRAG_MOVE;
     }
-    if (box_edit(SNAP_LAYER_OUT, goxel.tool_drag_mode, transf, &first)) {
-        if (first) image_history_push(goxel.image);
-        do_move(layer, transf, VEC(0, 0, 0), false);
+    //if (box_edit(SNAP_LAYER_OUT, goxel.tool_drag_mode, transf, &first)) {
+    if (goxel.selection_gdata) {
+        if (goxel.selection_gdata == 2) image_history_push(goxel.image);
+        do_move(layer, goxel.selection, VEC(0, 0, 0), false);
     }
+    //}
 
+    // Origin blob
     if (layer_is_volume(layer)) {
         vec3_copy(layer->mat[3], origin_box[3]);
         mat4_iscale(origin_box, 0.1, 0.1, 0.1);
@@ -133,7 +137,15 @@ static int gui(tool_t *tool)
     int x, y, z;
     bool only_origin = false;
 
-    update_view();
+    if (goxel.selection == mat4_zero) {
+        update_view();
+    }
+
+    if(gui_button("Select layer content", 0, 0)) {
+        float box[4][4];
+        volume_get_box(goxel.image->active_layer->volume, true, box);
+        mat4_copy(box, goxel.selection);
+    }
 
     layer = goxel.image->active_layer;
     if (layer->shape) {
