@@ -95,6 +95,7 @@ enum {
     X(tool_set_rect_select),
     X(tool_set_line),
     X(tool_set_move),
+    X(tool_set_placer),
 
     X(export_to_photos),
 

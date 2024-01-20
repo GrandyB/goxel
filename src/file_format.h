@@ -34,6 +34,8 @@ struct file_format
     int             (*import_func)(const file_format_t *format, image_t *img,
                                    const char *path);
     void            (*import_gui)(file_format_t *format);
+    int             (*import_volume_func)(const file_format_t *format, volume_t *volume,
+                                   const char *path);
 };
 
 void file_format_register(file_format_t *format);
