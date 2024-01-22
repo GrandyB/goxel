@@ -170,13 +170,13 @@ void volume_move(volume_t *volume, const float mat[4][4])
     volume_t *src_volume = volume_copy(volume);
     float imat[4][4];
 
-    mat4_invert(mat, imat);
-    volume_get_box(volume, true, box);
+    mat4_invert(mat, imat); // Invert transformation matrix
+    volume_get_box(volume, true, box); // Get bbox
     if (box_is_null(box)) return;
-    mat4_mul(mat, box, box);
+    mat4_mul(mat, box, box); // Apply transformation to bbox
     volume_fill(volume, box, volume_move_get_color,
-                USER_PASS(src_volume, &imat));
-    volume_delete(src_volume);
+                USER_PASS(src_volume, &imat)); // Fill volume with transformed data
+    volume_delete(src_volume); // Delete copy
     volume_remove_empty_tiles(volume, false);
 }
 

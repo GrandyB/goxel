@@ -167,9 +167,10 @@ static int on_hover(gesture3d_t *gest, void *user)
 {
     volume_t *volume = volume_copy(goxel.image->active_layer->volume);
     tool_placer_t *placer = USER_GET(user, 0);
-    const painter_t *painter = USER_GET(user, 1);
+    //const painter_t *painter = USER_GET(user, 1);
     cursor_t *curs = gest->cursor;
-    float box[4][4] = MAT4_IDENTITY;
+    //float box[4][4] = MAT4_IDENTITY;
+    float transform[4][4] = MAT4_IDENTITY;
     //bool shift = curs->flags & CURSOR_SHIFT;
 
     if (gest->state == GESTURE_END || !curs->snaped) {
@@ -181,8 +182,8 @@ static int on_hover(gesture3d_t *gest, void *user)
     //if (shift)
     //    render_line(&goxel.rend, placer->start_pos, curs->pos, NULL, 0);
 
-    if (goxel.tool_volume && check_can_skip(placer, curs, painter->mode))
-        return 0;
+    //if (goxel.tool_volume && check_can_skip(placer, curs, painter->mode))
+    //    return 0;
 
     //get_box3(curs->pos, NULL, curs->normal, goxel.radius_x, goxel.radius_y, goxel.radius_z, NULL, box);
     //mat4_mul()
@@ -190,12 +191,13 @@ static int on_hover(gesture3d_t *gest, void *user)
     //volume_move(placer->volume, curs->pos);
     //mat4_translate(*painter->box, curs->pos[0], curs->pos[1], curs->pos[2], *painter->box);
     //mat4_mul_vec3(*painter->box, curs->pos, painter->box);
-    box[0][3] = curs->pos[0];
-    box[1][3] = curs->pos[1];
-    box[2][3] = curs->pos[2];
-    
-    volume_move(placer->volume, box);
-    volume_merge(volume, placer->volume, MODE_MAX, NULL);
+    debug_log_44_matrix(transform);
+    transform[0][3] = curs->pos[0];
+    transform[1][3] = curs->pos[1];
+    transform[2][3] = curs->pos[2];
+
+    volume_move(placer->volume, transform);
+    volume_merge(volume, placer->volume, MODE_OVER, NULL);
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, volume);
     //volume_op(goxel.tool_volume, painter, box);
