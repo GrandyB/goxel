@@ -27,56 +27,6 @@ typedef struct {
     tool_t tool;
 } tool_move_t;
 
-static bool layer_is_volume(const layer_t *layer)
-{
-    return !layer->base_id && !layer->image && !layer->shape;
-}
-
-static void do_move(layer_t *layer, const float mat[4][4],
-                    const float origin_[3], bool only_origin)
-{
-    /*
-     * Note: for voxel volume layers, rotation and scale are only
-     * applied to the voxels, without modifying the layer transformation
-     * matrix.  For translation we modify the matrix (so that the origin
-     * is moved) but we also modify the voxels because we want all the layer
-     * volume to stay aligned.
-     */
-
-    float m[4][4] = MAT4_IDENTITY;
-    float origin[3];
-
-    if (mat4_equal(mat, mat4_identity)) return;
-
-    vec3_copy(origin_ ?: layer->mat[3], origin);
-
-    // Make sure we always center on a grid point.
-    origin[0] = floor(layer->mat[3][0]) + 0.5;
-    origin[1] = floor(layer->mat[3][1]) + 0.5;
-    origin[2] = floor(layer->mat[3][2]) + 0.5;
-
-    // Change referential to the volume origin.
-    // XXX: maybe this should be done in volume_move directy??
-    mat4_itranslate(m, +origin[0], +origin[1], +origin[2]);
-    mat4_imul(m, mat);
-    mat4_itranslate(m, -origin[0], -origin[1], -origin[2]);
-
-    if (!layer_is_volume(layer)) {
-        mat4_mul(m, layer->mat, layer->mat);
-        layer->base_volume_key = 0; // Mark it as dirty.
-    } else {
-        // Only apply translation to the layer->mat.
-        vec3_add(layer->mat[3], mat[3], layer->mat[3]);
-        if (!only_origin) {
-            volume_move(layer->volume, m);
-            if (!box_is_null(layer->box)) {
-                mat4_mul(m, layer->box, layer->box);
-                box_get_bbox(layer->box, layer->box);
-            }
-        }
-    }
-}
-
 static void update_view(void)
 {
     float transf[4][4];
@@ -92,7 +42,7 @@ static void update_view(void)
     }
     if (box_edit(SNAP_LAYER_OUT, goxel.tool_drag_mode, transf, &first)) {
         if (first) image_history_push(goxel.image);
-        do_move(layer, transf, VEC(0, 0, 0), false);
+        do_move_layer(layer, transf, VEC(0, 0, 0), false);
     }
 
     if (layer_is_volume(layer)) {
@@ -122,7 +72,7 @@ static void center_origin(layer_t *layer)
     pos[2] = round((bbox[0][2] + bbox[1][2] - 1) / 2.0);
 
     vec3_sub(pos, layer->mat[3], translation[3]);
-    do_move(layer, translation, NULL, true);
+    do_move_layer(layer, translation, NULL, true);
 }
 
 static int gui(tool_t *tool)
@@ -222,7 +172,7 @@ static int gui(tool_t *tool)
 
     if (memcmp(&mat, &mat4_identity, sizeof(mat))) {
         image_history_push(goxel.image);
-        do_move(layer, mat, NULL, only_origin);
+        do_move_layer(layer, mat, NULL, only_origin);
     }
 
     return 0;
