@@ -81,7 +81,7 @@ static void move_to(tool_placer_t *placer, float curs_pos[3]) {
         float destination[4][4] = MAT4_IDENTITY;
         vec3_add(destination[3], curs_pos, destination[3]);
         vec3_add(destination[3], placer->offset, destination[3]);
-        vec3_add(destination[3], placer->center, destination[3]);
+        vec3_sub(destination[3], placer->center, destination[3]);
 
         float trans[4][4] = MAT4_IDENTITY;
         vec3_sub(destination[3], placer->mat[3], trans[3]);
@@ -101,18 +101,13 @@ static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
             floor(placer->mat[3][0]) + 0.5,
             floor(placer->mat[3][1]) + 0.5,
             floor(placer->mat[3][2]) + 0.5);
-        vec3_add(origin, placer->origin, origin);
+        vec3_add(origin, placer->center, origin);
 
         // Change referential to the volume origin.
         // XXX: maybe this should be done in volume_move directy??
-        //mat4_itranslate(m, +placer->mat[3][0], +placer->mat[3][1], +placer->mat[3][2]);
-        //mat4_itranslate(m, -placer->offset[0], -placer->offset[1], -placer->offset[2]);
         mat4_itranslate(m, +origin[0], +origin[1], +origin[2]);
         mat4_imul(m, translation);
         mat4_itranslate(m, -origin[0], -origin[1], -origin[2]);
-        //mat4_itranslate(m, +placer->offset[0], +placer->offset[1], +placer->offset[2]);
-        //mat4_itranslate(m, -placer->mat[3][0], -placer->mat[3][1], -placer->mat[3][2]);
-        //LOG_D("move_to gui translation");
         debug_log_44_matrix("apply_rotation - volume translation", m);
         volume_move(placer->imported_volume, m);
 
@@ -150,22 +145,27 @@ static bool check_can_skip(tool_placer_t *placer, const cursor_t *curs)
 
 static void center_origin(tool_placer_t *placer, bool first)
 {
+    LOG_D("center_origin:");
     int bbox[2][3];
     float pos[3];
 
     volume_get_bbox(placer->imported_volume, bbox, true);
-    pos[0] = round((bbox[0][0] + bbox[1][0] + 1) / 2.0); // x
-    pos[1] = round((bbox[0][1] + bbox[1][1] + 1) / 2.0); // y
+    bbox_from_aabb(placer->box, bbox);
+    pos[0] = round((bbox[0][0] + bbox[1][0] - 1) / 2.0); // x
+    pos[1] = round((bbox[0][1] + bbox[1][1] - 1) / 2.0); // y
     pos[2] = 0; //round((bbox[0][2] + bbox[1][2] - 1) / 2.0); // z
 
-    LOG_D("Cursor: %f / %f / %f", goxel.cursor.pos[0], goxel.cursor.pos[1], goxel.cursor.pos[2]);
-    LOG_D("BBox: (%i,%i) (%i,%i) = %f / %f / %f",
-        bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1], pos[0], pos[1], pos[2]);
+    LOG_D("    Cursor: %f / %f / %f", goxel.cursor.pos[0], goxel.cursor.pos[1], goxel.cursor.pos[2]);
+    LOG_D("    BBox: (%i,%i) (%i,%i)",
+        bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1]);
+    debug_log_vec3_float("    found center:", pos);
 
+    debug_log_vec3_float("    start mat:", placer->mat[3]);
     if (!first) {
-        vec3_sub(pos, placer->mat[3], pos);
+        vec3_sub(pos, goxel.cursor.pos, pos);
     }
-    debug_log_vec3_float("New origin:", pos);
+    debug_log_vec3_float("    end mat:", placer->mat[3]);
+    debug_log_vec3_float("    end pos:", pos);
     vec3_copy(pos, placer->center);
     vec3_set(placer->origin, 0, 0, 0);
 }
@@ -249,13 +249,14 @@ static int iter(tool_t *tool, const painter_t *painter,
         uint8_t color[4] = {255, 0, 0, 255};
         vec3_copy(curs->pos, origin_box[3]);
         vec3_add(origin_box[3], placer->offset, origin_box[3]);
+        //vec3_add(origin_box[3], placer->center, origin_box[3]);
         vec3_add(origin_box[3], placer->origin, origin_box[3]);
         mat4_iscale(origin_box, 0.1, 0.1, 0.1);
         render_box(&goxel.rend, origin_box, color,
                 EFFECT_NO_DEPTH_TEST | EFFECT_NO_SHADING);
     }
 
-    curs->snap_offset = 0.5;
+    curs->snap_offset = -0.5;
 
     gesture3d(&placer->gestures.hover, curs, USER_PASS(placer, painter));
     gesture3d(&placer->gestures.drag, curs, USER_PASS(placer, painter));
@@ -315,9 +316,9 @@ static int gui(tool_t *tool)
         reset(placer);
         goxel_import_file_to_volume(NULL, g_current->name, placer->imported_volume);
         placer->imported_volume_orig = volume_copy(placer->imported_volume);
-        int bbox[2][3];
-        volume_get_bbox(placer->imported_volume, bbox, true);
-        bbox_from_aabb(placer->box, bbox);
+        // int bbox[2][3];
+        // volume_get_bbox(placer->imported_volume, bbox, true);
+        // bbox_from_aabb(placer->box, bbox);
         center_origin(placer, true);
     }
     
@@ -387,7 +388,7 @@ static int gui(tool_t *tool)
             placer->origin[2] = origin_z;
         }
         if (gui_button("Center", -1, 0)) {
-            center_origin(placer, false);
+            vec3_set(placer->origin, 0, 0, 0);
         }
         gui_group_end();
     }
