@@ -48,6 +48,7 @@ void file_format_iter(const char *mode, void *user,
 
 // The global list of registered file formats.
 extern file_format_t *file_formats;
+extern file_format_t *file_formats_import_to_volume;
 
 #define FILE_FORMAT_REGISTER(id_, ...) \
     static file_format_t GOX_format_##id_ = {__VA_ARGS__}; \

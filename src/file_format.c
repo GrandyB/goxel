@@ -25,6 +25,7 @@
 
 // The global hash table of file formats.
 file_format_t *file_formats = NULL;
+file_format_t *file_formats_import_to_volume = NULL;
 
 static bool endswith(const char *str, const char *end)
 {
@@ -38,6 +39,9 @@ static bool endswith(const char *str, const char *end)
 void file_format_register(file_format_t *format)
 {
     DL_APPEND(file_formats, format);
+    if (format->import_volume_func) {
+        DL_APPEND(file_formats_import_to_volume, format);
+    }
 }
 
 const file_format_t *file_format_for_path(const char *path, const char *name,

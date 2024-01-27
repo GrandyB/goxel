@@ -60,6 +60,9 @@ Changes in this fork
 
     - Tools
         - Brush can set width/height/depth separately
+        - New doodad placer tool - select a file and place it at will
+    - Layers
+        - New merge layer down
     - Colours
         - Colour picker also integrated directly into the tools panel for tools like the brush
         - Blend mode added

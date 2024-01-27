@@ -292,7 +292,7 @@ static int gui(tool_t *tool)
     // Browse files
     char label[128];
     gui_text("Import as");
-    if (!g_current) g_current = file_formats; // First one.
+    if (!g_current) g_current = file_formats_import_to_volume; // First one.
 
     make_label(g_current, label, sizeof(label));
     if (gui_combo_begin("Import as", label)) {
