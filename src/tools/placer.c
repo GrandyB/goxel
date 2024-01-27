@@ -29,11 +29,10 @@ typedef struct {
     volume_t *imported_volume_orig; // Volume containing the volume as it was when first imported
 
     float mat[4][4]; // position of the doodad; after all the origin/offsets applied
-
     float box[4][4]; // the bounding box of the doodad
     float offset[3]; // relative offset of position
-    float origin[3]; // relative offset of origin
-    float center[3];
+    float center[3]; // bottom centre of the model, calculated once on import
+    float origin[3]; // relative offset of origin from the center
     float last_curs_pos[3];
 
     // Gesture start and last pos (should we put it in the 3d gesture?)
@@ -77,7 +76,7 @@ static void move_to(tool_placer_t *placer, float curs_pos[3]) {
 
     // Apply translation from the UI if any
     if (curs_pos) {
-        // destination = curs + offset
+        // Destination = curs + offset + center
         float destination[4][4] = MAT4_IDENTITY;
         vec3_add(destination[3], curs_pos, destination[3]);
         vec3_add(destination[3], placer->offset, destination[3]);
@@ -141,20 +140,23 @@ static bool check_can_skip(tool_placer_t *placer, const cursor_t *curs)
     return false;
 }
 
+/**
+ * @brief Find the bottom centre point of the placer->imported_volume.
+ */
 static void center_origin(tool_placer_t *placer)
 {
     int bbox[2][3];
     float pos[3];
 
     volume_get_bbox(placer->imported_volume, bbox, true);
-    bbox_from_aabb(placer->box, bbox);
+    //bbox_from_aabb(placer->box, bbox);
     pos[0] = round((bbox[0][0] + bbox[1][0] - 1) / 2.0); // centre x
     pos[1] = round((bbox[0][1] + bbox[1][1] - 1) / 2.0); // centre y
     pos[2] = 0; // bottom level z
 
-    //LOG_D("center_origin:");
+    LOG_D("center_origin:");
     //LOG_D("    Cursor: %f / %f / %f", goxel.cursor.pos[0], goxel.cursor.pos[1], goxel.cursor.pos[2]);
-    //LOG_D("    BBox: (%i,%i) (%i,%i)", bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1]);
+    LOG_D("    BBox: (%i,%i,%i) (%i,%i,%i)", bbox[0][0], bbox[0][1], bbox[0][2], bbox[1][0], bbox[1][1], bbox[1][2]);
     //debug_log_vec3_float("    found center:", pos);
     vec3_copy(pos, placer->center);
     vec3_set(placer->origin, 0, 0, 0);
@@ -245,7 +247,7 @@ static int iter(tool_t *tool, const painter_t *painter,
                 EFFECT_NO_DEPTH_TEST | EFFECT_NO_SHADING);
     }
 
-    curs->snap_offset = -0.5;
+    //curs->snap_offset = -0.5;
 
     gesture3d(&placer->gestures.hover, curs, USER_PASS(placer, painter));
     gesture3d(&placer->gestures.drag, curs, USER_PASS(placer, painter));
