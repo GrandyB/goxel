@@ -246,7 +246,6 @@ uint32_t volume_crc32(const volume_t *volume);
 bool layer_is_volume(const layer_t *layer);
 void do_move(volume_t *volume, float box[4][4], float mat[4][4], const float trans[4][4],
                     const float origin_[3], bool layer_is_volume, bool only_origin);
-void do_move_layer(layer_t *layer, const float mat[4][4],
-                    const float origin_[3], bool only_origin);
+void do_move_layer(layer_t *layer, const float mat[4][4], const float origin_[3], bool only_origin);
 
 #endif // VOLUME_UTILS_H

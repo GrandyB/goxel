@@ -24,13 +24,16 @@ static file_format_t *g_current = NULL;
 typedef struct {
     tool_t tool;
 
-    volume_t *volume_orig; // Original volume.
-    volume_t *volume;      // Volume containing only the tool path.
+    volume_t *volume_orig; // Original layer volume.
+    volume_t *imported_volume; // Volume containing only the imported volume (current/may have been rotated)
+    volume_t *imported_volume_orig; // Volume containing the volume as it was when first imported
 
-    float mat[4][4]; // centre pos of the doodad
+    float mat[4][4]; // position of the doodad; after all the origin/offsets applied
+
     float box[4][4]; // the bounding box of the doodad
-    float offset[4][4]; // relative offset of position
+    float offset[3]; // relative offset of position
     float origin[3]; // relative offset of origin
+    float center[3];
     float last_curs_pos[3];
 
     // Gesture start and last pos (should we put it in the 3d gesture?)
@@ -52,6 +55,84 @@ typedef struct {
 
 } tool_placer_t;
 
+
+static void update_bbox(tool_placer_t *placer) {
+    if (!box_is_null(placer->box)) {
+        int bbox[2][3];
+        volume_get_bbox(placer->imported_volume, bbox, true);
+        bbox_from_aabb(placer->box, bbox);
+    }
+}
+
+/*
+ * @brief move_to controls if/how we move the volume/bbox/origin around on the screen.
+ *
+ * @param placer tool_placer_t.
+ * @param curs cursor_t.
+ * @param translation float[4][4] a rotation or change to origin/offset provided by the UI.
+ */
+static void move_to(tool_placer_t *placer, float curs_pos[3]) {
+    if (!placer->imported_volume) return;
+    if (curs_pos && vec3_equal(curs_pos, placer->last_curs_pos)) return;
+
+    // Apply translation from the UI if any
+    if (curs_pos) {
+        // destination = curs + offset
+        float destination[4][4] = MAT4_IDENTITY;
+        vec3_add(destination[3], curs_pos, destination[3]);
+        vec3_add(destination[3], placer->offset, destination[3]);
+        vec3_add(destination[3], placer->center, destination[3]);
+
+        float trans[4][4] = MAT4_IDENTITY;
+        vec3_sub(destination[3], placer->mat[3], trans[3]);
+        // Move by this amount
+        volume_move(placer->imported_volume, trans);
+        mat4_copy(destination, placer->mat);
+    }
+
+    // Update bounding box if there is one
+    update_bbox(placer);
+}
+
+static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
+        float m[4][4] = MAT4_IDENTITY;
+        float origin[3];
+        vec3_set(origin,
+            floor(placer->mat[3][0]) + 0.5,
+            floor(placer->mat[3][1]) + 0.5,
+            floor(placer->mat[3][2]) + 0.5);
+        vec3_add(origin, placer->origin, origin);
+
+        // Change referential to the volume origin.
+        // XXX: maybe this should be done in volume_move directy??
+        //mat4_itranslate(m, +placer->mat[3][0], +placer->mat[3][1], +placer->mat[3][2]);
+        //mat4_itranslate(m, -placer->offset[0], -placer->offset[1], -placer->offset[2]);
+        mat4_itranslate(m, +origin[0], +origin[1], +origin[2]);
+        mat4_imul(m, translation);
+        mat4_itranslate(m, -origin[0], -origin[1], -origin[2]);
+        //mat4_itranslate(m, +placer->offset[0], +placer->offset[1], +placer->offset[2]);
+        //mat4_itranslate(m, -placer->mat[3][0], -placer->mat[3][1], -placer->mat[3][2]);
+        //LOG_D("move_to gui translation");
+        debug_log_44_matrix("apply_rotation - volume translation", m);
+        volume_move(placer->imported_volume, m);
+
+        mat4_copy(mat4_identity, m);
+        mat4_itranslate(m, +placer->origin[0], +placer->origin[1], +placer->origin[2]);
+        mat4_imul(m, translation);
+        mat4_itranslate(m, -placer->origin[0], -placer->origin[1], -placer->origin[2]);
+        debug_log_44_matrix("apply_rotation - origin translation", m);
+
+        debug_log_vec3_float("origin pre:", placer->origin);
+        // Also move origin
+        float imat[4][4];
+        mat4_invert(m, imat); // Invert transformation matrix
+        float or[4][4] = MAT4_IDENTITY;
+        vec3_to_mat4(placer->origin, or);
+        mat4_mul(m, or, or);
+        vec3_copy(or[3], placer->origin);
+        debug_log_vec3_float("origin post:", placer->origin);
+}
+
 static bool check_can_skip(tool_placer_t *placer, const cursor_t *curs)
 {
     volume_t *volume = goxel.tool_volume;
@@ -67,21 +148,26 @@ static bool check_can_skip(tool_placer_t *placer, const cursor_t *curs)
     return false;
 }
 
-static void center_origin(tool_placer_t *placer)
+static void center_origin(tool_placer_t *placer, bool first)
 {
     int bbox[2][3];
     float pos[3];
-    float translation[4][4] = MAT4_IDENTITY;
 
-    volume_get_bbox(placer->volume, bbox, true);
-    pos[0] = round((bbox[0][0] + bbox[1][0] - 1) / 2.0);
-    pos[1] = round((bbox[0][1] + bbox[1][1] - 1) / 2.0);
-    pos[2] = 0; //round((bbox[0][2] + bbox[1][2] - 1) / 2.0);
+    volume_get_bbox(placer->imported_volume, bbox, true);
+    pos[0] = round((bbox[0][0] + bbox[1][0] + 1) / 2.0); // x
+    pos[1] = round((bbox[0][1] + bbox[1][1] + 1) / 2.0); // y
+    pos[2] = 0; //round((bbox[0][2] + bbox[1][2] - 1) / 2.0); // z
 
-    vec3_copy(pos, placer->origin);
-    vec3_sub(pos, placer->mat[3], translation[3]);
-    //vec3_add(translation[3], placer->offset[3], translation[3]);
-    do_move(placer->volume, placer->box, placer->mat, translation, NULL, true, true);
+    LOG_D("Cursor: %f / %f / %f", goxel.cursor.pos[0], goxel.cursor.pos[1], goxel.cursor.pos[2]);
+    LOG_D("BBox: (%i,%i) (%i,%i) = %f / %f / %f",
+        bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1], pos[0], pos[1], pos[2]);
+
+    if (!first) {
+        vec3_sub(pos, placer->mat[3], pos);
+    }
+    debug_log_vec3_float("New origin:", pos);
+    vec3_copy(pos, placer->center);
+    vec3_set(placer->origin, 0, 0, 0);
 }
 
 static int on_drag(gesture3d_t *gest, void *user)
@@ -101,11 +187,7 @@ static int on_hover(gesture3d_t *gest, void *user)
 {
     volume_t *volume = volume_copy(goxel.image->active_layer->volume);
     tool_placer_t *placer = USER_GET(user, 0);
-    //const painter_t *painter = USER_GET(user, 1);
     cursor_t *curs = gest->cursor;
-    //float box[4][4] = MAT4_IDENTITY;
-    //float transform[4][4] = MAT4_IDENTITY;
-    //bool shift = curs->flags & CURSOR_SHIFT;
 
     if (gest->state == GESTURE_END || !curs->snaped) {
         volume_delete(goxel.tool_volume);
@@ -115,60 +197,13 @@ static int on_hover(gesture3d_t *gest, void *user)
 
     if (goxel.tool_volume && check_can_skip(placer, curs))
         return 0;
-
-    //if (shift)
-    //    render_line(&goxel.rend, placer->start_pos, curs->pos, NULL, 0);
-
-    //if (goxel.tool_volume && check_can_skip(placer, curs, painter->mode))
-    //    return 0;
-
-    //get_box3(curs->pos, NULL, curs->normal, goxel.radius_x, goxel.radius_y, goxel.radius_z, NULL, box);
-    //mat4_mul()
-    //mat4_itranslate(placer->volume)
-    //volume_move(placer->volume, curs->pos);
-    //mat4_translate(*painter->box, curs->pos[0], curs->pos[1], curs->pos[2], *painter->box);
-    //mat4_mul_vec3(*painter->box, curs->pos, painter->box);
-    // debug_log_44_matrix(transform);
-    // transform[3][0] = curs->pos[0];
-    // transform[3][1] = curs->pos[1];
-    // transform[3][2] = curs->pos[2];
     
-    if (placer->volume) {
-        float prev_transform[4][4] = MAT4_IDENTITY;
-        mat4_copy(placer->mat, prev_transform);
+    if (placer->imported_volume && curs->snaped) {
+        move_to(placer, curs->pos);
 
-        // Each frame, we find the difference in cursor positions
-        float diff[3];
-        vec3_sub(curs->pos, placer->mat[3], diff);
-        //vec3_set(placer->mat[3], diff[0], diff[1], diff[2]);
-        //vec3_set(placer->mat[3], curs->pos[0], curs->pos[1], curs->pos[2]);
-        //vec3_sub(placer->mat[3], placer->origin, placer->mat[3]);
-
-        // This difference is then loaded into a transform
-        float transform[4][4] = MAT4_IDENTITY;
-        //vec3_sub(placer->mat[3], placer->last_curs_pos, diff);
-        vec3_set(transform[3], diff[0], diff[1], diff[2]);
-        vec3_add(transform[3], placer->offset[3], transform[3]);
-
-        // LOG_D("transform:");
-        // debug_log_44_matrix(transform);
-        // LOG_D("---");
-        
-        // Placer's position is set to be the cursor's position
-        //vec3_set(placer->mat[3], placer->last_curs_pos[0], placer->last_curs_pos[1], placer->last_curs_pos[2]);
-
-        // ...and that transform applied to the doodad in the placer->volume (mat/box gets updated too)
-        do_move(placer->volume, placer->box, placer->mat, transform, placer->offset[3], true, false);
-
-        // LOG_D("placer->mat:");
-        // debug_log_44_matrix(placer->mat);
-        // LOG_D("---");
-
-        //volume_move(placer->volume, transform);
-        volume_merge(volume, placer->volume, MODE_OVER, NULL);
+        volume_merge(volume, placer->imported_volume, MODE_OVER, NULL);
         if (!goxel.tool_volume) goxel.tool_volume = volume_new();
         volume_set(goxel.tool_volume, volume);
-        //volume_op(goxel.tool_volume, painter, box);
     }
 
     placer->last_op.volume_key = volume_get_key(volume);
@@ -189,8 +224,10 @@ static int iter(tool_t *tool, const painter_t *painter,
 
     if (!placer->volume_orig)
         placer->volume_orig = volume_copy(goxel.image->active_layer->volume);
-    if (!placer->volume)
-        placer->volume = volume_new();
+    if (!placer->imported_volume) {
+        placer->imported_volume = volume_new();
+        placer->imported_volume_orig = volume_new();
+    }
 
     if (!placer->gestures.drag.type) {
         placer->gestures.hover = (gesture3d_t) {
@@ -203,20 +240,22 @@ static int iter(tool_t *tool, const painter_t *painter,
         };
     }
 
-    if (curs->snaped && placer->volume) {
+    if (curs->snaped && placer->imported_volume) {
         // render the bounding box
         render_box(&goxel.rend, placer->box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
 
         // render the origin dot
         float origin_box[4][4] = MAT4_IDENTITY;
         uint8_t color[4] = {255, 0, 0, 255};
-        vec3_copy(placer->mat[3], origin_box[3]);
+        vec3_copy(curs->pos, origin_box[3]);
+        vec3_add(origin_box[3], placer->offset, origin_box[3]);
+        vec3_add(origin_box[3], placer->origin, origin_box[3]);
         mat4_iscale(origin_box, 0.1, 0.1, 0.1);
         render_box(&goxel.rend, origin_box, color,
                 EFFECT_NO_DEPTH_TEST | EFFECT_NO_SHADING);
     }
 
-    curs->snap_offset = 0;
+    curs->snap_offset = 0.5;
 
     gesture3d(&placer->gestures.hover, curs, USER_PASS(placer, painter));
     gesture3d(&placer->gestures.drag, curs, USER_PASS(placer, painter));
@@ -240,16 +279,25 @@ static void on_format(void *user, file_format_t *f)
     }
 }
 
+static void reset(tool_placer_t* placer) {
+    volume_delete(placer->imported_volume);
+    placer->imported_volume = volume_new();
+    placer->imported_volume_orig = volume_new();
+    mat4_copy(mat4_identity, placer->mat);
+    mat4_copy(mat4_identity, placer->box);
+    vec3_set(placer->offset, 0, 0, 0);
+    vec3_set(placer->origin, 0, 0, 0);
+    vec3_set(placer->last_curs_pos, 0, 0, 0);
+}
+
 static int gui(tool_t *tool)
 {
     tool_placer_t *placer = (tool_placer_t*)tool;
-    float mat[4][4] = MAT4_IDENTITY;
-    bool only_origin = false;
+    float rotation[4][4] = MAT4_IDENTITY;
     
     int origin_x, origin_y, origin_z, offset_x, offset_y, offset_z;
 
     // Browse files
-    
     char label[128];
     gui_text("Import as");
     if (!g_current) g_current = file_formats; // First one.
@@ -262,113 +310,90 @@ static int gui(tool_t *tool)
 
     if (g_current->import_gui)
         g_current->import_gui(g_current);
+
     if (gui_button("Import", 1, 0)) {
-        if (!placer->volume)
-            placer->volume = volume_new();
-        goxel_import_file_to_volume(NULL, g_current->name, placer->volume);
+        reset(placer);
+        goxel_import_file_to_volume(NULL, g_current->name, placer->imported_volume);
+        placer->imported_volume_orig = volume_copy(placer->imported_volume);
         int bbox[2][3];
-        volume_get_bbox(placer->volume, bbox, true);
+        volume_get_bbox(placer->imported_volume, bbox, true);
         bbox_from_aabb(placer->box, bbox);
-        mat4_copy(mat, placer->mat);
-        center_origin(placer);
-        
-        // float origin[3];
-        // center_origin_translation(placer->volume, origin);
-        // LOG_D("Origin translation: %f / %f / %f", origin[0], origin[1], origin[2]);
-        // //vec3_sub(pos, layer->mat[3], translation[3]);
-        // //mat4_translate(mat, -origin[0], -origin[1], -origin[2], mat);
-        // //volume_move(placer->volume, ot);
-
-        // float m[4][4] = MAT4_IDENTITY;
-        // vec3_add(m[3], origin, m[3]);
-        // mat4_itranslate(m, +origin[0], +origin[1], +origin[2]);
-        // mat4_imul(m, mat);
-        // mat4_itranslate(m, -origin[0], -origin[1], -origin[2]);
-        // mat4_copy(m, mat);
-
+        center_origin(placer, true);
     }
-    //volume_iterator_t iter = {0};
-    //volume_set_at(placer->tool_volume, &iter, pos,
-    //                  (uint8_t[]){c[0], c[1], c[2], 255});
+    
     if (gui_button("Reset", 1, 0)) {
-        volume_delete(placer->volume);
-        placer->volume = volume_new();
+        reset(placer);
     }
 
     tool_gui_snap();
     
-    if (placer->volume) {
-        origin_x = (int)round(placer->mat[3][0]);
-        origin_y = (int)round(placer->mat[3][1]);
-        origin_z = (int)round(placer->mat[3][2]);
+    if (placer->imported_volume) {
+        origin_x = (int)round(placer->origin[0]);
+        origin_y = (int)round(placer->origin[1]);
+        origin_z = (int)round(placer->origin[2]);
 
-        offset_x = (int)round(placer->offset[3][0]);
-        offset_y = (int)round(placer->offset[3][1]);
-        offset_z = (int)round(placer->offset[3][2]);
+        offset_x = (int)round(placer->offset[0]);
+        offset_y = (int)round(placer->offset[1]);
+        offset_z = (int)round(placer->offset[2]);
 
         gui_group_begin("Offset");
         if (gui_input_int("X", &offset_x, 0, 0)) {
-            placer->offset[3][0] = offset_x;
+            placer->offset[0] = offset_x;
         }
         if (gui_input_int("Y", &offset_y, 0, 0)) {
-            placer->offset[3][1] = offset_y;
+            placer->offset[1] = offset_y;
         }
         if (gui_input_int("Z", &offset_z, 0, 0)) {
-            placer->offset[3][2] = offset_z;
+            placer->offset[2] = offset_z;
         }
         if (gui_button("Reset", -1, 0)) {
-            placer->offset[3][0] = 0;
-            placer->offset[3][1] = 0;
-            placer->offset[3][2] = 0;
+            placer->offset[0] = 0;
+            placer->offset[1] = 0;
+            placer->offset[2] = 0;
         }
         gui_group_end();
 
         gui_group_begin("Rotation");
         gui_row_begin(2);
         if (gui_button("-X", 0, 0))
-            mat4_irotate(mat, -M_PI / 2, 1, 0, 0);
+            mat4_irotate(rotation, -M_PI / 2, 1, 0, 0);
         if (gui_button("+X", 0, 0))
-            mat4_irotate(mat, +M_PI / 2, 1, 0, 0);
+            mat4_irotate(rotation, +M_PI / 2, 1, 0, 0);
         gui_row_end();
 
         gui_row_begin(2);
         if (gui_button("-Y", 0, 0))
-            mat4_irotate(mat, -M_PI / 2, 0, 1, 0);
+            mat4_irotate(rotation, -M_PI / 2, 0, 1, 0);
         if (gui_button("+Y", 0, 0))
-            mat4_irotate(mat, +M_PI / 2, 0, 1, 0);
+            mat4_irotate(rotation, +M_PI / 2, 0, 1, 0);
         gui_row_end();
 
         gui_row_begin(2);
         if (gui_button("-Z", 0, 0))
-            mat4_irotate(mat, -M_PI / 2, 0, 0, 1);
+            mat4_irotate(rotation, -M_PI / 2, 0, 0, 1);
         if (gui_button("+Z", 0, 0))
-            mat4_irotate(mat, +M_PI / 2, 0, 0, 1);
+            mat4_irotate(rotation, +M_PI / 2, 0, 0, 1);
         gui_row_end();
         gui_group_end();
 
         gui_group_begin("Origin");
         if (gui_input_int("X", &origin_x, 0, 0)) {
-            mat[3][0] = origin_x - (int)round(placer->mat[3][0]);
-            only_origin = true;
+            placer->origin[0] = origin_x;
         }
         if (gui_input_int("Y", &origin_y, 0, 0)) {
-            mat[3][1] = origin_y - (int)round(placer->mat[3][1]);
-            only_origin = true;
+            placer->origin[1] = origin_y;
         }
         if (gui_input_int("Z", &origin_z, 0, 0)) {
-            mat[3][2] = origin_z - (int)round(placer->mat[3][2]);
-            only_origin = true;
+            placer->origin[2] = origin_z;
         }
         if (gui_button("Center", -1, 0)) {
-            center_origin(placer);
+            center_origin(placer, false);
         }
         gui_group_end();
     }
 
-    if (placer->volume) {
-        //float transform[4][4] = MAT4_IDENTITY;
-        do_move(placer->volume, placer->box, placer->mat, mat,
-                    placer->origin, true, only_origin);
+    if (placer->imported_volume && !mat4_equal(rotation, mat4_identity)) {
+        apply_rotation(placer, rotation);
     }
     return 0;
 }

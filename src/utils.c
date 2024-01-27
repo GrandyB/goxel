@@ -228,9 +228,17 @@ int utf_16_to_8(const wchar_t *in16, char *out8, size_t size8)
     return err;
 }
 
-void debug_log_44_matrix(float mat[4][4]) {
-        LOG_D("[%f][%f][%f][%f]", mat[0][0], mat[0][1], mat[0][2], mat[0][3]);
-        LOG_D("[%f][%f][%f][%f]", mat[1][0], mat[1][1], mat[1][2], mat[1][3]);
-        LOG_D("[%f][%f][%f][%f]", mat[2][0], mat[2][1], mat[2][2], mat[2][3]);
-        LOG_D("[%f][%f][%f][%f]", mat[3][0], mat[3][1], mat[3][2], mat[3][3]);
+void debug_log_44_matrix(const char* name, float mat[4][4]) {
+    LOG_D(name);
+    LOG_D("    [%f][%f][%f][%f]", mat[0][0], mat[0][1], mat[0][2], mat[0][3]);
+    LOG_D("    [%f][%f][%f][%f]", mat[1][0], mat[1][1], mat[1][2], mat[1][3]);
+    LOG_D("    [%f][%f][%f][%f]", mat[2][0], mat[2][1], mat[2][2], mat[2][3]);
+    LOG_D("    [%f][%f][%f][%f]", mat[3][0], mat[3][1], mat[3][2], mat[3][3]);
+    LOG_D("");
+}
+void debug_log_vec3_int(const char* name, int vec[3]) {
+    LOG_D("%s [%i / %i / %i]", name, vec[0], vec[1], vec[2]);
+}
+void debug_log_vec3_float(const char* name, const float vec[3]) {
+    LOG_D("%s [%f / %f / %f]", name, vec[0], vec[1], vec[2]);
 }

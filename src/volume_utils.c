@@ -623,12 +623,10 @@ void do_move(volume_t *volume, float box[4][4], float mat[4][4], const float tra
     } else {
         // Only apply translation to the layer->mat.
         vec3_add(mat[3], trans[3], mat[3]);
-        // LOG_D("New mat:");
-        // debug_log_44_matrix(mat);
-        // LOG_D("---");
 
         if (!only_origin) {
             volume_move(volume, m);
+            // Update bounding box if there is one
             if (!box_is_null(box)) {
                 mat4_mul(m, box, box);
                 box_get_bbox(box, box);
