@@ -102,6 +102,7 @@ static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
             floor(placer->mat[3][1]) + 0.5,
             floor(placer->mat[3][2]) + 0.5);
         vec3_add(origin, placer->center, origin);
+        vec3_add(origin, placer->origin, origin);
 
         // Change referential to the volume origin.
         // XXX: maybe this should be done in volume_move directy??
