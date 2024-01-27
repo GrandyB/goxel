@@ -20,12 +20,11 @@
 #include "file_format.h"
 #include <errno.h>
 
-static int import_as_txt(const file_format_t *format, image_t *image,
+static int import_as_txt_to_volume(const file_format_t *format, volume_t *volume,
                          const char *path)
 {
     FILE *file;
     char line[2048];
-    layer_t *layer;
     volume_iterator_t iter = {0};
     int pos[3];
     unsigned int c[4];
@@ -39,8 +38,6 @@ static int import_as_txt(const file_format_t *format, image_t *image,
         LOG_E("Can not open file for reading: %s", path);
         return 1;
     }
-
-    layer = image->active_layer;
 
     while (fgets(line, 2048, file)) {
         // if empty line or comment, skip
@@ -57,14 +54,21 @@ static int import_as_txt(const file_format_t *format, image_t *image,
         pos[2] = atoi(token);
         token = strtok(NULL, " "); // get forth token (RRGGBB)
         sscanf(token, "%02x%02x%02x", &c[0], &c[1], &c[2]);
-        volume_set_at(layer->volume, &iter, pos,
+        volume_set_at(volume, &iter, pos,
                       (uint8_t[]){c[0], c[1], c[2], 255});
     }
 
+    LOG_I("Text file finished.");
     fclose(file);
     return 0;
 }
-
+static int import_as_txt(const file_format_t *format, image_t *image,
+                         const char *path)
+{
+    layer_t *layer;
+    layer = image->active_layer;
+    return import_as_txt_to_volume(format, layer->volume, path);
+}
 
 static int export_as_txt(const file_format_t *format, const image_t *image,
                          const char *path)
@@ -100,5 +104,6 @@ FILE_FORMAT_REGISTER(txt,
     .exts = {"*.txt"},
     .exts_desc = "text",
     .import_func = import_as_txt,
+    .import_volume_func = import_as_txt_to_volume,
     .export_func = export_as_txt,
 )

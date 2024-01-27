@@ -357,6 +357,13 @@ DECL void vec3_cross(const float a[S 3], const float b[S 3], float out[S 3])
 
 void vec3_get_ortho(const float a[S 3], float out[S 3]);
 
+/* Create a new translation mat4 from a vec3 of 3D coordinates. */
+DECL void vec3_to_mat4(const float a[S 3], float out[S 4][4]) {
+    out[3][0] = a[0];
+    out[3][1] = a[1];
+    out[3][2] = a[2];
+}
+
 DECL void mat4_copy(const float m[S 4][4], float out[S 4][4])
 {
     int i, j;

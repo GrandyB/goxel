@@ -34,6 +34,8 @@ struct file_format
     int             (*import_func)(const file_format_t *format, image_t *img,
                                    const char *path);
     void            (*import_gui)(file_format_t *format);
+    int             (*import_volume_func)(const file_format_t *format, volume_t *volume,
+                                   const char *path);
 };
 
 void file_format_register(file_format_t *format);
@@ -46,6 +48,7 @@ void file_format_iter(const char *mode, void *user,
 
 // The global list of registered file formats.
 extern file_format_t *file_formats;
+extern file_format_t *file_formats_import_to_volume;
 
 #define FILE_FORMAT_REGISTER(id_, ...) \
     static file_format_t GOX_format_##id_ = {__VA_ARGS__}; \

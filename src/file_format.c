@@ -25,6 +25,7 @@
 
 // The global hash table of file formats.
 file_format_t *file_formats = NULL;
+file_format_t *file_formats_import_to_volume = NULL;
 
 static bool endswith(const char *str, const char *end)
 {
@@ -38,6 +39,9 @@ static bool endswith(const char *str, const char *end)
 void file_format_register(file_format_t *format)
 {
     DL_APPEND(file_formats, format);
+    if (format->import_volume_func) {
+        DL_APPEND(file_formats_import_to_volume, format);
+    }
 }
 
 const file_format_t *file_format_for_path(const char *path, const char *name,
@@ -45,6 +49,7 @@ const file_format_t *file_format_for_path(const char *path, const char *name,
 {
     const file_format_t *f;
     bool need_read = strchr(mode, 'r');
+    bool need_read_volume = strchr(mode, 'v');
     bool need_write = strchr(mode, 'w');
     const char *ext;
 
@@ -54,6 +59,7 @@ const file_format_t *file_format_for_path(const char *path, const char *name,
     DL_FOREACH(file_formats, f) {
         if (need_read && !f->import_func) continue;
         if (need_write && !f->export_func) continue;
+        if (need_read_volume && !f->import_volume_func) continue;
         if (name && strcasecmp(f->name, name) != 0) continue;
         if (path) {
             ext = f->exts[0] + 1; // Pick the string after '*'.
@@ -71,10 +77,12 @@ void file_format_iter(const char *mode, void *user,
     assert(fun);
     file_format_t *f;
     bool need_read = strchr(mode, 'r');
+    bool need_read_volume = strchr(mode, 'v');
     bool need_write = strchr(mode, 'w');
     DL_FOREACH(file_formats, f) {
         if (need_read && !f->import_func) continue;
         if (need_write && !f->export_func) continue;
+        if (need_read_volume && !f->import_volume_func) continue;
         fun(user, f);
     }
 }

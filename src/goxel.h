@@ -347,7 +347,11 @@ bool str_replace_ext(const char *str, const char *new_ext,
 char* get_file_name_from_path(const char *path);
 
 /* Debug log a [4][4] float matrix. Looking at YOU, view matrices. */
-void debug_log_44_matrix(float mat[4][4]);
+void debug_log_44_matrix(const char* name, float mat[4][4]);
+/* Debug log a vec3 int[3] matrix. */
+void debug_log_vec3_int(const char* name, int vec3[3]);
+/* Debug log a vec3 float[3] matrix. */
+void debug_log_vec3_float(const char* name, const float vec3[3]);
 
 /** Get the current unix time in seconds. */
 double get_unix_time(void);
@@ -631,6 +635,7 @@ void goxel_set_hint_text(const char *msg, ...);
 void goxel_import_image_plane(const char *path);
 
 int goxel_import_file(const char *path, const char *format);
+int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume);
 int goxel_export_to_file(const char *path, const char *format);
 
 // Render the view into an RGB[A] buffer.

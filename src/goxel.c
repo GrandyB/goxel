@@ -1231,6 +1231,26 @@ int goxel_import_file(const char *path, const char *format)
     return 0;
 }
 
+int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume)
+{
+    const file_format_t *f;
+    int err;
+
+    f = file_format_for_path(path, format, "r");
+    if (!f) return -1;
+    if (!path) {
+        path = sys_open_file_dialog("Import", NULL, f->exts, f->exts_desc);
+        if (!path) return -1;
+    }
+    err = f->import_volume_func(f, volume, path);
+    char *file_name = get_file_name_from_path(path);
+    LOG_D("path: '%s' - file_name: '%s'", path, file_name);
+    
+    if (err) return err;
+
+    return 0;
+}
+
 static void get_export_path(const file_format_t *f, char *buf, size_t size)
 {
     const char *ext = f->exts[0] + 2;

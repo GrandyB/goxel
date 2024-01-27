@@ -891,6 +891,7 @@ bool gui_input_float(const char *label, float *v, float step,
 
     if (ret) {
         *v = clamp(*v, minv, maxv);
+        *v = floor(*v / step) * step;
         on_click();
     }
     return ret;

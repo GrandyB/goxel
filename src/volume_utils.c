@@ -170,13 +170,13 @@ void volume_move(volume_t *volume, const float mat[4][4])
     volume_t *src_volume = volume_copy(volume);
     float imat[4][4];
 
-    mat4_invert(mat, imat);
-    volume_get_box(volume, true, box);
+    mat4_invert(mat, imat); // Invert transformation matrix
+    volume_get_box(volume, true, box); // Get bbox
     if (box_is_null(box)) return;
-    mat4_mul(mat, box, box);
+    mat4_mul(mat, box, box); // Apply transformation to bbox
     volume_fill(volume, box, volume_move_get_color,
-                USER_PASS(src_volume, &imat));
-    volume_delete(src_volume);
+                USER_PASS(src_volume, &imat)); // Fill volume with transformed data
+    volume_delete(src_volume); // Delete copy
     volume_remove_empty_tiles(volume, false);
 }
 
@@ -582,4 +582,64 @@ uint32_t volume_crc32(const volume_t *volume)
         ret = XXH32(v, sizeof(v), ret);
     }
     return ret;
+}
+
+bool layer_is_volume(const layer_t *layer)
+{
+    return !layer->base_id && !layer->image && !layer->shape;
+}
+
+void do_move(volume_t *volume, float box[4][4], float mat[4][4], const float trans[4][4],
+                    const float origin_[3], bool layer_is_volume, bool only_origin)
+{
+    /*
+     * Note: for voxel volume layers, rotation and scale are only
+     * applied to the voxels, without modifying the layer transformation
+     * matrix.  For translation we modify the matrix (so that the origin
+     * is moved) but we also modify the voxels because we want all the layer
+     * volume to stay aligned.
+     */
+
+    float m[4][4] = MAT4_IDENTITY;
+    float origin[3];
+
+    if (mat4_equal(trans, mat4_identity)) return;
+
+    vec3_copy(origin_ ?:mat[3], origin);
+
+    // Make sure we always center on a grid point.
+    origin[0] = floor(mat[3][0]) + 0.5;
+    origin[1] = floor(mat[3][1]) + 0.5;
+    origin[2] = floor(mat[3][2]) + 0.5;
+
+    // Change referential to the volume origin.
+    // XXX: maybe this should be done in volume_move directy??
+    mat4_itranslate(m, +origin[0], +origin[1], +origin[2]);
+    mat4_imul(m, trans);
+    mat4_itranslate(m, -origin[0], -origin[1], -origin[2]);
+
+    if (!layer_is_volume) {
+        mat4_mul(m, mat, mat);
+    } else {
+        // Only apply translation to the layer->mat.
+        vec3_add(mat[3], trans[3], mat[3]);
+
+        if (!only_origin) {
+            volume_move(volume, m);
+            // Update bounding box if there is one
+            if (!box_is_null(box)) {
+                mat4_mul(m, box, box);
+                box_get_bbox(box, box);
+            }
+        }
+    }
+}
+
+void do_move_layer(layer_t *layer, const float mat[4][4],
+                    const float origin_[3], bool only_origin) {
+    bool is_volume = layer_is_volume(layer);
+    do_move(layer->volume, layer->box, layer->mat, mat, origin_, is_volume, only_origin);
+    if (!is_volume) {
+        layer->base_volume_key = 0; // Mark it as dirty.
+    }
 }

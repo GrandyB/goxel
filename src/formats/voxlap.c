@@ -73,7 +73,7 @@ static void swap_color(uint32_t v, uint8_t ret[4])
     ret[3] = o[3];
 }
 
-static int kv6_import(const file_format_t *format, image_t *image,
+static int kv6_import_to_volume(const file_format_t *format, volume_t *volume,
                       const char *path)
 {
     FILE *file;
@@ -142,7 +142,7 @@ static int kv6_import(const file_format_t *format, image_t *image,
         }
     }
 
-    volume_blit(image->active_layer->volume, (const uint8_t*)cube,
+    volume_blit(volume, (const uint8_t*)cube,
               -w / 2, -h / 2, -d / 2, w, h, d, NULL);
 end:
     free(cube);
@@ -153,14 +153,19 @@ end:
     return ret;
 }
 
-static int kvx_import(const file_format_t *format, image_t *image,
+static int kv6_import(const file_format_t *format, image_t *image,
+                      const char *path) {
+    return kv6_import_to_volume(format, image->active_layer->volume, path);
+}
+
+static int kvx_import_to_volume(const file_format_t *format, volume_t *volume,
                       const char *path)
 {
     FILE *file;
     int i, r, ret = 0, nb, size, lastz = 0, len, visface;
     int w, h, d, px, py, pz, x, y, z;
     int offsetsize, voxdatasize;
-    int aabb[2][3];
+    //int aabb[2][3];
     uint8_t color = 0;
     uint8_t (*palette)[4] = NULL;
     uint32_t *xoffsets = NULL;
@@ -239,12 +244,12 @@ static int kvx_import(const file_format_t *format, image_t *image,
         }
     }
 
-    vec3_set(aabb[0], -px, -py, pz - d);
-    vec3_set(aabb[1], w - px, h - py, pz);
+    //vec3_set(aabb[0], -px, -py, pz - d);
+    //vec3_set(aabb[1], w - px, h - py, pz);
 
-    bbox_from_aabb(image->box, aabb);
-    bbox_from_aabb(image->active_layer->box, aabb);
-    volume_blit(image->active_layer->volume, (uint8_t*)cube,
+    //bbox_from_aabb(image->box, aabb);
+    //bbox_from_aabb(image->active_layer->box, aabb);
+    volume_blit(volume, (uint8_t*)cube,
               -px, -py, pz - d, w, h, d, NULL);
 
 end:
@@ -253,6 +258,13 @@ end:
     free(xoffsets);
     free(xyoffsets);
     fclose(file);
+    return ret;
+}
+
+static int kvx_import(const file_format_t *format, image_t *image,
+                      const char *path)
+{
+    int ret = kvx_import_to_volume(format, image->active_layer->volume, path);
     return ret;
 }
 
@@ -518,6 +530,7 @@ FILE_FORMAT_REGISTER(kv6,
     .exts = {"*.kv6"},
     .exts_desc = "slab",
     .import_func = kv6_import,
+    .import_volume_func = kv6_import_to_volume,
 )
 
 FILE_FORMAT_REGISTER(kvx,
@@ -525,5 +538,6 @@ FILE_FORMAT_REGISTER(kvx,
     .exts = {"*.kvx"},
     .exts_desc = "slab",
     .import_func = kvx_import,
+    .import_volume_func = kvx_import_to_volume,
     .export_func = kvx_export,
 )

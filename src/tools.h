@@ -36,6 +36,7 @@ enum {
     TOOL_EXTRUDE,
     TOOL_FUZZY_SELECT,
     TOOL_RECT_SELECT,
+    TOOL_PLACER,
 
     TOOL_COUNT
 };
