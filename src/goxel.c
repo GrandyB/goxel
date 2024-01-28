@@ -530,7 +530,6 @@ static int on_drag(const gesture_t *gest, void *user)
         c->flags |= CURSOR_PRESSED;
     if (gest->state == GESTURE_END)
         c->flags &= ~CURSOR_PRESSED;
-
     c->snaped = goxel_unproject(
             gest->viewport, gest->pos, c->snap_mask,
             c->snap_offset, c->pos, c->normal);
@@ -631,6 +630,7 @@ static int on_zoom(const gesture_t *gest, void *user)
 static int on_hover(const gesture_t *gest, void *user)
 {
     cursor_t *c = &goxel.cursor;
+    vec2_copy(gest->pos, c->xy);
     c->snaped = goxel_unproject(gest->viewport, gest->pos, c->snap_mask,
                                 c->snap_offset, c->pos, c->normal);
     set_cursor_hint(c);
@@ -1700,4 +1700,52 @@ ACTION_REGISTER(toggle_first_person_camera,
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = toggle_first_person_camera,
     .default_shortcut = "#",
+)
+
+static void select_layer_under_cursor(void)
+{
+    image_t *img = goxel.image;
+    layer_t *layer;
+    volume_iterator_t *it = {0};
+
+    // Use the raw unproject on volume, which bypasses the 'snap' setting
+    float pos[3];
+    float normal[3];
+    goxel_unproject_on_volume(goxel.gui.viewport, goxel.cursor.xy,
+                            goxel_get_layers_volume(goxel.image), pos, normal);
+    LOG_D("Cursor: %f / %f / %f", pos[0], pos[1], pos[2]);
+    LOG_D("Normal: %f / %f / %f", normal[0], normal[1], normal[2]);
+
+    // Setup position with normals from the cursor, so that it handles the snapped side
+    vec3_sub(pos, normal, pos);
+    pos[0] += -goxel.cursor.snap_offset;
+    pos[1] += -goxel.cursor.snap_offset;
+    pos[2] += -goxel.cursor.snap_offset;
+    int int_pos[3];
+    vec3_set(int_pos, (int)pos[0], (int)pos[1], (int)pos[2]);
+    LOG_D("Position to analyse: %i / %i / %i", int_pos[0], int_pos[1], int_pos[2]);
+
+    bool found;
+    DL_FOREACH_REVERSE(img->layers, layer) {
+        if (!layer->visible) continue;
+        if (!layer->volume) continue;
+
+        uint8_t out[4];
+        volume_get_at(layer->volume, it, int_pos, out);
+        if (out[3] != 0) { // not a completely transparent block
+            goxel.image->active_layer = layer;
+            LOG_D("Found: %s", layer->name);
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        LOG_D("Unable to find.");
+    }
+}
+ACTION_REGISTER(select_layer_under_cursor,
+    .help = "Select layer under cursor",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = select_layer_under_cursor,
+    .default_shortcut = "'",
 )

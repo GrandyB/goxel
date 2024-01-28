@@ -18,10 +18,6 @@
 
 #include "goxel.h"
 
-#define DL_FOREACH_REVERSE(head, el) \
-    for (el = (head) ? (head)->prev : NULL; el; \
-            el = (el == (head)) ? NULL : el->prev)
-
 static void toggle_layer_only_visible(layer_t *layer)
 {
     layer_t *other;

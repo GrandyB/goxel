@@ -241,6 +241,10 @@
     (_a > _b) ? +1 : (_a < _b) ? -1 : 0; \
 })
 
+#define DL_FOREACH_REVERSE(head, el) \
+    for (el = (head) ? (head)->prev : NULL; el; \
+            el = (el == (head)) ? NULL : el->prev)
+
 /* Function: smoothstep
  * Perform Hermite interpolation between two values.
  *

@@ -99,6 +99,8 @@ enum {
 
     X(export_to_photos),
 
+    X(select_layer_under_cursor),
+
     ACTION_COUNT
 };
 
