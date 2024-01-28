@@ -268,6 +268,16 @@ static void combine(const uint8_t a[4], const uint8_t b[4], int mode,
             ret[1] = b[1];
             ret[2] = b[2];
         }
+    } else if (mode == MODE_ADD) {
+        ret[0] = (int)a[0] * b[0] / 255;
+        ret[1] = (int)a[1] * b[1] / 255;
+        ret[2] = (int)a[2] * b[2] / 255;
+        ret[3] = (int)a[3] * b[3] / 255;
+    } else if (mode == MODE_MIDPOINT) {
+        ret[0] = clamp((a[0] + b[0]) / 2, 0, 255);
+        ret[1] = clamp((a[1] + b[1]) / 2, 0, 255);
+        ret[2] = clamp((a[2] + b[2]) / 2, 0, 255);
+        ret[3] = clamp((a[3] + b[3]) / 2, 0, 255);
     } else {
         assert(false);
     }
@@ -410,11 +420,14 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         // Apply colours
         uint8_t col[4];
         memcpy(col, painter->color, 4);
-        if(painter->color_blend == COLOR_INHERITED || painter->color_blend == COLOR_INTERP_INHERITED) {
+        if (painter->color_blend != COLOR_USER) {
             get_color_beneath(vp, col);
         }
-        if(painter->color_blend == COLOR_INTERP_INHERITED) {
-            color_mul(painter->color, col, col);
+        if (painter->color_blend == COLOR_ADD_INHERITED) {
+            combine(painter->color, col, MODE_ADD, col);
+        }
+        if (painter->color_blend == COLOR_MIDPOINT_INHERITED) {
+            combine(painter->color, col, MODE_MIDPOINT, col);
         }
         memcpy(c, col, 4);
 

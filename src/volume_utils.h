@@ -40,6 +40,8 @@
  * MODE_INTERSECT   - Set alpha to the min of the source and destination.
  * MODE_INTERSECT_FILL - Like intersect but use the color of the source.
  * MODE_MULT_ALPHA  - Multiply the source and dest using source alpha.
+ * MODE_ADD         - Add one colour to the other.
+ * MODE_MIDPOINT    - Acquire the midpoint of the two colours
  */
 enum {
     MODE_NULL,
@@ -52,6 +54,8 @@ enum {
     MODE_INTERSECT_FILL,
     MODE_MULT_ALPHA,
     MODE_REPLACE,
+    MODE_ADD,
+    MODE_MIDPOINT,
 };
 
 /*
@@ -60,12 +64,14 @@ enum {
  * 
  * COLOR_USER           - Use user selected color
  * COLOR_INHERITED      - Use nearest color found beneath position
- * COLOR_INTERP_INHERITED - Interpolate between USER and INHERIT
+ * COLOR_MIDPOINT_INHERITED - Interpolate between USER and INHERIT
+ * COLOR_ADD_INHERITED - Additive, USER + INHERIT
  */
 enum {
     COLOR_USER,
     COLOR_INHERITED,
-    COLOR_INTERP_INHERITED,
+    COLOR_MIDPOINT_INHERITED,
+    COLOR_ADD_INHERITED,
 };
 
 

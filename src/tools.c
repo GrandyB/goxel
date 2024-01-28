@@ -248,10 +248,11 @@ int tool_gui_color(void)
         }
         gui_text("Blend mode");
         gui_group_begin(NULL);
-        gui_row_begin(3);
+        gui_row_begin(4);
         color_blend_button("User", COLOR_USER);
-        color_blend_button("Inherited", COLOR_INHERITED);
-        color_blend_button("Interpolate", COLOR_INTERP_INHERITED);
+        color_blend_button("Inherit", COLOR_INHERITED);
+        color_blend_button("Add", COLOR_ADD_INHERITED);
+        color_blend_button("Mid", COLOR_MIDPOINT_INHERITED);
         gui_row_end();
         gui_group_end();
     }
