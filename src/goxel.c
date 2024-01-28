@@ -19,7 +19,6 @@
 #include "goxel.h"
 #include "script.h"
 #include "xxhash.h"
-#include "file_format.h"
 
 #include "shader_cache.h"
 
@@ -1231,7 +1230,7 @@ int goxel_import_file(const char *path, const char *format)
     return 0;
 }
 
-int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume)
+int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume, void (*on_select)(const char *path, const char *file_name, const file_format_t *format))
 {
     const file_format_t *f;
     int err;
@@ -1243,9 +1242,9 @@ int goxel_import_file_to_volume(const char *path, const char *format, volume_t *
         if (!path) return -1;
     }
     err = f->import_volume_func(f, volume, path);
-    char *file_name = get_file_name_from_path(path);
+    const char *file_name = get_file_name_from_path(path);
     LOG_D("path: '%s' - file_name: '%s'", path, file_name);
-    
+    on_select(path, file_name, f);
     if (err) return err;
 
     return 0;

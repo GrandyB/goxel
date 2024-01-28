@@ -33,6 +33,7 @@
 #include "assets.h"
 #include "block_def.h"
 #include "camera.h"
+#include "file_format.h"
 #include "gesture.h"
 #include "gesture3d.h"
 #include "gui.h"
@@ -639,7 +640,7 @@ void goxel_set_hint_text(const char *msg, ...);
 void goxel_import_image_plane(const char *path);
 
 int goxel_import_file(const char *path, const char *format);
-int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume);
+int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume, void (*on_select)(const char *path, const char *file_name, const file_format_t *format));
 int goxel_export_to_file(const char *path, const char *format);
 
 // Render the view into an RGB[A] buffer.

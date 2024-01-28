@@ -18,6 +18,7 @@
 
 #include "goxel.h"
 #include "file_format.h"
+#include "utlist.h"
 
 static file_format_t *g_current = NULL;
 
@@ -291,6 +292,35 @@ static void reset(tool_placer_t* placer) {
     vec3_set(placer->last_curs_pos, 0, 0, 0);
     mat4_copy(mat4_identity, placer->rot);
 }
+typedef struct past_import past_import_t;
+struct past_import {
+    past_import_t *next, *prev; // For the global list of past files.
+    const char *path;
+    const char *file_name;
+    const file_format_t *format;
+};
+past_import_t *past_files = NULL;
+
+static void on_file_import(const char *path, const char *file_name, const file_format_t *format) {
+    past_import_t *past;
+    char* path_cpy = (char*)malloc(strlen(path) + 1);
+    char* file_name_cpy = (char*)malloc(strlen(file_name) + 1);
+    strcpy(path_cpy, path);
+    strcpy(file_name_cpy, file_name);
+
+    past = calloc(1, sizeof(*past));
+    *past = (past_import_t) {
+        .path = path_cpy,
+        .file_name = file_name_cpy,
+        .format = format,
+    };
+    DL_APPEND(past_files, past);
+}
+
+static void post_import(tool_placer_t *placer) {
+    placer->imported_volume_orig = volume_copy(placer->imported_volume);
+    center_origin(placer);
+}
 
 static int gui(tool_t *tool)
 {
@@ -315,9 +345,8 @@ static int gui(tool_t *tool)
 
     if (gui_button("Import", 1, 0)) {
         reset(placer);
-        goxel_import_file_to_volume(NULL, g_current->name, placer->imported_volume);
-        placer->imported_volume_orig = volume_copy(placer->imported_volume);
-        center_origin(placer);
+        goxel_import_file_to_volume(NULL, g_current->name, placer->imported_volume, on_file_import);
+        post_import(placer);
     }
     
     if (gui_button("Reset", 1, 0)) {
@@ -390,6 +419,17 @@ static int gui(tool_t *tool)
         }
         gui_group_end();
     }
+
+    if (gui_section_begin("History", GUI_SECTION_COLLAPSABLE_CLOSED)) {
+        const past_import_t *i;
+        DL_FOREACH(past_files, i) {
+            if(gui_button(i->file_name, 0, 0)) {
+                reset(placer);
+                i->format->import_volume_func(i->format, placer->imported_volume, i->path);
+                post_import(placer);
+            }
+        }
+    } gui_section_end();
 
     if (placer->imported_volume && !mat4_equal(rotation, mat4_identity)) {
         apply_rotation(placer, rotation);
