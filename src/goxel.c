@@ -345,7 +345,7 @@ void goxel_reset(void)
             VEC(0, 0, 0), VEC(1, 0, 0), VEC(0, 1, 0));
 
     vec4_set(goxel.back_color, 70, 70, 70, 255);
-    vec4_set(goxel.grid_color, 255, 255, 255, 127);
+    vec4_set(goxel.grid_color, 255, 255, 255, 48);
     vec4_set(goxel.image_box_color, 204, 204, 255, 255);
 
     action_exec2(ACTION_tool_set_brush);
@@ -371,7 +371,7 @@ void goxel_reset(void)
     goxel.rend.settings = (render_settings_t) {
         .occlusion_strength = 0.4,
         .ambient = 0.3,
-        .shadow = 0.3,
+        .shadow = 0.0,
     };
     if (DEFINED(NO_SHADOW))
         goxel.rend.settings.shadow = 0;

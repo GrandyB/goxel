@@ -36,7 +36,7 @@ struct material {
     .ref = 1, \
     .name = {}, \
     .metallic = 0.2, \
-    .roughness = 0.5, \
+    .roughness = 0.0, \
     .base_color = {1, 1, 1, 1}}
 
 material_t *material_new(const char *name);

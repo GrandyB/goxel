@@ -75,11 +75,6 @@ static void center_origin(layer_t *layer)
     do_move_layer(layer, translation, NULL, true);
 }
 
-float degreesToRadians(int degrees) {
-    double normalizedDegrees = fmod(degrees, 360.0);
-    return normalizedDegrees * M_PI / 180.0;
-}
-
 int degX = 0, degY = 0, degZ = 0;
 static int gui(tool_t *tool)
 {
@@ -185,11 +180,11 @@ static int gui(tool_t *tool)
         
         if (gui_button("Apply", -1, 0)) {
             if (degX)
-                mat4_irotate(mat, degreesToRadians(degX), 1, 0, 0);
+                mat4_irotate(mat, degX * DD2R, 1, 0, 0);
             if (degY)
-                mat4_irotate(mat, degreesToRadians(degY), 0, 1, 0);
+                mat4_irotate(mat, degY * DD2R, 0, 1, 0);
             if (degZ)
-                mat4_irotate(mat, degreesToRadians(degZ), 0, 0, 1);
+                mat4_irotate(mat, degZ * DD2R, 0, 0, 1);
         }
     } gui_section_end();
 
