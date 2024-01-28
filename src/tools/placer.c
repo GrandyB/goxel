@@ -28,12 +28,13 @@ typedef struct {
     volume_t *imported_volume; // Volume containing only the imported volume (current/may have been rotated)
     volume_t *imported_volume_orig; // Volume containing the volume as it was when first imported
 
-    float mat[4][4]; // position of the doodad; after all the origin/offsets applied
+    float mat[4][4]; // position of the doodad; after everything else is applied
     float box[4][4]; // the bounding box of the doodad
     float offset[3]; // relative offset of position
     float center[3]; // bottom centre of the model, calculated once on import
     float origin[3]; // relative offset of origin from the center
     float last_curs_pos[3];
+    float rot[4][4]; // current rotation applied to the doodad; modified by the GUI, applied to a copy of imported_volume_orig, which is then set back to imported_volume
 
     // Gesture start and last pos (should we put it in the 3d gesture?)
     float start_pos[3];
@@ -96,6 +97,10 @@ static void move_to(tool_placer_t *placer, float curs_pos[3]) {
 static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
         float m[4][4] = MAT4_IDENTITY;
         float origin[3];
+
+        // Add the translation to the long-running state
+        mat4_imul(placer->rot, translation);
+
         // Origin = position + center (relative offset) + origin (relative offset)
         vec3_set(origin,
             floor(placer->mat[3][0]) + 0.5,
@@ -107,14 +112,18 @@ static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
         // Apply rotation to the volume - scoot to 0,0,0 rotate and then scoot back out
         // (same mechanic as do_move)
         mat4_itranslate(m, +origin[0], +origin[1], +origin[2]);
-        mat4_imul(m, translation);
+        mat4_imul(m, placer->rot);
         mat4_itranslate(m, -origin[0], -origin[1], -origin[2]);
-        volume_move(placer->imported_volume, m);
+        volume_t *copy = volume_copy(placer->imported_volume_orig);
+        volume_move(copy, placer->mat);
+        volume_move(copy, m);
+        volume_delete(placer->imported_volume);
+        placer->imported_volume = copy;
 
         // Apply the rotation to the origin - scoot to 0,0,0 rotate and then scoot back out
         mat4_copy(mat4_identity, m);
         mat4_itranslate(m, +placer->origin[0], +placer->origin[1], +placer->origin[2]);
-        mat4_imul(m, translation);
+        mat4_imul(m, placer->rot);
         mat4_itranslate(m, -placer->origin[0], -placer->origin[1], -placer->origin[2]);
 
         float imat[4][4];
@@ -280,6 +289,7 @@ static void reset(tool_placer_t* placer) {
     vec3_set(placer->offset, 0, 0, 0);
     vec3_set(placer->origin, 0, 0, 0);
     vec3_set(placer->last_curs_pos, 0, 0, 0);
+    mat4_copy(mat4_identity, placer->rot);
 }
 
 static int gui(tool_t *tool)
@@ -345,23 +355,23 @@ static int gui(tool_t *tool)
         gui_group_begin("Rotation");
         gui_row_begin(2);
         if (gui_button("-X", 0, 0))
-            mat4_irotate(rotation, -M_PI / 2, 1, 0, 0);
+            mat4_irotate(rotation, -M_PI / 8, 1, 0, 0);
         if (gui_button("+X", 0, 0))
-            mat4_irotate(rotation, +M_PI / 2, 1, 0, 0);
+            mat4_irotate(rotation, +M_PI / 8, 1, 0, 0);
         gui_row_end();
 
         gui_row_begin(2);
         if (gui_button("-Y", 0, 0))
-            mat4_irotate(rotation, -M_PI / 2, 0, 1, 0);
+            mat4_irotate(rotation, -M_PI / 8, 0, 1, 0);
         if (gui_button("+Y", 0, 0))
-            mat4_irotate(rotation, +M_PI / 2, 0, 1, 0);
+            mat4_irotate(rotation, +M_PI / 8, 0, 1, 0);
         gui_row_end();
 
         gui_row_begin(2);
         if (gui_button("-Z", 0, 0))
-            mat4_irotate(rotation, -M_PI / 2, 0, 0, 1);
+            mat4_irotate(rotation, -M_PI / 8, 0, 0, 1);
         if (gui_button("+Z", 0, 0))
-            mat4_irotate(rotation, +M_PI / 2, 0, 0, 1);
+            mat4_irotate(rotation, +M_PI / 8, 0, 0, 1);
         gui_row_end();
         gui_group_end();
 

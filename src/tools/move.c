@@ -75,6 +75,12 @@ static void center_origin(layer_t *layer)
     do_move_layer(layer, translation, NULL, true);
 }
 
+float degreesToRadians(int degrees) {
+    double normalizedDegrees = fmod(degrees, 360.0);
+    return normalizedDegrees * M_PI / 180.0;
+}
+
+int degX = 0, degY = 0, degZ = 0;
 static int gui(tool_t *tool)
 {
     layer_t *layer;
@@ -169,6 +175,23 @@ static int gui(tool_t *tool)
             }
         } gui_section_end();
     }
+
+    
+
+    if (gui_section_begin("Rotation (Destructive)", GUI_SECTION_COLLAPSABLE_CLOSED)) {
+        gui_input_int("Degrees X", &degX, 0, 360);
+        gui_input_int("Degrees Y", &degY, 0, 360);
+        gui_input_int("Degrees Z", &degZ, 0, 360);
+        
+        if (gui_button("Apply", -1, 0)) {
+            if (degX)
+                mat4_irotate(mat, degreesToRadians(degX), 1, 0, 0);
+            if (degY)
+                mat4_irotate(mat, degreesToRadians(degY), 0, 1, 0);
+            if (degZ)
+                mat4_irotate(mat, degreesToRadians(degZ), 0, 0, 1);
+        }
+    } gui_section_end();
 
     if (memcmp(&mat, &mat4_identity, sizeof(mat))) {
         image_history_push(goxel.image);
