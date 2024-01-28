@@ -25,6 +25,7 @@ enum {
 };
 
 static int g_drag_mode = 0;
+static int original_drag_mode = 0;
 
 typedef struct {
     tool_t  tool;
@@ -90,7 +91,7 @@ static int on_hover(gesture3d_t *gest, void *user)
     cursor_t *curs = gest->cursor;
     uint8_t box_color[4] = {255, 255, 0, 255};
 
-    goxel_set_help_text("Click and drag to set selection.");
+    goxel_set_help_text("Click and drag to set selection; hold shift to temp toggle into selection move mode");
     get_box(curs->pos, curs->pos, curs->normal, 0, goxel.plane, box);
     render_box(&goxel.rend, box, box_color, EFFECT_WIREFRAME);
     return 0;
@@ -122,6 +123,12 @@ static int iter(tool_t *tool, const painter_t *painter,
     curs->snap_mask &= ~(SNAP_SELECTION_IN | SNAP_SELECTION_OUT);
     curs->snap_offset = 0.5;
     curs->snap_mask |= SNAP_SELECTION_OUT;
+
+    if(curs->flags & CURSOR_SHIFT) {
+        g_drag_mode = DRAG_MOVE;
+    } else {
+        g_drag_mode = original_drag_mode;
+    }
 
     if (!selection->gestures.drag.type) {
         selection->gestures.hover = (gesture3d_t) {
@@ -156,11 +163,20 @@ static int gui(tool_t *tool)
     float x_mag, y_mag, z_mag;
     int x, y, z, w, h, d;
     float (*box)[4][4] = &goxel.selection;
+
+    if(gui_button("Select layer content", -1, 0)) {
+        float box[4][4];
+        volume_get_box(goxel.image->active_layer->volume, true, box);
+        mat4_copy(box, goxel.selection);
+    }
+
     if (box_is_null(*box)) return 0;
 
     gui_text("Drag mode");
-    gui_combo("##drag_mode", &g_drag_mode,
-              (const char*[]) {"Resize", "Move"}, 2);
+    if(gui_combo("##drag_mode", &g_drag_mode,
+              (const char*[]) {"Resize", "Move"}, 2)) {
+        original_drag_mode = g_drag_mode;
+    };
 
     gui_group_begin(NULL);
     if (gui_action_button(ACTION_reset_selection, "Reset", 1.0)) {
