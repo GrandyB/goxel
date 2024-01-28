@@ -85,6 +85,7 @@ Changes in this fork
         - Move plane up/down = < >
         - Plane visibility = /
         - FPV Camera = #
+        - Select layer under cursor = '
     - UI
         - Always add < > for '1' step int fields
 
