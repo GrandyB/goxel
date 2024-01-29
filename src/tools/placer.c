@@ -303,17 +303,23 @@ past_import_t *past_files = NULL;
 
 static void on_file_import(const char *path, const char *file_name, const file_format_t *format) {
     past_import_t *past;
-    char* path_cpy = (char*)malloc(strlen(path) + 1);
-    char* file_name_cpy = (char*)malloc(strlen(file_name) + 1);
-    strcpy(path_cpy, path);
-    strcpy(file_name_cpy, file_name);
-
     past = calloc(1, sizeof(*past));
     *past = (past_import_t) {
-        .path = path_cpy,
-        .file_name = file_name_cpy,
+        .path = path,
+        .file_name = file_name,
         .format = format,
     };
+
+    past_import_t *f, *tmp;
+    DL_FOREACH_SAFE(past_files, f, tmp) {
+        // If there is an entry for this name, remove it
+        if (strcmp(f->file_name, file_name) != 0) {
+            continue;
+        }
+        LOG_D("Delete %s", f->file_name);
+        DL_DELETE(past_files, f);
+    }
+
     DL_APPEND(past_files, past);
 }
 
@@ -422,7 +428,7 @@ static int gui(tool_t *tool)
 
     if (gui_section_begin("History", GUI_SECTION_COLLAPSABLE_CLOSED)) {
         const past_import_t *i;
-        DL_FOREACH(past_files, i) {
+        DL_FOREACH_REVERSE(past_files, i) {
             if(gui_button(i->file_name, 0, 0)) {
                 reset(placer);
                 i->format->import_volume_func(i->format, placer->imported_volume, i->path);
