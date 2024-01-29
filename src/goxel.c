@@ -1717,9 +1717,10 @@ static void select_layer_under_cursor(void)
 
     // Setup position with normals from the cursor, so that it handles the snapped side
     vec3_sub(pos, normal, pos);
-    pos[0] += -goxel.cursor.snap_offset;
-    pos[1] += -goxel.cursor.snap_offset;
-    pos[2] += -goxel.cursor.snap_offset;
+    // Default snap offset value
+    pos[0] -= 0.5;
+    pos[1] -= 0.5;
+    pos[2] -= 0.5;
     int int_pos[3];
     vec3_set(int_pos, (int)pos[0], (int)pos[1], (int)pos[2]);
     LOG_D("Position to analyse: %i / %i / %i", int_pos[0], int_pos[1], int_pos[2]);
