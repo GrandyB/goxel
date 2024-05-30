@@ -15,3 +15,4 @@ goxel.exe
 callgrind.out.*
 *.gox
 .vscode/settings.json
+/ext_src/libvxl

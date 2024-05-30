@@ -72,7 +72,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_1j"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_2c"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -353,6 +353,8 @@ char* get_file_name_from_path(const char *path);
 
 /* Debug log a [4][4] float matrix. Looking at YOU, view matrices. */
 void debug_log_44_matrix(const char* name, float mat[4][4]);
+/* Debug log a const [4][4] float matrix. Looking at YOU, view matrices. */
+void debug_log_const_44_matrix(const char* name, const float mat[4][4]);
 /* Debug log a vec3 int[3] matrix. */
 void debug_log_vec3_int(const char* name, int vec3[3]);
 /* Debug log a vec3 float[3] matrix. */

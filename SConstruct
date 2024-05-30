@@ -123,6 +123,7 @@ env.Append(CPPPATH=['ext_src/stb'])
 env.Append(CPPPATH=['ext_src/noc'])
 env.Append(CPPPATH=['ext_src/xxhash'])
 env.Append(CPPPATH=['ext_src/meshoptimizer'])
+env.Append(CPPPATH=['ext_src/libvxl'])
 
 if env['sound']:
     env.Append(LIBS='openal')
