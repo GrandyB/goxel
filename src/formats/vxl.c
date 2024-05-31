@@ -22,6 +22,11 @@
 #include "file_format.h"
 #include <libvxl.h>
 
+#ifdef RGB
+#undef RGB
+#endif
+
+#define RGB(r, g, b) (((b) << 16) | ((g) << 8) | (r))
 #define RED(c) ((c)&0xFF)
 #define GREEN(c) (((c) >> 8) & 0xFF)
 #define BLUE(c) (((c) >> 16) & 0xFF)
@@ -65,10 +70,12 @@ static int import_vxl(const file_format_t *format, image_t* image, const char* p
 	}
 
 	libvxl_free(&map);
-
-	if(!box_is_null(image->box))
+	
+	if(!box_is_null(image->box)) {
 		bbox_from_extents(image->box, vec3_zero, map_size / 2.0F,
 						  map_size / 2.0F, map_depth / 2.0F);
+		mat4_copy(image->box, image->active_layer->box);
+	}
 
 	return 0;
 }
@@ -80,8 +87,10 @@ static int export_as_vxl(const file_format_t *format, const image_t* image, cons
 	const volume_t* volume = goxel_get_layers_volume(image);
 
 	int bbox[2][3];
-	if(!volume_get_bbox(volume, bbox, true))
+	if(box_is_null(image->box))
 		return -1;
+	
+	bbox_to_aabb(image->box, bbox);
 
 	struct libvxl_map map;
 	if(!libvxl_create(&map, bbox[1][0] - bbox[0][0], bbox[1][1] - bbox[0][1],

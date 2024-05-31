@@ -72,7 +72,8 @@ static void on_script(void *user, const char *name)
 void gui_menu(void)
 {
     if (gui_menu_begin("File", true)) {
-        gui_menu_item(ACTION_reset, "New", true);
+        gui_menu_item(ACTION_reset, "New (32x32x32)", true);
+        gui_menu_item(ACTION_reset_512, "New (512x512x64)", true);
         gui_menu_item(ACTION_save, "Save",
                 image_get_key(goxel.image) != goxel.image->saved_key);
         gui_menu_item(ACTION_save_as, "Save as", true);

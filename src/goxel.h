@@ -584,6 +584,7 @@ extern goxel_t goxel;
 void goxel_init(void);
 void goxel_release(void);
 void goxel_reset(void);
+void goxel_reset_512(void);
 
 // Probably better to merge those two.
 int goxel_iter(const inputs_t *inputs);

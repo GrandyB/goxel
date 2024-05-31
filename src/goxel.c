@@ -28,6 +28,8 @@
 goxel_t goxel = {};
 double time = 0.0;
 
+static void (*post_reset_func)() = NULL;
+
 texture_t *texture_new_image(const char *path, int flags)
 {
     char *data;
@@ -389,6 +391,11 @@ void goxel_reset(void)
             .size = {64, 64},
         },
     };
+
+    if (post_reset_func != NULL) {
+        post_reset_func();
+        post_reset_func = NULL;
+    }
 
     #ifdef AFTER_RESET_FUNC
     AFTER_RESET_FUNC();
@@ -1548,6 +1555,7 @@ static int new_file_popup(void *data)
         ret = 1;
     }
     if (gui_button("Cancel", 0, 0)) {
+        post_reset_func = NULL;
         ret = 2;
     }
     gui_row_end();
@@ -1568,6 +1576,29 @@ ACTION_REGISTER(reset,
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_reset,
     .default_shortcut = "Ctrl N"
+)
+
+void image_to_512() {
+    LOG_D("image_to_512");
+    goxel.image->box[0][0] = 256;
+    goxel.image->box[1][1] = 256;
+    goxel.image->box[2][2] = 32;
+}
+static void a_reset_512(void)
+{
+    if (image_get_key(goxel.image) == goxel.image->saved_key) {
+        goxel_reset();
+        return;
+    }
+    post_reset_func = image_to_512;
+    gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, NULL, new_file_popup);
+}
+
+ACTION_REGISTER(reset_512,
+    .help = "New 512x64x512",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = a_reset_512,
+    .default_shortcut = "Ctrl M"
 )
 
 static void undo(void) { image_undo(goxel.image); }

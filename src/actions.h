@@ -76,6 +76,7 @@ enum {
     X(save_as),
     X(save),
     X(reset),
+    X(reset_512),
 
     X(move_plane_up),
     X(move_plane_down),
