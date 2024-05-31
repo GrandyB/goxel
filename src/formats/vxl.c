@@ -75,7 +75,10 @@ static int import_vxl(image_t* image, const char* path) {
 		bbox_from_extents(image->box, vec3_zero, map_size / 2.0F,
 						  map_size / 2.0F, map_depth / 2.0F);
 
-	return 0;
+    bbox_from_extents(image->active_layer->box, vec3_zero, map_size / 2.0F,
+					  map_size / 2.0F, map_depth / 2.0F);
+
+    return 0;
 }
 
 static int export_as_vxl(const image_t* image, const char* path) {
