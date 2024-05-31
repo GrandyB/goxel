@@ -22,6 +22,10 @@
 #include "file_format.h"
 #include <libvxl.h>
 
+#ifdef RGB
+#undef RGB
+#endif
+
 #define RGB(r, g, b) (((b) << 16) | ((g) << 8) | (r))
 #define RED(c) ((c)&0xFF)
 #define GREEN(c) (((c) >> 8) & 0xFF)
@@ -81,8 +85,11 @@ static int export_as_vxl(const image_t* image, const char* path) {
 	const mesh_t* mesh = goxel_get_layers_mesh(image);
 
 	int bbox[2][3];
-	if(!mesh_get_bbox(mesh, bbox, true))
+
+	if(box_is_null(image->box))
 		return -1;
+
+	bbox_to_aabb(image->box, bbox);
 
 	struct libvxl_map map;
 	if(!libvxl_create(&map, bbox[1][0] - bbox[0][0], bbox[1][1] - bbox[0][1],
