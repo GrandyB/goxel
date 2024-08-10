@@ -169,7 +169,7 @@ static void center_origin(tool_placer_t *placer)
     //bbox_from_aabb(placer->box, bbox);
     pos[0] = round((bbox[0][0] + bbox[1][0] - 1) / 2.0); // centre x
     pos[1] = round((bbox[0][1] + bbox[1][1] - 1) / 2.0); // centre y
-    pos[2] = 0; // bottom level z
+    pos[2] = bbox[0][2]; // bottom level z
 
     LOG_D("center_origin:");
     //LOG_D("    Cursor: %f / %f / %f", goxel.cursor.pos[0], goxel.cursor.pos[1], goxel.cursor.pos[2]);
@@ -342,8 +342,34 @@ static int gui(tool_t *tool)
 {
     tool_placer_t *placer = (tool_placer_t*)tool;
     float rotation[4][4] = MAT4_IDENTITY;
-    
     int origin_x, origin_y, origin_z, offset_x, offset_y, offset_z;
+    
+    if (!box_is_null(goxel.selection)) {
+        if (gui_button("Acquire selection", -1, 0)) {
+            reset(placer);
+            volume_t* copy;
+            painter_t painter;
+            const float (*box)[4][4] = &goxel.selection;
+
+            copy = volume_copy(goxel.image->active_layer->volume);
+
+            // Use the mask (from fuzzy select) if there
+            if (!volume_is_empty(goxel.mask)) {
+                volume_merge(copy, goxel.mask, MODE_INTERSECT, NULL);
+            } else {
+                // Otherwise, use the selection box
+                painter = (painter_t) {
+                    .shape = &shape_cube,
+                    .mode = MODE_INTERSECT,
+                    .color = {255, 255, 255, 255},
+                };
+                volume_op(copy, &painter, *box);
+            }
+
+            placer->imported_volume = copy;
+            post_import(placer);
+        }
+    }
 
     // Browse files
     char label[128];
@@ -380,60 +406,69 @@ static int gui(tool_t *tool)
         offset_y = (int)round(placer->offset[1]);
         offset_z = (int)round(placer->offset[2]);
 
-        gui_group_begin("Offset");
-        if (gui_input_int("X", &offset_x, 0, 0)) {
-            placer->offset[0] = offset_x;
-        }
-        if (gui_input_int("Y", &offset_y, 0, 0)) {
-            placer->offset[1] = offset_y;
-        }
-        if (gui_input_int("Z", &offset_z, 0, 0)) {
-            placer->offset[2] = offset_z;
-        }
-        if (gui_button("Reset", -1, 0)) {
-            placer->offset[0] = 0;
-            placer->offset[1] = 0;
-            placer->offset[2] = 0;
-        }
-        gui_group_end();
+        if (gui_section_begin("Rotation", true)) {
+            gui_group_begin(NULL);
+            gui_row_begin(2);
+            if (gui_button("-X", 0, 0))
+                mat4_irotate(rotation, -M_PI / 8, 1, 0, 0);
+            if (gui_button("+X", 0, 0))
+                mat4_irotate(rotation, +M_PI / 8, 1, 0, 0);
+            gui_row_end();
 
-        gui_group_begin("Rotation");
-        gui_row_begin(2);
-        if (gui_button("-X", 0, 0))
-            mat4_irotate(rotation, -M_PI / 8, 1, 0, 0);
-        if (gui_button("+X", 0, 0))
-            mat4_irotate(rotation, +M_PI / 8, 1, 0, 0);
-        gui_row_end();
+            gui_row_begin(2);
+            if (gui_button("-Y", 0, 0))
+                mat4_irotate(rotation, -M_PI / 8, 0, 1, 0);
+            if (gui_button("+Y", 0, 0))
+                mat4_irotate(rotation, +M_PI / 8, 0, 1, 0);
+            gui_row_end();
 
-        gui_row_begin(2);
-        if (gui_button("-Y", 0, 0))
-            mat4_irotate(rotation, -M_PI / 8, 0, 1, 0);
-        if (gui_button("+Y", 0, 0))
-            mat4_irotate(rotation, +M_PI / 8, 0, 1, 0);
-        gui_row_end();
+            gui_row_begin(2);
+            if (gui_button("-Z", 0, 0))
+                mat4_irotate(rotation, -M_PI / 8, 0, 0, 1);
+            if (gui_button("+Z", 0, 0))
+                mat4_irotate(rotation, +M_PI / 8, 0, 0, 1);
+            gui_row_end();
+            gui_group_end();
+        }
+        gui_section_end();
 
-        gui_row_begin(2);
-        if (gui_button("-Z", 0, 0))
-            mat4_irotate(rotation, -M_PI / 8, 0, 0, 1);
-        if (gui_button("+Z", 0, 0))
-            mat4_irotate(rotation, +M_PI / 8, 0, 0, 1);
-        gui_row_end();
-        gui_group_end();
+        if (gui_section_begin("Offset", GUI_SECTION_COLLAPSABLE_CLOSED)) {
+            gui_group_begin(NULL);
+            if (gui_input_int("X", &offset_x, 0, 0)) {
+                placer->offset[0] = offset_x;
+            }
+            if (gui_input_int("Y", &offset_y, 0, 0)) {
+                placer->offset[1] = offset_y;
+            }
+            if (gui_input_int("Z", &offset_z, 0, 0)) {
+                placer->offset[2] = offset_z;
+            }
+            if (gui_button("Reset", -1, 0)) {
+                placer->offset[0] = 0;
+                placer->offset[1] = 0;
+                placer->offset[2] = 0;
+            }
+            gui_group_end();
+        }
+        gui_section_end();
 
-        gui_group_begin("Origin");
-        if (gui_input_int("X", &origin_x, 0, 0)) {
-            placer->origin[0] = origin_x;
+        if (gui_section_begin("Origin", GUI_SECTION_COLLAPSABLE_CLOSED)) {
+            gui_group_begin(NULL);
+            if (gui_input_int("X", &origin_x, 0, 0)) {
+                placer->origin[0] = origin_x;
+            }
+            if (gui_input_int("Y", &origin_y, 0, 0)) {
+                placer->origin[1] = origin_y;
+            }
+            if (gui_input_int("Z", &origin_z, 0, 0)) {
+                placer->origin[2] = origin_z;
+            }
+            if (gui_button("Center", -1, 0)) {
+                vec3_set(placer->origin, 0, 0, 0);
+            }
+            gui_group_end();
         }
-        if (gui_input_int("Y", &origin_y, 0, 0)) {
-            placer->origin[1] = origin_y;
-        }
-        if (gui_input_int("Z", &origin_z, 0, 0)) {
-            placer->origin[2] = origin_z;
-        }
-        if (gui_button("Center", -1, 0)) {
-            vec3_set(placer->origin, 0, 0, 0);
-        }
-        gui_group_end();
+        gui_section_end();
     }
 
     if (gui_section_begin("History", GUI_SECTION_COLLAPSABLE_CLOSED)) {
