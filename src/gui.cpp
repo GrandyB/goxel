@@ -813,9 +813,9 @@ bool gui_input_float(const char *label, float *v, float step,
     const char *left_utf = "◀";
     const char *right_utf = "▶";
     float v_speed = step / 10;
-    bool unbounded;
     bool show_arrows = false;
-    bool is_active = false;
+    //bool is_active = false;
+    //bool unbounded = false;
     ImGuiID key;
     ImGuiStorage *storage = ImGui::GetStateStorage();
 
@@ -825,8 +825,6 @@ bool gui_input_float(const char *label, float *v, float step,
     }
     if (step == 0.f) step = 0.1f;
     if (!format) format = "%.1f";
-
-    unbounded = (minv == -FLT_MAX || maxv == +FLT_MAX);
 
     ImGui::PushID(label);
 
@@ -848,12 +846,12 @@ bool gui_input_float(const char *label, float *v, float step,
     ImGui::BeginGroup();
     ImGui::PushButtonRepeat(true);
 
-    if (unbounded) {
-        key = ImGui::GetID("show_arrows");
-        show_arrows = storage->GetBool(key, false);
-    }
+    // if (minv == -FLT_MAX || maxv == +FLT_MAX) {
+    //     key = ImGui::GetID("show_arrows");
+    //     show_arrows = storage->GetBool(key, false);
+    // }
 
-    if (show_arrows) {
+    //if (show_arrows) {
         if (ImGui::Button(left_utf)) {
             (*v) -= step;
             ret = true;
@@ -862,31 +860,32 @@ bool gui_input_float(const char *label, float *v, float step,
         ImGui::PushItemWidth(
                 ImGui::GetContentRegionAvail().x - button_width);
         ret = ImGui::DragFloat("", v, v_speed, minv, maxv, format) || ret;
-        is_active = ImGui::IsItemActive();
+        //is_active = ImGui::IsItemActive();
         ImGui::PopItemWidth();
         ImGui::SameLine();
         if (ImGui::Button(right_utf)) {
             (*v) += step;
             ret = true;
         }
-    } else {
-        ImGui::SetNextItemWidth(-1);
-        if (unbounded) {
-            ret = ImGui::DragFloat("", v, step, minv, maxv, format);
-        } else {
-            ret = slider_float(v, minv, maxv, format);
-        }
+    //} 
+    // else {
+    //     ImGui::SetNextItemWidth(-1);
+    //     if (unbounded) {
+    //         ret = ImGui::DragFloat("", v, step, minv, maxv, format);
+    //     } else {
+    //         ret = slider_float(v, minv, maxv, format);
+    //     }
 
-        is_active = ImGui::IsItemActive();
-    }
+    //     is_active = ImGui::IsItemActive();
+    // }
 
     ImGui::PopButtonRepeat();
     ImGui::PopStyleVar(1);
     ImGui::PopStyleColor(7);
     ImGui::EndGroup();
-    if (unbounded) {
-        storage->SetBool(key, ret || is_active || ImGui::IsItemHovered());
-    }
+    // if (unbounded) {
+    //     storage->SetBool(key, ret || is_active || ImGui::IsItemHovered());
+    // }
     ImGui::PopID();
 
     if (ret) {

@@ -78,17 +78,24 @@ static void move_to(tool_placer_t *placer, float curs_pos[3]) {
 
     // Apply translation from the UI if any
     if (curs_pos) {
+        float corrected_curs_pos[3] = {
+            curs_pos[0]-0.5, curs_pos[1]-0.5, curs_pos[2]-0.5
+        };
+        
         // Destination = curs + offset + center
         float destination[4][4] = MAT4_IDENTITY;
-        vec3_add(destination[3], curs_pos, destination[3]);
+        vec3_add(destination[3], corrected_curs_pos, destination[3]);
         vec3_add(destination[3], placer->offset, destination[3]);
         vec3_sub(destination[3], placer->center, destination[3]);
+        
+        //LOG_D("    curs_pos: (%f,%f,%f)", corrected_curs_pos[0], corrected_curs_pos[1], corrected_curs_pos[2]);
 
         float trans[4][4] = MAT4_IDENTITY;
         vec3_sub(destination[3], placer->mat[3], trans[3]);
         // Move by this amount
         volume_move(placer->imported_volume, trans);
         mat4_copy(destination, placer->mat);
+        //debug_log_44_matrix("trans", trans);
     }
 
     // Update bounding box if there is one
@@ -166,7 +173,7 @@ static void center_origin(tool_placer_t *placer)
 
     LOG_D("center_origin:");
     //LOG_D("    Cursor: %f / %f / %f", goxel.cursor.pos[0], goxel.cursor.pos[1], goxel.cursor.pos[2]);
-    LOG_D("    BBox: (%i,%i,%i) (%i,%i,%i)", bbox[0][0], bbox[0][1], bbox[0][2], bbox[1][0], bbox[1][1], bbox[1][2]);
+    //LOG_D("    BBox: (%i,%i,%i) (%i,%i,%i)", bbox[0][0], bbox[0][1], bbox[0][2], bbox[1][0], bbox[1][1], bbox[1][2]);
     //debug_log_vec3_float("    found center:", pos);
     vec3_copy(pos, placer->center);
     vec3_set(placer->origin, 0, 0, 0);
@@ -249,7 +256,10 @@ static int iter(tool_t *tool, const painter_t *painter,
         // render the origin dot
         float origin_box[4][4] = MAT4_IDENTITY;
         uint8_t color[4] = {255, 0, 0, 255};
-        vec3_copy(curs->pos, origin_box[3]);
+        float corrected_curs_pos[3] = {
+            curs->pos[0]-0.5, curs->pos[1]-0.5, curs->pos[2]-0.5
+        };
+        vec3_copy(corrected_curs_pos, origin_box[3]);
         vec3_add(origin_box[3], placer->offset, origin_box[3]);
         vec3_add(origin_box[3], placer->origin, origin_box[3]);
         mat4_iscale(origin_box, 0.1, 0.1, 0.1);
@@ -257,7 +267,7 @@ static int iter(tool_t *tool, const painter_t *painter,
                 EFFECT_NO_DEPTH_TEST | EFFECT_NO_SHADING);
     }
 
-    //curs->snap_offset = -0.5;
+    curs->snap_offset = +0.5;
 
     gesture3d(&placer->gestures.hover, curs, USER_PASS(placer, painter));
     gesture3d(&placer->gestures.drag, curs, USER_PASS(placer, painter));

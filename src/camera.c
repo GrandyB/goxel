@@ -27,7 +27,7 @@ camera_t *camera_new(const char *name)
     mat4_set_identity(cam->mat);
     cam->dist = 96;
     cam->aspect = 1;
-    cam->speed = 10;
+    cam->speed = 50;
     cam->fovy = 40.;
     cam->fovy_fpv = 100.;
     mat4_itranslate(cam->mat, 0, 0, cam->dist);
@@ -208,7 +208,7 @@ void camera_move(camera_t *cam, float rx, float ry, float rz)
     float mat[4][4];
     mat4_copy(cam->mat, mat);
 
-    float multiplier = cam->speed / 10;
+    float multiplier = cam->speed / 20;
 
     mat4_itranslate(mat, 0, 0, ry*multiplier);
     mat4_itranslate(mat, rx*multiplier, 0, 0);

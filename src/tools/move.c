@@ -174,9 +174,9 @@ static int gui(tool_t *tool)
     
 
     if (gui_section_begin("Rotation (Destructive)", GUI_SECTION_COLLAPSABLE_CLOSED)) {
-        gui_input_int("Degrees X", &degX, 0, 360);
-        gui_input_int("Degrees Y", &degY, 0, 360);
-        gui_input_int("Degrees Z", &degZ, 0, 360);
+        gui_input_int("Degrees X", &degX, -360, 360);
+        gui_input_int("Degrees Y", &degY, -360, 360);
+        gui_input_int("Degrees Z", &degZ, -360, 360);
         
         if (gui_button("Apply", -1, 0)) {
             if (degX)
