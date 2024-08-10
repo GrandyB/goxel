@@ -24,6 +24,6 @@ void gui_image_panel(void)
     float (*box)[4][4] = &image->box;
     gui_bbox(*box);
     gui_action_button(ACTION_img_auto_resize, "Auto resize (all/original)", 0);
-    gui_action_button(ACTION_img_auto_resize_reset, "Auto resize (visible + origin reset)", 0);
+    gui_action_button(ACTION_img_auto_resize_reset, "Crop to visible & reset origin", 0);
 }
 
