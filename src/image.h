@@ -77,6 +77,7 @@ camera_t *image_add_camera(image_t *img, camera_t *cam);
 void image_delete_camera(image_t *img, camera_t *cam);
 
 void image_auto_resize(image_t *img);
+void image_auto_resize_reset(image_t *img);
 
 void make_uniq_name(
         char *buf, int size, const char *base, void *user,

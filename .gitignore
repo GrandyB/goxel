@@ -17,3 +17,4 @@ callgrind.out.*
 .vscode/settings.json
 /ext_src/libvxl
 goxel-aos.code-workspace
+.vscode/settings.json

@@ -551,6 +551,50 @@ static void a_image_auto_resize(void)
     image_auto_resize(goxel.image);
 }
 
+void image_auto_resize_reset(image_t *img)
+{
+    float box[4][4] = {}, layer_box[4][4];
+
+    // Collect a bounding box from all _visible_ layers
+    layer_t *layer;
+    DL_FOREACH(goxel.image->layers, layer) {
+        if (layer->visible) {
+            layer_get_bounding_box(layer, layer_box);
+            box_union(box, layer_box, box);
+        }
+    }
+    //image_merge_visible_layers(img);
+    //debug_log_44_matrix("box (pre)", box);
+
+    float trans[4][4] = MAT4_IDENTITY;
+    // distance from origin + local origin
+    trans[3][0] = -box[3][0] + box[0][0];
+    trans[3][1] = -box[3][1] + box[1][1];
+    trans[3][2] = -box[3][2] + box[2][2];
+    //debug_log_44_matrix("trans", trans);
+
+    box[3][0] = box[0][0];
+    box[3][1] = box[1][1];
+    box[3][2] = box[2][2];
+
+    //debug_log_44_matrix("img->box", img->box);
+    //debug_log_44_matrix("box (post)", box);
+
+    mat4_copy(box, img->box);
+
+    // Origin etc has moved, move volume with it
+    DL_FOREACH(img->layers, layer) {
+        if (layer->visible) {
+            volume_move(layer->volume, trans);
+        }
+    }
+}
+
+static void a_image_auto_resize_reset(void)
+{
+    image_auto_resize_reset(goxel.image);
+}
+
 void image_set(image_t *img, image_t *other)
 {
     layer_t *layer, *tmp, *other_layer;
@@ -984,5 +1028,11 @@ ACTION_REGISTER(img_del_material,
 ACTION_REGISTER(img_auto_resize,
     .help = "Auto resize the image to fit the layers",
     .cfunc = a_image_auto_resize,
+    .flags = ACTION_TOUCH_IMAGE,
+)
+
+ACTION_REGISTER(img_auto_resize_reset,
+    .help = "Auto resize the image to fit visible layers and reset the origin",
+    .cfunc = a_image_auto_resize_reset,
     .flags = ACTION_TOUCH_IMAGE,
 )

@@ -50,6 +50,7 @@ enum {
     X(img_new_material),
     X(img_del_material),
     X(img_auto_resize),
+    X(img_auto_resize_reset),
 
     X(cut_as_new_layer),
     X(reset_selection),
