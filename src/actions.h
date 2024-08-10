@@ -99,6 +99,8 @@ enum {
     X(tool_set_move),
     X(tool_set_placer),
 
+    X(placer_acquire_selection),
+
     X(export_to_photos),
 
     X(select_layer_under_cursor),

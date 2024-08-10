@@ -338,6 +338,32 @@ static void post_import(tool_placer_t *placer) {
     center_origin(placer);
 }
 
+static void placer_acquire_selection() {
+    tool_placer_t *placer = (tool_placer_t*) goxel.tool;
+    reset(placer);
+    volume_t* copy;
+    painter_t painter;
+    const float (*box)[4][4] = &goxel.selection;
+
+    copy = volume_copy(goxel.image->active_layer->volume);
+
+    // Use the mask (from fuzzy select) if there
+    if (!volume_is_empty(goxel.mask)) {
+        volume_merge(copy, goxel.mask, MODE_INTERSECT, NULL);
+    } else {
+        // Otherwise, use the selection box
+        painter = (painter_t) {
+            .shape = &shape_cube,
+            .mode = MODE_INTERSECT,
+            .color = {255, 255, 255, 255},
+        };
+        volume_op(copy, &painter, *box);
+    }
+
+    placer->imported_volume = copy;
+    post_import(placer);
+}
+
 static int gui(tool_t *tool)
 {
     tool_placer_t *placer = (tool_placer_t*)tool;
@@ -345,30 +371,21 @@ static int gui(tool_t *tool)
     int origin_x, origin_y, origin_z, offset_x, offset_y, offset_z;
     
     if (!box_is_null(goxel.selection)) {
-        if (gui_button("Acquire selection", -1, 0)) {
-            reset(placer);
-            volume_t* copy;
-            painter_t painter;
-            const float (*box)[4][4] = &goxel.selection;
-
-            copy = volume_copy(goxel.image->active_layer->volume);
-
-            // Use the mask (from fuzzy select) if there
-            if (!volume_is_empty(goxel.mask)) {
-                volume_merge(copy, goxel.mask, MODE_INTERSECT, NULL);
-            } else {
-                // Otherwise, use the selection box
-                painter = (painter_t) {
-                    .shape = &shape_cube,
-                    .mode = MODE_INTERSECT,
-                    .color = {255, 255, 255, 255},
-                };
-                volume_op(copy, &painter, *box);
+        if(gui_section_begin("Selection", true)) {
+            if(gui_button("Copy to placer", -1, 0)) {
+                // Just copy
+                placer_acquire_selection();
             }
-
-            placer->imported_volume = copy;
-            post_import(placer);
+            if(gui_button("Move via placer", -1, 0)) {
+                // Copy to placer, wipe the selection and voxels within
+                placer_acquire_selection();
+                action_exec(action_get(ACTION_tool_set_selection, true));
+                action_exec(action_get(ACTION_layer_clear, true));
+                action_exec(action_get(ACTION_tool_set_placer, true));
+                action_exec(action_get(ACTION_reset_selection, true));
+            }
         }
+        gui_section_end();
     }
 
     // Browse files
@@ -494,4 +511,10 @@ TOOL_REGISTER(TOOL_PLACER, placer, tool_placer_t,
               .gui_fn = gui,
               .flags = TOOL_REQUIRE_CAN_EDIT,
               .default_shortcut = "P"
+)
+
+ACTION_REGISTER(placer_acquire_selection,
+    .help = "Placer - acquire selection",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = placer_acquire_selection
 )

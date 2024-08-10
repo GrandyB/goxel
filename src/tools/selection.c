@@ -220,6 +220,24 @@ static int gui(tool_t *tool)
     bbox_from_extents(*box,
             VEC(x + w / 2., y + h / 2., z + d / 2.),
             w / 2., h / 2., d / 2.);
+
+    if(gui_section_begin("Placer", true)) {
+        if(gui_button("Copy to placer", -1, 0)) {
+            // Copy to placer and switch to placer
+            action_exec(action_get(ACTION_tool_set_placer, true));
+            action_exec(action_get(ACTION_placer_acquire_selection, true));
+        }
+        if(gui_button("Move via placer", -1, 0)) {
+            // Copy to placer, switch to placer and wipe the selection
+            action_exec(action_get(ACTION_tool_set_placer, true));
+            action_exec(action_get(ACTION_placer_acquire_selection, true));
+            action_exec(action_get(ACTION_tool_set_selection, true));
+            action_exec(action_get(ACTION_layer_clear, true));
+            action_exec(action_get(ACTION_tool_set_placer, true));
+            mat4_copy(mat4_zero, *box);
+        }
+    }
+    gui_section_end();
     return 0;
 }
 

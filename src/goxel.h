@@ -72,7 +72,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_2f"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_2g"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -677,7 +677,6 @@ int gox_iter_infos(const char *path,
  *   first  - Set to true if the edit is the first one.
  */
 int box_edit(int snap, int mode, float transf[4][4], bool *first);
-
 
 void settings_load(void);
 void settings_save(void);
