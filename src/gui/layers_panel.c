@@ -34,14 +34,16 @@ static void toggle_layer_only_visible(layer_t *layer)
     layer->visible = true;
 }
 
-
-void gui_layers_panel(void)
+void gui_layers_panel_impl(bool inner_scroll)
 {
     layer_t *layer;
     material_t *material;
     int i = 0, icon, bbox[2][3];
     bool current, visible, bounded;
 
+    if (inner_scroll) {
+        gui_scrollable_begin(gui_get_available_height() - 210);
+    }
     gui_group_begin(NULL);
     DL_FOREACH_REVERSE(goxel.image->layers, layer) {
         current = goxel.image->active_layer == layer;
@@ -60,6 +62,9 @@ void gui_layers_panel(void)
         i++;
     }
     gui_group_end();
+    if (inner_scroll) {
+        gui_scrollable_end();
+    }
 
     gui_row_begin(0);
     gui_action_button(ACTION_img_new_layer, NULL, 0);
@@ -127,4 +132,10 @@ void gui_layers_panel(void)
         }
         gui_combo_end();
     }
+}
+void gui_layers_panel(void) {
+    gui_layers_panel_impl(false);
+}
+void gui_layers_panel_with_scroll() {
+    gui_layers_panel_impl(true);
 }

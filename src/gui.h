@@ -35,6 +35,8 @@
 #   define GUI_PANEL_WIDTH_LARGE 400
 #endif
 
+float gui_get_available_height();
+
 void gui_window_begin(const char *label, float x, float y, float w, float h,
                       bool *moved);
 
@@ -61,6 +63,9 @@ bool gui_button_right(const char *label, int icon);
 // Group just lower the spacing between items.
 void gui_group_begin(const char *label);
 void gui_group_end(void);
+
+void gui_scrollable_begin(float max_height);
+void gui_scrollable_end();
 
 // Section have a frame.
 
@@ -120,6 +125,7 @@ void gui_enabled_begin(bool enabled);
 void gui_enabled_end(void);
 void gui_dummy(int w, int h);
 void gui_spacing(int w);
+void gui_same_line(void);
 
 void gui_alert(const char *title, const char *msg);
 

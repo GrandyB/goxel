@@ -414,6 +414,10 @@ void gui_release_graphics(void)
     io.Fonts->Clear();
 }
 
+float gui_get_available_height() {
+    return ImGui::GetContentRegionAvail().y;
+}
+
 static int alert_popup(void *data)
 {
     if (data) gui_text((const char *)data);
@@ -526,7 +530,7 @@ static void render_view_cube(void)
 
     ImGui::SetNextWindowSize(ImVec2(w, h));
     ImGui::SetNextWindowPos(ImVec2(
-                goxel.gui.viewport[2] - w, goxel.gui.viewport[1]));
+                goxel.gui.viewport[2] - GUI_PANEL_WIDTH_NORMAL - w, goxel.gui.viewport[1]));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
     ImGui::Begin("Gizmo", NULL, ImGuiWindowFlags_NoDecoration);
     ImGuizmo::SetDrawlist();
@@ -644,6 +648,17 @@ void gui_group_end(void)
     ImGui::Dummy(ImVec2(0, 0));
     ImGui::EndGroup();
     if (gui->is_row) ImGui::SameLine();
+}
+
+void gui_scrollable_begin(float max_height) {
+    ImVec2 available_size = ImGui::GetContentRegionAvail();
+    float height = max_height > 0.0f ? max_height : available_size.y;
+
+    // Create a scrollable area with a specific height
+    ImGui::BeginChild("scrollable_group", ImVec2(0, height), true);
+}
+void gui_scrollable_end() {
+    ImGui::EndChild();
 }
 
 bool gui_section_begin(const char *label, int flags)
@@ -1072,6 +1087,11 @@ void gui_text_wrapped(const char *label, ...)
 void gui_dummy(int w, int h)
 {
     ImGui::Dummy(ImVec2(w, h));
+}
+
+void gui_same_line(void)
+{
+    ImGui::SameLine();
 }
 
 void gui_spacing(int w)

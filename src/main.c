@@ -312,6 +312,7 @@ int main(int argc, char **argv)
         width = mode->width ?: 640;
         height = mode->height ?: 480;
     }
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
     window = glfwCreateWindow(width, height, "Goxel", NULL, NULL);
     assert(window);
     g_window = window;

@@ -43,6 +43,7 @@ void gui_tools_panel(void);
 void gui_top_bar(void);
 void gui_palette_panel(void);
 void gui_layers_panel(void);
+void gui_layers_panel_with_scroll();
 void gui_view_panel(void);
 void gui_material_panel(void);
 void gui_light_panel(void);
@@ -171,6 +172,11 @@ void gui_app(void)
         PANELS[i].fn();
         gui_window_end();
     }
+    
+    gui_window_begin("Right Bar", (goxel.screen_size[0] - goxel.gui.panel_width - 5), ICON_HEIGHT, goxel.gui.panel_width, (goxel.screen_size[1] - ICON_HEIGHT), NULL);
+    gui_panel_header("Layers");
+    gui_layers_panel_with_scroll();
+    gui_window_end();
 
     goxel.pathtrace = goxel.pathtracer.status &&
         (goxel.gui.current_panel == PANEL_RENDER ||
