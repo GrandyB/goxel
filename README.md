@@ -59,10 +59,20 @@ Changes in this fork
 --------
 
     - Tools
-        - Brush can set width/height/depth separately
         - New doodad placer tool - select a file and place it at will
+            - Can rotate the imported voxels non-destructively, offset from an origin point
+            - Copy the current selection into the placer
+            - Cut the current selection into the placer
+        - Selection tool
+            - Holding 'shift' temporarily switches to 'move' rather than 'resize' mode
+            - 'Select entire layer' button
+            - Copy the current selection into the placer
+            - Cut the current selection into the placer
+        - Brush can set width/height/depth separately
+        - Move tool can do 'destructive rotation'
     - Layers
-        - New merge layer down
+        - Layers panel permanently on right and scrolls internally
+        - Merge layer down
     - Colours
         - Colour picker also integrated directly into the tools panel for tools like the brush
         - Blend mode added
@@ -76,6 +86,8 @@ Changes in this fork
             - FOV
             - Manual X/Y/Z
         - Rotational camera (default) FOV setting (and its base value is higher than it was before)
+    - Image
+        - "Crop to visible & reset origin", uses only visible layers, crops to the size of those layers, resets the origin
     - Import/Export
         - Heightmap export .bmp file in greyscale, z0 = black, (zN = 8 + ((zN-1) * 4) = max 64 height
         - Colourmap export .bmp file
@@ -87,7 +99,7 @@ Changes in this fork
         - FPV Camera = #
         - Select layer under cursor = '
     - UI
-        - Always add < > for '1' step int fields
+        - Always add arrows to number fields < >
 
 
 Usage
