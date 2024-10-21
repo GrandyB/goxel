@@ -104,9 +104,11 @@ bool gui_bbox(float box[4][4]);
 bool gui_quat(const char *label, float q[4]);
 bool gui_action_button(int id, const char *label, float size);
 bool gui_selectable(const char *name, bool *v, const char *tooltip, float w);
+bool gui_condensed_selectable(const char *name, bool *v, const char *tooltip, float w);
 bool gui_selectable_toggle(const char *name, int *v, int set_v,
                            const char *tooltip, float w);
 bool gui_selectable_icon(const char *name, bool *v, int icon);
+bool gui_condensed_selectable_icon(const char *name, bool *v, int icon);
 bool gui_color(const char *label, uint8_t color[4]);
 bool gui_color_small(const char *label, uint8_t color[4]);
 bool gui_color_inline(const char *label, uint8_t color[4]);
@@ -137,6 +139,8 @@ void gui_separator(void);
 void gui_push_id(const char *id);
 void gui_pop_id(void);
 
+bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
+    bool *visible, bool *selected, char *name, int len);
 bool gui_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);
 

@@ -78,6 +78,7 @@ static const float LABEL_SIZE = 90;
 // Base height of items (note: maybe remove and use the font size instead?).
 static const float ITEM_HEIGHT = 18;
 static const float ICON_HEIGHT = 32;
+static const float CONDENSE_FACTOR = 0.7;
 static const ImVec2 ITEM_SPACING = ImVec2(8, 4);
 
 #define COL_HEX(x) ImVec4( \
@@ -341,7 +342,7 @@ static void load_fonts_texture()
     GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
     GL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
                     GL_RGBA, GL_UNSIGNED_BYTE, pixels));
-    io.Fonts->TexID = (void *)(intptr_t)tex_id;
+    io.Fonts->TexID = (intptr_t)tex_id;
 }
 
 static void init_ImGui(void)
@@ -1001,7 +1002,7 @@ bool gui_action_button(int id, const char *label, float size)
 }
 
 static bool _selectable(const char *label, bool *v, const char *tooltip,
-                        float w, int icon)
+                        float w, int icon, bool condensed)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     ImVec2 size;
@@ -1010,12 +1011,14 @@ static bool _selectable(const char *label, bool *v, const char *tooltip,
     bool default_v = false;
     ImVec2 uv0, uv1; // The position in the icon texture.
 
+    float icon_height = ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1);
+
     if (gui->item_size) w = gui->item_size;
 
     v = v ? v : &default_v;
     size = (icon != -1) ?
-        ImVec2(ICON_HEIGHT, ICON_HEIGHT) :
-        ImVec2(w, ITEM_HEIGHT);
+        ImVec2(icon_height, icon_height) :
+        ImVec2(w, icon_height);
 
     if (!tooltip && icon != -1) {
         tooltip = label;
@@ -1044,9 +1047,9 @@ static bool _selectable(const char *label, bool *v, const char *tooltip,
             center.y += 0.5;
             uv0 = get_icon_uv(icon);
             uv1 = uv0 + ImVec2(1. / 8, 1. / 8);
-            window->DrawList->AddImage((void*)(intptr_t)g_tex_icons->tex,
-                                       center - ImVec2(16, 16),
-                                       center + ImVec2(16, 16),
+            window->DrawList->AddImage((intptr_t)g_tex_icons->tex,
+                                       center - ImVec2(icon_height/2, icon_height/2),
+                                       center + ImVec2(icon_height/2, icon_height/2),
                                        uv0, uv1, get_icon_color(icon, *v));
         }
     } else {
@@ -1067,7 +1070,12 @@ static bool _selectable(const char *label, bool *v, const char *tooltip,
 
 bool gui_selectable(const char *name, bool *v, const char *tooltip, float w)
 {
-    return _selectable(name, v, tooltip, w, -1);
+    return _selectable(name, v, tooltip, w, -1, false);
+}
+
+bool gui_condensed_selectable(const char *name, bool *v, const char *tooltip, float w)
+{
+    return _selectable(name, v, tooltip, w, -1, true);
 }
 
 bool gui_selectable_toggle(const char *name, int *v, int set_v,
@@ -1083,7 +1091,12 @@ bool gui_selectable_toggle(const char *name, int *v, int set_v,
 
 bool gui_selectable_icon(const char *name, bool *v, int icon)
 {
-    return _selectable(name, v, NULL, 0, icon);
+    return _selectable(name, v, NULL, 0, icon, false);
+}
+
+bool gui_condensed_selectable_icon(const char *name, bool *v, int icon)
+{
+    return _selectable(name, v, NULL, 0, icon, true);
 }
 
 void gui_text(const char *label, ...)
@@ -1285,7 +1298,7 @@ bool gui_button(const char *label, float size, int icon)
                    ImGui::GetItemRectSize().y / 2);
         uv0 = ImVec2(((icon - 1) % 8) / 8.0, ((icon - 1) / 8) / 8.0);
         uv1 = ImVec2(uv0.x + 1. / 8, uv0.y + 1. / 8);
-        draw_list->AddImage((void*)(intptr_t)g_tex_icons->tex,
+        draw_list->AddImage((intptr_t)g_tex_icons->tex,
                             center - ImVec2(isize, isize),
                             center + ImVec2(isize, isize),
                             uv0, uv1, get_icon_color(icon, 0));
@@ -1500,9 +1513,10 @@ void gui_request_panel_width(float width)
     goxel.gui.panel_width = width;
 }
 
-bool gui_layer_item(int idx, int icons_count, const int *icons,
+
+bool _layer_item(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
-                    char *name, int len)
+                    char *name, int len, bool condensed)
 {
     bool ret = false;
     bool selected_ = *selected;
@@ -1523,8 +1537,10 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
                           color_lighten(COLOR(WIDGET, INNER, *selected)));
     if (visible)
     {
-        if (gui_selectable_icon("##visible", &selected_,
-                                *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF))
+        bool visibility = condensed
+            ? gui_condensed_selectable_icon("##visible", &selected_, *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF) 
+            : gui_selectable_icon("##visible", &selected_, *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF);
+        if (visibility)
         {
             *visible = !*visible;
             ret = true;
@@ -1538,7 +1554,7 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
         padding = style.FramePadding;
         padding.x += GUI_ICON_HEIGHT * 0.75 * icons_count;
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, padding);
-        if (ImGui::Button(name, ImVec2(-1, GUI_ICON_HEIGHT)))
+        if (ImGui::Button(name, ImVec2(-1, GUI_ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1))))
         {
             *selected = true;
             ret = true;
@@ -1553,10 +1569,10 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
             uv0 = ImVec2(((icon - 1) % 8) / 8.0, ((icon - 1) / 8) / 8.0);
             uv1 = ImVec2(uv0.x + 1. / 8, uv0.y + 1. / 8);
             draw_list->AddImage(
-                (void*)(intptr_t)g_tex_icons->tex,
-                center - ImVec2(12, 12),
-                center + ImVec2(12, 12),
-                uv0, uv1, get_icon_color(icon, 0));
+                    (intptr_t)g_tex_icons->tex,
+                    center - ImVec2(12, 12),
+                    center + ImVec2(12, 12),
+                    uv0, uv1, get_icon_color(icon, 0));
         }
         ImGui::PopStyleVar();
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
@@ -1582,6 +1598,16 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
     ImGui::PopStyleColor(2);
     ImGui::PopID();
     return ret;
+}
+bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
+                    bool *visible, bool *selected,
+                    char *name, int len) {
+    return _layer_item(idx, icons_count, icons, visible, selected, name, len, true);
+};
+bool gui_layer_item(int idx, int icons_count, const int *icons,
+                    bool *visible, bool *selected,
+                    char *name, int len) {
+    return _layer_item(idx, icons_count, icons, visible, selected, name, len, false);
 }
 
 bool gui_is_key_down(int key)
@@ -1648,7 +1674,7 @@ void gui_tooltip(const char *str)
 
 bool gui_tab(const char *label, int icon, bool *v)
 {
-    return _selectable(label, v, NULL, 0, icon);
+    return _selectable(label, v, NULL, 0, icon, false);
 }
 
 static bool panel_header_close_button(void)
@@ -1673,7 +1699,7 @@ static bool panel_header_close_button(void)
                ImGui::GetItemRectSize().y / 2);
     uv0 = get_icon_uv(ICON_CLOSE);
     uv1 = uv0 + ImVec2(1. / 8, 1. / 8);
-    draw_list->AddImage((void*)(intptr_t)g_tex_icons->tex,
+    draw_list->AddImage((intptr_t)g_tex_icons->tex,
                             center - ImVec2(12, 12),
                             center + ImVec2(12, 12),
                             uv0, uv1, get_icon_color(ICON_CLOSE, 0));
@@ -1805,7 +1831,7 @@ void gui_list(const gui_list_t *list)
     DL_COUNT(*items, item, count);
     gui_group_begin(NULL);
     i = 0;
-    DL_FOREACH(*items, item) {
+    DL_FOREACH_REVERSE(*items, item) {
         is_current = *list->current == item;
         if (list->render((void*)item, i, is_current)) {
             *list->current = item;
@@ -1822,5 +1848,7 @@ void gui_list(const gui_list_t *list)
     gui_group_end();
     if (move_item) {
         list_move_item(items, move_item, move_dir);
+        move_item = NULL;
+        move_dir = 0;
     }
 }

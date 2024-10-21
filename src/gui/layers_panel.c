@@ -43,7 +43,7 @@ static bool render_layer_item(void *item, int idx, bool current)
     icons_count = 0;
     if (layer->base_id) icons[icons_count++] = ICON_LINK;
     if (layer->shape) icons[icons_count++] = ICON_SHAPE;
-    gui_layer_item(idx, icons_count, icons, &visible, &current,
+    gui_condensed_layer_item(idx, icons_count, icons, &visible, &current,
                    layer->name, sizeof(layer->name));
     if (visible != layer->visible) {
         layer->visible = visible;

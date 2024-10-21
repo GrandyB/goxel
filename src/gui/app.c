@@ -144,7 +144,7 @@ void gui_app(void)
     gui_window_end();
 
     if (goxel.tool->has_snap) {
-        gui_window_begin("Snap Bar", 280, y, 0, TOP_BAR_HEIGHT, NULL);
+        gui_window_begin("Snap Bar", 280, y, 0, 32.0f, NULL);
         gui_snap_bar();
         gui_window_end();
     }
