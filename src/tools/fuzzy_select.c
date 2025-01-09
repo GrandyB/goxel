@@ -113,7 +113,10 @@ static int gui(tool_t *tool_)
     volume_t *volume = goxel.image->active_layer->volume;
 
     gui_group_begin(NULL);
-    if (gui_button("Clear", 1, 0)) {
+    if (gui_button("Reset", 1, 0)) {
+        goxel.mask = volume_new();
+    }
+    if (gui_button("Delete blocks", 1, 0)) {
         image_history_push(goxel.image);
         volume_merge(volume, goxel.mask, MODE_SUB, NULL);
     }
