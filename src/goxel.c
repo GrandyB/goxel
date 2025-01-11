@@ -357,6 +357,10 @@ void goxel_reset(void)
         .shape = &shape_cube,
         .mode = MODE_OVER,
         .smoothness = 0,
+        .noise_enabled = 0,
+        .noise_coverage = 100,
+        .noise_intensity = 64,
+        .noise_saturation = 0,
         .color = {255, 255, 255, 255},
     };
 

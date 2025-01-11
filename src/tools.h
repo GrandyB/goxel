@@ -88,6 +88,7 @@ int tool_gui_shape(const shape_t **shape);
 int tool_gui_radius(void);
 int tool_gui_smoothness(void);
 int tool_gui_inherit(void);
+int tool_gui_noise(void);
 int tool_gui_color(void);
 int tool_gui_symmetry(void);
 int tool_gui_drag_mode(int *mode);

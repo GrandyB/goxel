@@ -134,7 +134,8 @@ static int on_drag(gesture3d_t *gest, void *user)
         if (shift) {
             painter.shape = &shape_cylinder;
             painter.mode = MODE_MAX;
-            vec4_set(painter.color, 255, 255, 255, 255);
+            // Why was this a thing?
+            //vec4_set(painter.color, 255, 255, 255, 255);
             get_box3(brush->start_pos, curs->pos, curs->normal, r_x, r_y, r_z, NULL, box);
             volume_op(brush->volume, &painter, box);
         }
@@ -147,7 +148,8 @@ static int on_drag(gesture3d_t *gest, void *user)
     }
 
     painter.mode = MODE_MAX;
-    vec4_set(painter.color, 255, 255, 255, 255);
+    // Why was this a thing?
+    //vec4_set(painter.color, 255, 255, 255, 255);
 
     // Render several times if the space between the current pos
     // and the last pos is larger than the size of the tool shape.
@@ -163,8 +165,16 @@ static int on_drag(gesture3d_t *gest, void *user)
     painter = *(painter_t*)USER_GET(user, 1);
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, brush->volume_orig);
-    volume_merge(goxel.tool_volume, brush->volume, painter.mode,
-        painter.color_blend == COLOR_INHERITED ? NULL : painter.color);
+    LOG_D("DO MERGE");
+    // layer_t *toolvollayer = layer_new("toolvolume");
+    // toolvollayer->volume = volume_copy(goxel.tool_volume);
+    // layer_t *brushvolume = layer_new("brushvolume");
+    // brushvolume->volume = volume_copy(brush->volume);
+    // DL_APPEND(goxel.image->layers, toolvollayer);
+    // DL_APPEND(goxel.image->layers, brushvolume);
+    volume_merge(goxel.tool_volume, brush->volume, painter.mode, NULL);
+    LOG_D("END MERGE");
+        //painter.color_blend == COLOR_INHERITED ? NULL : painter.color);
     vec3_copy(curs->pos, brush->start_pos);
     brush->last_op.volume_key = volume_get_key(goxel.tool_volume);
 

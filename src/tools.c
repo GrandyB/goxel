@@ -226,6 +226,40 @@ int tool_gui_smoothness(void)
     return 0;
 }
 
+int tool_gui_noise(void)
+{
+    if (gui_section_begin("Noise", true)) {
+        bool noise_enabled = goxel.painter.noise_enabled;
+        if (gui_checkbox("Enable", &noise_enabled, NULL)) {
+            goxel.painter.noise_enabled = noise_enabled ? 1 : 0;
+        }
+        if (noise_enabled) {
+            int intensity = goxel.painter.noise_intensity;
+            if (gui_input_int("Intensity", &intensity, 0, 100)) {
+                intensity = clamp(intensity, 0, 100);
+                goxel.painter.noise_intensity = intensity;
+            }
+            int saturation = goxel.painter.noise_saturation;
+            if (gui_input_int("Saturation", &saturation, 0, 100)) {
+                saturation = clamp(saturation, 0, 100);
+                goxel.painter.noise_saturation = saturation;
+            }
+            int coverage = goxel.painter.noise_coverage;
+            if (gui_input_int("Coverage", &coverage, 0, 100)) {
+                coverage = clamp(coverage, 0, 100);
+                goxel.painter.noise_coverage = coverage;
+            }
+            if (gui_button("Reset", 0, 0)) {
+                goxel.painter.noise_intensity = 0;
+                goxel.painter.noise_saturation = 0;
+                goxel.painter.noise_coverage = 0;
+            }
+        }
+    }
+    gui_section_end();
+    return 0;
+}
+
 static bool color_blend_button(const char *label, int s)
 {
     bool v = goxel.painter.color_blend == s;
@@ -256,6 +290,8 @@ int tool_gui_color(void)
         gui_row_end();
         gui_group_end();
     }
+    
+    tool_gui_noise();
     return 0;
 }
 

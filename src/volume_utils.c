@@ -403,7 +403,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     // setting and getting!  Need to fix that!!
     accessor = volume_get_accessor(volume);
     
-    
+    LOG_D("=========================================================");
     // For every tile in the volume, iterate
     while (volume_iter(&iter, vp)) {
         vec3_set(p, vp[0] + 0.5, vp[1] + 0.5, vp[2] + 0.5);
@@ -420,6 +420,9 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         // Apply colours
         uint8_t col[4];
         memcpy(col, painter->color, 4);
+        if (painter->color_blend == COLOR_USER) {
+            //LOG_D("Color: %i/%i/%i/%i", col[0], col[1], col[2], col[3]);
+        }
         if (painter->color_blend != COLOR_USER) {
             get_color_beneath(vp, col);
         }
@@ -429,15 +432,52 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         if (painter->color_blend == COLOR_MIDPOINT_INHERITED) {
             combine(painter->color, col, MODE_MIDPOINT, col);
         }
+
+        // Apply noise
+        if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
+            //uint8_t noise_col[4];
+            float noise_value = uniform_noise(p[0], p[1], p[2]);
+            //generate_random_color(noise_value, painter->noise_intensity/100f, painter->noise_saturation/100f, noise_col);
+
+            //LOG_D("Noise: %f", noise_value);
+
+            // Apply coverage: skip voxels outside the noise coverage range
+            if (noise_value > (float)painter->noise_coverage / 100.0f) {
+                //LOG_D("Skipped");
+            } else {
+                // Adjust noise intensity and saturation
+                float noise_factor = (float)painter->noise_intensity / 100.0f * noise_value;
+                //LOG_D("Noise factor: %f", noise_factor);
+                col[0] = (uint8_t)clamp(col[0] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+                col[1] = (uint8_t)clamp(col[1] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+                col[2] = (uint8_t)clamp(col[2] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+                //col[3] = (uint8_t)clamp(col[3] * (1.0f - noise_factor), 0.0f, 255.0f);
+            }
+        }
         memcpy(c, col, 4);
 
         c[3] *= v;
-        if (!c[3] && skip_src_empty) continue;
+            LOG_D("------------------------------------");
+            LOG_D("Position: %f/%f/%f", p[0], p[1], p[2]);
+            LOG_D("C: %i/%i/%i", c[0], c[1], c[2]);
+        if (!c[3] && skip_src_empty) {
+            LOG_D("c - no alpha, skip_src_empty = true - CONTINUE");
+            continue;
+        }
+        // volume = tool volume, value = color at point in tool volume
         volume_get_at(volume, &accessor, vp, value);
-        if (!value[3] && skip_dst_empty) continue;
+        if (!value[3] && skip_dst_empty) {
+            LOG_D("value - no alpha, skip_dst_empty = true - CONTINUE");
+            continue;
+        }
+            LOG_D("Value: %i/%i/%i, C: %i/%i/%i", value[0], value[1], value[2], c[0], c[1], c[2]);
         combine(value, c, mode, new_value);
+            LOG_D("new_value: %i/%i/%i", new_value[0], new_value[1], new_value[2]);
         if (!vec4_equal(value, new_value)) {
+            LOG_D("Setting volume");
             volume_set_at(volume, &accessor, vp, new_value);
+        } else {
+            LOG_D("NOT setting volume");
         }
     }
 
@@ -452,6 +492,7 @@ void volume_get_box(const volume_t *volume, bool exact, float box[4][4])
     bbox_from_aabb(box, bbox);
 }
 
+// for brush, volume = tool_volume, other = brush volume
 static void tile_merge(volume_t *volume, const volume_t *other, const int pos[3],
                         int mode, const uint8_t color[4])
 {
@@ -478,6 +519,7 @@ static void tile_merge(volume_t *volume, const volume_t *other, const int pos[3]
 
     if ((mode == MODE_OVER || mode == MODE_MAX) && id1 == 0 && !color) {
         volume_copy_tile(other, pos, volume, pos);
+        LOG_D("Copy tile");
         return;
     }
 
@@ -510,9 +552,19 @@ static void tile_merge(volume_t *volume, const volume_t *other, const int pos[3]
         p[0] = pos[0] + x;
         p[1] = pos[1] + y;
         p[2] = pos[2] + z;
+        //uint8_t ov1[4], ov2[4];
         volume_get_at(volume, &a1, p, v1);
+        //volume_get_at(volume, &a1, p, ov1);
         volume_get_at(other, &a2, p, v2);
+        //volume_get_at(other, &a2, p, ov2);
+        // When a color is not given, v1 is blank and v2 is from the tool
+        // When a color is given, v1 is blank, and v2 becomes the paint color * colour in tool
         if (color) color_mul(v2, color, v2);
+        //if (!vec4_equal(v1, v2)) {
+            // LOG_D("Pos: %i/%i/%i", pos[0], pos[1], pos[2]);
+            // LOG_D("V1: %i/%i/%i, V2: %i/%i/%i", v1[0], v1[1], v1[2], v2[0], v2[1], v2[2]);
+            // LOG_D("OV1: %i/%i/%i, OV2: %i/%i/%i", ov1[0], ov1[1], ov1[2], ov2[0], ov2[1], ov2[2]);
+        //}
         combine(v1, v2, mode, v1);
         volume_set_at(tile, &a3, (int[]){x, y, z}, v1);
     }

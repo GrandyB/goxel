@@ -61,6 +61,7 @@
 #include "utils/gl.h"
 #include "utils/img.h"
 #include "utils/plane.h"
+#include "utils/noise.h"
 #include "utils/sound.h"
 #include "utils/texture.h"
 #include "utils/vec.h"

@@ -123,6 +123,10 @@ typedef struct painter {
     int             symmetry; // bitfield X Y Z
     float           symmetry_origin[3];
     float           (*box)[4][4];     // Clipping box (can be null)
+    int             noise_enabled;
+    int             noise_intensity;
+    int             noise_saturation;
+    int             noise_coverage;
 } painter_t;
 
 
