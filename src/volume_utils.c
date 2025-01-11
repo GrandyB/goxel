@@ -324,7 +324,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     uint8_t value[4], new_value[4], c[4];
     volume_iterator_t iter;
     volume_accessor_t accessor;
-    float size[3], p[3];
+    float size[3], p[3], global_p[3];
     float mat[4][4];
     float (*shape_func)(const float[3], const float[3], float smoothness);
     float k, v;
@@ -407,6 +407,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     // For every tile in the volume, iterate
     while (volume_iter(&iter, vp)) {
         vec3_set(p, vp[0] + 0.5, vp[1] + 0.5, vp[2] + 0.5);
+        vec3_set(global_p, iter.tile_pos[0]-p[0], iter.tile_pos[1]-p[1], iter.tile_pos[2]-p[2]);
         if (use_box && !bbox_contains_vec(*painter->box, p)) continue;
         mat4_mul_vec3(mat, p, p);
         k = shape_func(p, size, painter->smoothness);
@@ -436,7 +437,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         // Apply noise
         if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
             //uint8_t noise_col[4];
-            float noise_value = uniform_noise(p[0], p[1], p[2]);
+            float noise_value = uniform_noise(global_p[0], global_p[1], global_p[2]);
             //generate_random_color(noise_value, painter->noise_intensity/100f, painter->noise_saturation/100f, noise_col);
 
             //LOG_D("Noise: %f", noise_value);
@@ -458,26 +459,18 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
 
         c[3] *= v;
             LOG_D("------------------------------------");
+            LOG_D("Global pos: %f/%f/%f", global_p[0], global_p[1], global_p[2]);
             LOG_D("Position: %f/%f/%f", p[0], p[1], p[2]);
-            LOG_D("C: %i/%i/%i", c[0], c[1], c[2]);
-        if (!c[3] && skip_src_empty) {
-            LOG_D("c - no alpha, skip_src_empty = true - CONTINUE");
-            continue;
-        }
+            //LOG_D("C: %i/%i/%i", c[0], c[1], c[2]);
+        if (!c[3] && skip_src_empty) continue;
         // volume = tool volume, value = color at point in tool volume
         volume_get_at(volume, &accessor, vp, value);
-        if (!value[3] && skip_dst_empty) {
-            LOG_D("value - no alpha, skip_dst_empty = true - CONTINUE");
-            continue;
-        }
-            LOG_D("Value: %i/%i/%i, C: %i/%i/%i", value[0], value[1], value[2], c[0], c[1], c[2]);
+        if (!value[3] && skip_dst_empty) continue;
+            //LOG_D("Value: %i/%i/%i, C: %i/%i/%i", value[0], value[1], value[2], c[0], c[1], c[2]);
         combine(value, c, mode, new_value);
-            LOG_D("new_value: %i/%i/%i", new_value[0], new_value[1], new_value[2]);
+            //LOG_D("new_value: %i/%i/%i", new_value[0], new_value[1], new_value[2]);
         if (!vec4_equal(value, new_value)) {
-            LOG_D("Setting volume");
             volume_set_at(volume, &accessor, vp, new_value);
-        } else {
-            LOG_D("NOT setting volume");
         }
     }
 
