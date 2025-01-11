@@ -3,9 +3,10 @@
 
 #include <stdio.h>
 #include <math.h>
+#include <goxel.h>
 
 float uniform_noise(float x, float y, float z);
 
-void generate_random_color(float noise_value, float noise_intensity, float noise_saturation, float out[3]);
+void blend_with_noise(int orig[3], float noise_value, float noise_intensity, float noise_saturation, int out[3]);
 
 #endif // NOISE_H

@@ -165,7 +165,6 @@ static int on_drag(gesture3d_t *gest, void *user)
     painter = *(painter_t*)USER_GET(user, 1);
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, brush->volume_orig);
-    LOG_D("DO MERGE");
     // layer_t *toolvollayer = layer_new("toolvolume");
     // toolvollayer->volume = volume_copy(goxel.tool_volume);
     // layer_t *brushvolume = layer_new("brushvolume");
@@ -173,7 +172,6 @@ static int on_drag(gesture3d_t *gest, void *user)
     // DL_APPEND(goxel.image->layers, toolvollayer);
     // DL_APPEND(goxel.image->layers, brushvolume);
     volume_merge(goxel.tool_volume, brush->volume, painter.mode, NULL);
-    LOG_D("END MERGE");
         //painter.color_blend == COLOR_INHERITED ? NULL : painter.color);
     vec3_copy(curs->pos, brush->start_pos);
     brush->last_op.volume_key = volume_get_key(goxel.tool_volume);

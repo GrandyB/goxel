@@ -403,7 +403,6 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     // setting and getting!  Need to fix that!!
     accessor = volume_get_accessor(volume);
     
-    LOG_D("=========================================================");
     // For every tile in the volume, iterate
     while (volume_iter(&iter, vp)) {
         vec3_set(p, vp[0] + 0.5, vp[1] + 0.5, vp[2] + 0.5);
@@ -435,32 +434,43 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         }
 
         // Apply noise
+        // if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
+        //     //uint8_t noise_col[4];
+        //     float noise_value = uniform_noise(global_p[0], global_p[1], global_p[2]);
+        //     //generate_random_color(noise_value, painter->noise_intensity/100f, painter->noise_saturation/100f, noise_col);
+
+        //     //LOG_D("Noise: %f", noise_value);
+
+        //     // Apply coverage: skip voxels outside the noise coverage range
+        //     if (noise_value > (float)painter->noise_coverage / 100.0f) {
+        //         //LOG_D("Skipped");
+        //     } else {
+        //         // Adjust noise intensity and saturation
+        //         float noise_factor = (float)painter->noise_intensity / 100.0f * noise_value;
+        //         //LOG_D("Noise factor: %f", noise_factor);
+        //         col[0] = (uint8_t)clamp(col[0] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+        //         col[1] = (uint8_t)clamp(col[1] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+        //         col[2] = (uint8_t)clamp(col[2] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+        //         //col[3] = (uint8_t)clamp(col[3] * (1.0f - noise_factor), 0.0f, 255.0f);
+        //     }
+        // }
         if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
-            //uint8_t noise_col[4];
             float noise_value = uniform_noise(global_p[0], global_p[1], global_p[2]);
-            //generate_random_color(noise_value, painter->noise_intensity/100f, painter->noise_saturation/100f, noise_col);
-
-            //LOG_D("Noise: %f", noise_value);
-
-            // Apply coverage: skip voxels outside the noise coverage range
-            if (noise_value > (float)painter->noise_coverage / 100.0f) {
-                //LOG_D("Skipped");
-            } else {
-                // Adjust noise intensity and saturation
-                float noise_factor = (float)painter->noise_intensity / 100.0f * noise_value;
-                //LOG_D("Noise factor: %f", noise_factor);
-                col[0] = (uint8_t)clamp(col[0] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
-                col[1] = (uint8_t)clamp(col[1] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
-                col[2] = (uint8_t)clamp(col[2] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
-                //col[3] = (uint8_t)clamp(col[3] * (1.0f - noise_factor), 0.0f, 255.0f);
+            //int noise_col[4];
+            int noise_col[3];
+            noise_col[0] = col[0];
+            noise_col[1] = col[2];
+            noise_col[2] = col[1];
+            if (noise_value < (float)painter->noise_coverage / 100.0f) {
+                blend_with_noise(noise_col, noise_value, (float)painter->noise_intensity, (float)painter->noise_saturation, noise_col);
+                col[0] = noise_col[0];
+                col[1] = noise_col[1];
+                col[2] = noise_col[2];
             }
         }
         memcpy(c, col, 4);
 
         c[3] *= v;
-            LOG_D("------------------------------------");
-            LOG_D("Global pos: %f/%f/%f", global_p[0], global_p[1], global_p[2]);
-            LOG_D("Position: %f/%f/%f", p[0], p[1], p[2]);
             //LOG_D("C: %i/%i/%i", c[0], c[1], c[2]);
         if (!c[3] && skip_src_empty) continue;
         // volume = tool volume, value = color at point in tool volume
@@ -512,7 +522,6 @@ static void tile_merge(volume_t *volume, const volume_t *other, const int pos[3]
 
     if ((mode == MODE_OVER || mode == MODE_MAX) && id1 == 0 && !color) {
         volume_copy_tile(other, pos, volume, pos);
-        LOG_D("Copy tile");
         return;
     }
 

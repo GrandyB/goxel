@@ -16,54 +16,105 @@ float uniform_noise(float x, float y, float z) {
     return (h & 0x7FFFFFFF) / (float)0x7FFFFFFF;
 }
 
-// Function to generate an RGB color based on a float input [0, 1]
-void generate_random_color(float noise_value, float noise_intensity, float noise_saturation, float out[3]) {
-    // Ensure the value is clamped between 0.0 and 1.0
-    // if (value < 0.0f) value = 0.0f;
-    // if (value > 1.0f) value = 1.0f;
+const float HUE_UPPER_LIMIT = 360.0f;
 
-    // // Scale the value to a hue value in the range [0, 360]
-    // float hue = value * 360.0f;
+void hsl_to_rgb(double hsl[3], int out[3])
+{
+    double h = hsl[0];
+    double s = hsl[1];
+    double l = hsl[2];
+    if (h < 0.0 || h > 360.0 || s < 0.0 || s > 1.0 || l < 0.0 || l > 1.0) {
+        LOG_D("Invalid HSL values: h=%f, s=%f, l=%f", h, s, l);
+        out[0] = out[1] = out[2] = 0; // Default to black
+        return;
+    }
 
-    // // Convert hue to RGB using the HSV to RGB conversion formula
-    // float c = noise_saturation;                       // Chroma: full intensity modulated by saturation
-    // float x = c * (1 - fabs(fmod(hue / 60.0f, 2) - 1));
-    // float m = noise_intensity * (1 - c);              // Adjust intensity (adds "grayness")
+    double c = 0.0, m = 0.0, x = 0.0;
+    c = (1.0 - fabs(2 * l - 1.0)) * s;
+    m = 1.0 * (l - 0.5 * c);
+    x = c * (1.0 - fabs(fmod(h / 60.0, 2) - 1.0));
 
-    // float r_prime = 0.0f, g_prime = 0.0f, b_prime = 0.0f;
+    double rgb[3];
+    if (h >= 0.0 && h < (HUE_UPPER_LIMIT / 6.0))
+    {
+        rgb[0] = c + m;
+        rgb[1] = x + m;
+        rgb[2] = m;
+    }
+    else if (h >= (HUE_UPPER_LIMIT / 6.0) && h < (HUE_UPPER_LIMIT / 3.0))
+    {
+        rgb[0] = x + m;
+        rgb[1] = c + m;
+        rgb[2] = m;
+    }
+    else if (h < (HUE_UPPER_LIMIT / 3.0) && h < (HUE_UPPER_LIMIT / 2.0))
+    {
+        rgb[0] = m;
+        rgb[1] = c + m;
+        rgb[2] = x + m;
+    }
+    else if (h >= (HUE_UPPER_LIMIT / 2.0)
+            && h < (2.0f * HUE_UPPER_LIMIT / 3.0))
+    {
+        rgb[0] = m;
+        rgb[1] = x + m;
+        rgb[2] = c + m;
+    }
+    else if (h >= (2.0 * HUE_UPPER_LIMIT / 3.0)
+            && h < (5.0 * HUE_UPPER_LIMIT / 6.0))
+    {
+        rgb[0] = x + m;
+        rgb[1] = m;
+        rgb[2] = c + m;
+    }
+    else if (h >= (5.0 * HUE_UPPER_LIMIT / 6.0) && h < HUE_UPPER_LIMIT)
+    {
+        rgb[0] = c + m;
+        rgb[1] = m;
+        rgb[2] = x + m;
+    }
+    else
+    {
+        rgb[0] = m;
+        rgb[1] = m;
+        rgb[2] = m;
+    }
+    //LOG_D("HSL: %f/%f/%f", h, s, l);
+    //LOG_D("RGB: %f/%f/%f", rgb[0], rgb[1], rgb[2]);
+    out[0] = (int) (rgb[0] * 255.0f);
+    out[1] = (int) (rgb[1] * 255.0f);
+    out[2] = (int) (rgb[2] * 255.0f);
+    //LOG_D("out: %i/%i/%i", out[0], out[1], out[2]);
+}
 
-    // if (hue < 60) {
-    //     r_prime = c;
-    //     g_prime = x;
-    //     b_prime = 0;
-    // } else if (hue < 120) {
-    //     r_prime = x;
-    //     g_prime = c;
-    //     b_prime = 0;
-    // } else if (hue < 180) {
-    //     r_prime = 0;
-    //     g_prime = c;
-    //     b_prime = x;
-    // } else if (hue < 240) {
-    //     r_prime = 0;
-    //     g_prime = x;
-    //     b_prime = c;
-    // } else if (hue < 300) {
-    //     r_prime = x;
-    //     g_prime = 0;
-    //     b_prime = c;
-    // } else {
-    //     r_prime = c;
-    //     g_prime = 0;
-    //     b_prime = x;
-    // }
+void blend_alpha_hsl(int orig[3], double noise_hsl[3], float saturation, float intensity, int result[3]) {
+    // Normalize saturation and intensity
+    saturation = clamp(saturation / 100.0, 0.0, 1.0);
+    intensity = clamp(intensity / 100.0, 0.0, 1.0);
 
-    // // Convert from [0, 1] to [0, 255] and return as an RGB struct
-    // RGB color = {
-    //     .r = (int)((r_prime + m) * 255.0f),
-    //     .g = (int)((g_prime + m) * 255.0f),
-    //     .b = (int)((b_prime + m) * 255.0f)
-    // };
+    // Convert noise HSL to RGB
+    int noise_rgb[3];
+    hsl_to_rgb(noise_hsl, noise_rgb);
 
-    //return color;
+    // Calculate grayscale luminance of noise
+    double noise_luminance = 0.299 * noise_rgb[0] + 0.587 * noise_rgb[1] + 0.114 * noise_rgb[2];
+
+    // Blend noise with its grayscale version based on saturation
+    double blended_noise_r = noise_luminance * (1.0 - saturation) + noise_rgb[0] * saturation;
+    double blended_noise_g = noise_luminance * (1.0 - saturation) + noise_rgb[1] * saturation;
+    double blended_noise_b = noise_luminance * (1.0 - saturation) + noise_rgb[2] * saturation;
+
+    // Blend the original color and the blended noise color based on intensity
+    result[0] = (int)((orig[0] * (1.0 - intensity)) + (blended_noise_r * intensity));
+    result[1] = (int)((orig[1] * (1.0 - intensity)) + (blended_noise_g * intensity));
+    result[2] = (int)((orig[2] * (1.0 - intensity)) + (blended_noise_b * intensity));
+}
+
+void blend_with_noise(int orig[3], float noise_value, float noise_intensity, float noise_saturation, int out[3]) {
+    double hsl[3];
+    hsl[0] = clamp(noise_value, 0.0f, 1.0f) * 360;
+    hsl[1] = 1.0f;
+    hsl[2] = 0.5f;
+
+    blend_alpha_hsl(orig, hsl, noise_saturation, noise_intensity, orig);
 }

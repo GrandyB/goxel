@@ -250,9 +250,9 @@ int tool_gui_noise(void)
                 goxel.painter.noise_coverage = coverage;
             }
             if (gui_button("Reset", 0, 0)) {
-                goxel.painter.noise_intensity = 0;
-                goxel.painter.noise_saturation = 0;
-                goxel.painter.noise_coverage = 0;
+                goxel.painter.noise_intensity = 20;
+                goxel.painter.noise_saturation = 5;
+                goxel.painter.noise_coverage = 100;
             }
         }
     }

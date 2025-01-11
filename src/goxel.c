@@ -359,8 +359,8 @@ void goxel_reset(void)
         .smoothness = 0,
         .noise_enabled = 0,
         .noise_coverage = 100,
-        .noise_intensity = 64,
-        .noise_saturation = 0,
+        .noise_intensity = 20,
+        .noise_saturation = 5,
         .color = {255, 255, 255, 255},
     };
 
