@@ -456,17 +456,29 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         // }
         if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
             float noise_value = uniform_noise(global_p[0], global_p[1], global_p[2]);
-            //int noise_col[4];
             int noise_col[3];
             noise_col[0] = col[0];
-            noise_col[1] = col[2];
-            noise_col[2] = col[1];
+            noise_col[1] = col[1];
+            noise_col[2] = col[2];
             if (noise_value < (float)painter->noise_coverage / 100.0f) {
-                blend_with_noise(noise_col, noise_value, (float)painter->noise_intensity, (float)painter->noise_saturation, noise_col);
+                blend_with_noise_alpha(noise_col, noise_value, (float)painter->noise_intensity, (float)painter->noise_saturation, noise_col);
                 col[0] = noise_col[0];
                 col[1] = noise_col[1];
                 col[2] = noise_col[2];
             }
+
+            // // Apply coverage: skip voxels outside the noise coverage range
+            // if (noise_value > (float)painter->noise_coverage / 100.0f) {
+            //     //LOG_D("Skipped");
+            // } else {
+            //     // Adjust noise intensity and saturation
+            //     float noise_factor = (float)painter->noise_intensity / 100.0f * noise_value;
+            //     //LOG_D("Noise factor: %f", noise_factor);
+            //     col[0] = (uint8_t)clamp(col[0] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+            //     col[1] = (uint8_t)clamp(col[1] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+            //     col[2] = (uint8_t)clamp(col[2] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
+            //     //col[3] = (uint8_t)clamp(col[3] * (1.0f - noise_factor), 0.0f, 255.0f);
+            // }
         }
         memcpy(c, col, 4);
 

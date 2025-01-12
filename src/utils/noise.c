@@ -118,3 +118,43 @@ void blend_with_noise(int orig[3], float noise_value, float noise_intensity, flo
 
     blend_alpha_hsl(orig, hsl, noise_saturation, noise_intensity, orig);
 }
+
+void blendColors(int base[3], int overlay[3], double alpha, int result[3]) {
+    result[0] = (int)(overlay[0] * alpha + base[0] * (1 - alpha));
+    result[1] = (int)(overlay[1] * alpha + base[1] * (1 - alpha));
+    result[2] = (int)(overlay[2] * alpha + base[2] * (1 - alpha));
+}
+
+void generate_color_rgb(float noise_value, int out[3]) {
+    double color_hsl[3];
+    color_hsl[0] = clamp(noise_value, 0.0f, 1.0f) * 360;
+    color_hsl[1] = 1.0f;
+    color_hsl[2] = 0.5f;
+    hsl_to_rgb(color_hsl, out);
+}
+
+void generate_greyscale_rgb(float noise_value, int out[3]) {
+    double value = noise_value * 255.0f;
+    out[0] = (int) value;
+    out[1] = (int) value;
+    out[2] = (int) value;
+}
+
+void blend_with_noise_alpha(int orig[3], float noise_value, float noise_intensity, float noise_saturation, int out[3]) {
+    // Generate random color
+    int color_rgb[3];
+    generate_color_rgb(noise_value, color_rgb);
+
+    // Generate greyscale color
+    int greyscale_rgb[3];
+    generate_greyscale_rgb(noise_value, greyscale_rgb);
+
+    // Blend color onto greyscale, using saturation as the alpha
+    double saturation_alpha = clamp(noise_saturation/100.0f, 0.0f, 1.0f);
+    int blend_saturation[3];
+    blendColors(greyscale_rgb, color_rgb, saturation_alpha, blend_saturation);
+    
+    // Blend resulting noise back onto the "original"/input color using intensity as the alpha
+    double intensity_alpha = clamp(noise_intensity/100.0f, 0.0f, 1.0f);
+    blendColors(orig, blend_saturation, intensity_alpha, out);
+}
