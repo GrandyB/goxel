@@ -34,6 +34,18 @@ static void import_image_plane(void)
     goxel_import_image_plane(path);
 }
 
+static void import_hmap_cmap(void) {
+    const char *hmap_path;
+    const char *cmap_path;
+    const char *filters[] = {"*.png", "*.bmp", "*.jpg", "*.jpeg", NULL};
+    hmap_path = sys_open_file_dialog("Choose heightmap image", NULL, filters, "png, jpeg, bmp");
+    if (!hmap_path) return;
+    cmap_path = sys_open_file_dialog("Choose colormap image", NULL, filters, "png, jpeg, bmp");
+    if (!cmap_path) return;
+    LOG_I("Importing\nhmap: '%s'\ncmap: '%s'\n", hmap_path, cmap_path);
+    goxel_import_hmap_cmap(hmap_path, cmap_path);
+}
+
 static file_format_t *g_import_format = NULL;
 
 static int import_gui(void *data)
@@ -81,6 +93,8 @@ void gui_menu(void)
         if (gui_menu_begin("Import...", true)) {
             if (gui_menu_item(0, "image plane", true))
                 import_image_plane();
+            if (gui_menu_item(0, "hmap + cmap", true))
+                import_hmap_cmap();
             file_format_iter("r", NULL, import_menu_callback);
             gui_menu_end();
         }

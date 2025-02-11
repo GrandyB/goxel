@@ -36,6 +36,7 @@ struct file_format
     void            (*import_gui)(file_format_t *format);
     int             (*import_volume_func)(const file_format_t *format, volume_t *volume,
                                    const char *path);
+    bool            affect_current_layer; // if true, import is done directly into the currently active layer
 };
 
 void file_format_register(file_format_t *format);
@@ -45,6 +46,9 @@ const file_format_t *file_format_for_path(const char *path, const char *name,
 
 void file_format_iter(const char *mode, void *user,
                       void (*f)(void *user, file_format_t *f));
+
+// Get using the name defined in the file format itself
+const file_format_t *file_format_by_name(const char *name);
 
 // The global list of registered file formats.
 extern file_format_t *file_formats;
