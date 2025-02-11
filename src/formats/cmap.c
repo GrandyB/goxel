@@ -73,62 +73,74 @@ static int export_as_colormap(const file_format_t *format, const image_t *image,
     return 0;
 }
 
-static int import_cmap(const file_format_t *format, image_t *image,
-                         const char *path)
+static int import_cmap(const file_format_t *format, image_t *image, const char *path)
 {
     volume_t *volume;
     volume_iterator_t iter = {0};
     uint8_t *img;
     float box[4][4];
-    int x, y, z, w, h, d, bpp = 0, pos[3], start_pos[3];
-    uint8_t c[4];
+    int x, y, z;
+    int file_w, file_h, vol_w, vol_h, vol_d;
+    int pos[3], start_pos[3];
+    uint8_t c[4], c2[4];
+    int bpp = 0;
 
-    img = img_read(path, &w, &h, &bpp);
+    // Read the image file; file_w and file_h are the original image dimensions
+    img = img_read(path, &file_w, &file_h, &bpp);
+
     volume = image->active_layer->volume;
     mat4_copy(image->box, box);
     if (box_is_null(box))
         volume_get_box(volume, true, box);
-    w = box[0][0] * 2;
-    h = box[1][1] * 2;
-    d = box[2][2] * 2;
-    start_pos[0] = box[0][0];
-    start_pos[1] = box[3][1] - box[1][1];
-    start_pos[2] = box[3][2] - box[2][2];
-    printf("w: %u, h: %u, d: %u\n", w, h, d);
 
-    for (x = 0; x < w; x++)
-        for (y = 0; y < h; y++)
-            for (z = 0; z < d; z++)
-            {
-                pos[0] = start_pos[0] - x - 1; // x seemed to be flipped, this fixes it despite looking like an outlier
-                pos[1] = y + start_pos[1];
-                pos[2] = z + start_pos[2];
-                volume_get_at(volume, &iter, pos, c);
-                bool hasBlock = c[3] != 0; // Completely transparent colour of block
+    // Compute volume dimensions from the box (assumes box[0][0], etc., are half-dimensions)
+    vol_w = box[0][0] * 2; // volume width
+    vol_h = box[1][1] * 2; // volume height
+    vol_d = box[2][2] * 2; // volume depth
 
-                // Always insert for z=0 (bottom indestructible layer), or if there's a block on this z
-                if (hasBlock || z == 0)
-                {
-                    printf("---------------\n");
-                    printf("pos: [%i, %i, %i]\n", pos[0], pos[1], pos[2]);
-                    printf("x: %u, y: %u, z: %u\n", x, y, z);
-                    // Images are one big long array of values, e.g. an 4x2x4 area would mean...
-                    //      (0,0,0) = index 0
-                    //      (3,0,0) = index 3
-                    //      (0,1,0) = index 5, as that's not in the first row
-                    //      (3,1,3) = index 8, at the end of the second row of 4, etc
-                    // In a heightmap's case we're overlaying stuff on top of each other so z
-                    // doesn't matter other than making sure we are increasing z as we loop through
-                    int img_index = ((y * w) + x);
-                    c[0] = img[img_index * 4 + 0];
-                    c[1] = img[img_index * 4 + 1];
-                    c[2] = img[img_index * 4 + 2];
-                    c[3] = img[img_index * 4 + 3];
-                    printf("color: %u, %u, %u, %u\n", c[0], c[1], c[2], c[3]);
-                    volume_set_at(volume, &iter, pos,
-                        (uint8_t[]){c[0], c[1], c[2], 255});
+    // Determine starting positions in the volume; these offsets map the image's (0,0) to the volume
+    start_pos[0] = box[0][0];                // x starting position
+    start_pos[1] = box[3][1] - box[1][1];      // y starting position
+    start_pos[2] = box[3][2] - box[2][2];      // z starting position
+
+    printf("Volume dimensions: %d x %d x %d\n", vol_w, vol_h, vol_d);
+
+    // Determine how many pixels we can map: stop when we exceed either the image or volume bounds
+    int max_x = (vol_w < file_w) ? vol_w : file_w;
+    int max_y = (vol_h < file_h) ? vol_h : file_h;
+
+    // Iterate over the image pixels (which map to x/y coordinates in the volume)
+    for (y = 0; y < max_y; y++) {
+        for (x = 0; x < max_x; x++) {
+            // Calculate the index into the image array (row-major order)
+            int img_index = y * file_w + x;
+            c[0] = img[img_index * bpp + 0];
+            c[1] = img[img_index * bpp + 1];
+            c[2] = img[img_index * bpp + 2];
+            c[3] = 255;
+            //printf("%i/%i: %u/%u/%u/%u\n", x, y, c[0], c[1], c[2], c[3]);
+
+            // Map the image x,y coordinate to a volume coordinate.
+            // Note: The x axis is flipped compared to the image, so subtract x (and an extra 1) from start_pos[0].
+            int vol_x = start_pos[0] - x - 1;
+            int vol_y = y + start_pos[1];
+
+            // Apply this 2D pixel color to any existing block in this position
+            for (z = 0; z < vol_d; z++) {
+                int vol_z = z + start_pos[2];
+                pos[0] = vol_x;
+                pos[1] = vol_y;
+                pos[2] = vol_z;
+
+                volume_get_at(volume, &iter, pos, c2);
+                if (c2[3] != 0) {
+                    // Set the block color; force alpha to 255 for full opacity
+                    volume_set_at(volume, &iter, pos, c);
                 }
             }
+        }
+    }
+
     free(img);
     return 0;
 }
