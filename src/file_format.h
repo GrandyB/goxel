@@ -36,6 +36,7 @@ struct file_format
     void            (*import_gui)(file_format_t *format);
     int             (*import_volume_func)(const file_format_t *format, volume_t *volume,
                                    const char *path);
+    bool            affect_current_layer; // if true, import is done directly into the currently active layer
 };
 
 void file_format_register(file_format_t *format);

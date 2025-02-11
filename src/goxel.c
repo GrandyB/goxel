@@ -1225,12 +1225,20 @@ int goxel_import_file(const char *path, const char *format)
             path = sys_open_file_dialog("Import", NULL, f->exts, f->exts_desc);
             if (!path) return -1;
         }
-            layer_t *layer = image_add_layer(goxel.image, NULL);
-            err = f->import_func(f, goxel.image, path);
+        layer_t *layer;
+        if (f->affect_current_layer) {
+            image_history_push(goxel.image);
+            layer = goxel.image->active_layer;
+        } else {
+            layer = image_add_layer(goxel.image, NULL);
+        }
+        err = f->import_func(f, goxel.image, path);
+        if (!f->affect_current_layer) {
             char *file_name = get_file_name_from_path(path);
             LOG_D("path: '%s' - file_name: '%s'", path, file_name);
             make_uniq_name(layer->name, sizeof(layer->name), file_name, goxel.image,
                                 layer_name_exists);
+        }
     }
     if (err) return err;
 
