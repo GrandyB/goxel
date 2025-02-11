@@ -47,6 +47,9 @@ const file_format_t *file_format_for_path(const char *path, const char *name,
 void file_format_iter(const char *mode, void *user,
                       void (*f)(void *user, file_format_t *f));
 
+// Get using the name defined in the file format itself
+const file_format_t *file_format_by_name(const char *name);
+
 // The global list of registered file formats.
 extern file_format_t *file_formats;
 extern file_format_t *file_formats_import_to_volume;

@@ -1185,6 +1185,16 @@ void goxel_set_hint_text(const char *msg, ...)
     va_end(args);
 }
 
+void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path) {
+    // Use hmap import to create new layer with greyscales
+    //const file_format_t *hmap = file_format_by_name("heightmap");
+    goxel_import_file(hmap_path, "heightmap");
+
+    // Use cmap import to use existing layer and apply with colours
+    //const file_format_t *cmap = file_format_by_name("colormap");
+    goxel_import_file(cmap_path, "colormap");
+}
+
 void goxel_import_image_plane(const char *path)
 {
     layer_t *layer;

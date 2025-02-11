@@ -70,6 +70,15 @@ const file_format_t *file_format_for_path(const char *path, const char *name,
     return NULL;
 }
 
+const file_format_t *file_format_by_name(const char *name) {
+    const file_format_t *f;
+    assert(name);
+    DL_FOREACH(file_formats, f) {
+        if (name && strcasecmp(f->name, name) == 0) return f;
+    }
+    return NULL;
+}
+
 void file_format_iter(const char *mode, void *user,
                       void (*fun)(void *user, file_format_t *f))
 {

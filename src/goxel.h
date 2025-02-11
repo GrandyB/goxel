@@ -641,6 +641,7 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview);
 void goxel_set_help_text(const char *msg, ...);
 void goxel_set_hint_text(const char *msg, ...);
 
+void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path);
 void goxel_import_image_plane(const char *path);
 
 int goxel_import_file(const char *path, const char *format);
