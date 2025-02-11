@@ -42,7 +42,7 @@ static void import_hmap_cmap(void) {
     if (!hmap_path) return;
     cmap_path = sys_open_file_dialog("Choose colormap image", NULL, filters, "png, jpeg, bmp");
     if (!cmap_path) return;
-    printf("Importing\nhmap: '%s'\ncmap: '%s'\n", hmap_path, cmap_path);
+    LOG_I("Importing\nhmap: '%s'\ncmap: '%s'\n", hmap_path, cmap_path);
     goxel_import_hmap_cmap(hmap_path, cmap_path);
 }
 

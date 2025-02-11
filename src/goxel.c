@@ -1187,11 +1187,10 @@ void goxel_set_hint_text(const char *msg, ...)
 
 void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path) {
     // Use hmap import to create new layer with greyscales
-    //const file_format_t *hmap = file_format_by_name("heightmap");
     goxel_import_file(hmap_path, "heightmap");
+    image_history_push(goxel.image);
 
     // Use cmap import to use existing layer and apply with colours
-    //const file_format_t *cmap = file_format_by_name("colormap");
     goxel_import_file(cmap_path, "colormap");
 }
 
@@ -1242,9 +1241,10 @@ int goxel_import_file(const char *path, const char *format)
         } else {
             layer = image_add_layer(goxel.image, NULL);
         }
-        err = f->import_func(f, goxel.image, path);
+        char *file_name = strdup(get_file_name_from_path(path));
+        char *path_copy = strdup(path);
+        err = f->import_func(f, goxel.image, path_copy);
         if (!f->affect_current_layer) {
-            char *file_name = get_file_name_from_path(path);
             LOG_D("path: '%s' - file_name: '%s'", path, file_name);
             make_uniq_name(layer->name, sizeof(layer->name), file_name, goxel.image,
                                 layer_name_exists);

@@ -121,7 +121,7 @@ static int import_hmap(const file_format_t *format, image_t *image, const char *
     start_pos[1] = box[3][1] - box[1][1];      // y starting position
     start_pos[2] = box[3][2] - box[2][2];      // z starting position
 
-    printf("Volume dimensions: %d x %d x %d\n", vol_w, vol_h, vol_d);
+    LOG_D("Volume dimensions: %d x %d x %d\n", vol_w, vol_h, vol_d);
 
     // Determine how many pixels we can map: stop when we exceed either the image or volume bounds
     int max_x = (vol_w < file_w) ? vol_w : file_w;
@@ -138,7 +138,7 @@ static int import_hmap(const file_format_t *format, image_t *image, const char *
             c[3] = 255;
 
             int z_height = get_hmap_z(c[0]);
-            //printf("%i/%i: %u/%u/%u/%u\n", x, y, c[0], c[1], c[2], c[3]);
+            //LOG_D("%i/%i: %u/%u/%u/%u\n", x, y, c[0], c[1], c[2], c[3]);
 
             // Map the image x,y coordinate to a volume coordinate.
             // Note: The x axis is flipped compared to the image, so subtract x (and an extra 1) from start_pos[0].
