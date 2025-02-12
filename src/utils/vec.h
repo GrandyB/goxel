@@ -787,6 +787,22 @@ DECL void quat_normalize(const float q[S 4], float out[S 4])
     out[3] = q[3] / n;
 }
 
+// Convert a mat[4][4] rotation matrix into [x,y,z] float array of values in degrees
+DECL void mat4_to_eul_degxyz(const float mat[4][4], float euler_out[3]) {
+    float mat3[3][3];
+
+    // Extract the 3×3 rotation part from the 4×4 matrix
+    mat4_to_mat3(mat, mat3);
+
+    // Convert to Euler angles (using default XYZ order)
+    mat3_to_eul(mat3, EULER_ORDER_DEFAULT, euler_out);
+
+    // Convert radians to degrees
+    euler_out[0] *= (180.0f / M_PI);
+    euler_out[1] *= (180.0f / M_PI);
+    euler_out[2] *= (180.0f / M_PI);
+}
+
 #undef S
 
 #endif // VEC_H_

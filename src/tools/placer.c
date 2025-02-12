@@ -364,11 +364,18 @@ static void placer_acquire_selection() {
     post_import(placer);
 }
 
+float zero(float num) {
+    return (num == -0.0f) ? 0.0f : num;
+}
+
 static int gui(tool_t *tool)
 {
     tool_placer_t *placer = (tool_placer_t*)tool;
     float rotation[4][4] = MAT4_IDENTITY;
+    float rot_degs[3];
+    bool reset_rotation;
     int origin_x, origin_y, origin_z, offset_x, offset_y, offset_z;
+    mat4_to_eul_degxyz(placer->rot, rot_degs);
     
     if (!box_is_null(goxel.selection)) {
         if(gui_section_begin("Selection", true)) {
@@ -445,6 +452,15 @@ static int gui(tool_t *tool)
             if (gui_button("+Z", 0, 0))
                 mat4_irotate(rotation, +M_PI / 8, 0, 0, 1);
             gui_row_end();
+            
+            gui_row_begin(1);
+            char *msg;
+            asprintf(&msg, "Rotation: %.1f / %.1f / %.1f", zero(rot_degs[0]), zero(rot_degs[1]), zero(rot_degs[2]));
+            gui_text(msg);
+            gui_row_end();
+            if (gui_button("Reset", 0, 0)) {
+                reset_rotation = true;
+            }
             gui_group_end();
         }
         gui_section_end();
@@ -499,9 +515,11 @@ static int gui(tool_t *tool)
         }
     } gui_section_end();
 
-    if (placer->imported_volume && !mat4_equal(rotation, mat4_identity)) {
+    if (reset_rotation || (placer->imported_volume && !mat4_equal(rotation, mat4_identity))) {
+        if (reset_rotation) mat4_set_identity(placer->rot);
         apply_rotation(placer, rotation);
     }
+    
     return 0;
 }
 
