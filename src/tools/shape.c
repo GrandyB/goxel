@@ -144,4 +144,5 @@ TOOL_REGISTER(TOOL_SHAPE, shape, tool_shape_t,
               .gui_fn = gui,
               .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_ALLOW_PICK_COLOR,
               .default_shortcut = "S",
+              .has_snap = true,
 )

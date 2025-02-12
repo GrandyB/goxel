@@ -193,4 +193,5 @@ TOOL_REGISTER(TOOL_LINE, line, tool_line_t,
               .iter_fn = iter,
               .gui_fn = gui,
               .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_ALLOW_PICK_COLOR,
+              .has_snap = true,
 )

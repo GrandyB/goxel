@@ -62,6 +62,7 @@ struct tool {
     int state; // XXX: to be removed I guess.
     int flags;
     const char *name;
+    bool has_snap;
 };
 
 #define TOOL_REGISTER(id_, name_, klass_, ...) \

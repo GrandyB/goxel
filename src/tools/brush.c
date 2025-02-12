@@ -275,5 +275,6 @@ TOOL_REGISTER(TOOL_BRUSH, brush, tool_brush_t,
               .iter_fn = iter,
               .gui_fn = gui,
               .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_ALLOW_PICK_COLOR,
-              .default_shortcut = "B"
+              .default_shortcut = "B",
+              .has_snap = true,
 )
