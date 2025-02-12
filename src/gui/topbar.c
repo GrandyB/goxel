@@ -52,6 +52,34 @@ static int gui_mode_select(void)
     return 0;
 }
 
+// A copy of that within tools.c
+static bool inline_snap_button(const char *label, int s)
+{
+    bool v = goxel.snap_mask & s;
+    if (gui_selectable(label, &v, NULL, strlen(label) * 10)) {
+        set_flag(&goxel.snap_mask, s, v);
+        return true;
+    }
+    return false;
+}
+// Condensed inline version of tools.c
+static int tool_gui_snap_inline(void)
+{
+    gui_group_begin(NULL);
+    gui_row_begin(0);
+    gui_text_wrapped("Snap on: ");
+    inline_snap_button("Volume", SNAP_VOLUME);
+    inline_snap_button("Plane", SNAP_PLANE);
+    if (!box_is_null(goxel.selection)) {
+        inline_snap_button("Sel In", SNAP_SELECTION_IN);
+        inline_snap_button("Sel out", SNAP_SELECTION_OUT);
+    }
+    inline_snap_button("Image box", SNAP_IMAGE_BOX);
+    gui_row_end();
+    gui_group_end();
+    return 0;
+}
+
 void gui_top_bar(void)
 {
     gui_row_begin(0); {
@@ -66,6 +94,14 @@ void gui_top_bar(void)
             gui_mode_select();
             gui_color("##color", goxel.painter.color);
         } gui_row_end();
+    } gui_row_end();
+}
+
+void gui_snap_bar(void) {
+    gui_row_begin(0); {
+        if (goxel.tool->has_snap) {
+            tool_gui_snap_inline();
+        }
     } gui_row_end();
 }
 

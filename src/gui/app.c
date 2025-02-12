@@ -37,10 +37,12 @@
 // Note: duplicated from gui.cpp!  To remove.
 static const float ITEM_HEIGHT = 18;
 static const float ICON_HEIGHT = 32;
+static const float TOP_BAR_HEIGHT = ICON_HEIGHT + 10;
 
 void gui_menu(void);
 void gui_tools_panel(void);
 void gui_top_bar(void);
+void gui_snap_bar(void);
 void gui_palette_panel(void);
 void gui_layers_panel(void);
 void gui_layers_panel_with_scroll();
@@ -137,9 +139,15 @@ void gui_app(void)
         y = ITEM_HEIGHT + 2;
     }
 
-    gui_window_begin("Top Bar", x, y, 0, 0, NULL);
+    gui_window_begin("Top Bar", x, y, 0, TOP_BAR_HEIGHT, NULL);
     gui_top_bar();
     gui_window_end();
+
+    if (goxel.tool->has_snap) {
+        gui_window_begin("Snap Bar", 280, y, 0, TOP_BAR_HEIGHT, NULL);
+        gui_snap_bar();
+        gui_window_end();
+    }
 
     y += ICON_HEIGHT + 28;
     gui_window_begin("Left Bar", x, y, 0, 0, NULL);

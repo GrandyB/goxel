@@ -510,7 +510,8 @@ TOOL_REGISTER(TOOL_PLACER, placer, tool_placer_t,
               .iter_fn = iter,
               .gui_fn = gui,
               .flags = TOOL_REQUIRE_CAN_EDIT,
-              .default_shortcut = "P"
+              .default_shortcut = "P",
+              .has_snap = true,
 )
 
 ACTION_REGISTER(placer_acquire_selection,
