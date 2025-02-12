@@ -27,7 +27,7 @@ camera_t *camera_new(const char *name)
     mat4_set_identity(cam->mat);
     cam->dist = 96;
     cam->aspect = 1;
-    cam->speed = 50;
+    cam->speed = 8;
     cam->fovy = 40.;
     cam->fovy_fpv = 100.;
     mat4_itranslate(cam->mat, 0, 0, cam->dist);
@@ -196,6 +196,7 @@ void camera_turntable(camera_t *camera, float rz, float rx)
     mat4_itranslate(camera->mat, 0, 0, -camera->dist);
     mat4_irotate(camera->mat, rx, 1, 0, 0);
     mat4_itranslate(camera->mat, 0, 0, camera->dist);
+    //printf("turn tabling\n");
 }
 
 /* First person move
@@ -207,6 +208,7 @@ void camera_move(camera_t *cam, float rx, float ry, float rz)
 {
     float mat[4][4];
     mat4_copy(cam->mat, mat);
+    //debug_log_44_matrix("camera_move", mat);
 
     float multiplier = cam->speed / 20;
 

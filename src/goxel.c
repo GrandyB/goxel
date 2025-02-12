@@ -286,7 +286,8 @@ end:
 static int on_drag(const gesture_t *gest, void *user);
 static int on_pan(const gesture_t *gest, void *user);
 static int on_zoom(const gesture_t *gest, void *user);
-static int on_rotate(const gesture_t *gest, void *user);
+static int on_rotate(const float viewport[4], const float origin_pos[2], const float pos[2], void *user);
+static int on_rotate_turntable(const gesture_t *gest, void *user);
 static int on_hover(const gesture_t *gest, void *user);
 
 static void goxel_init_sound()
@@ -329,7 +330,7 @@ void goxel_init(void)
     goxel_add_gesture(GESTURE_DRAG, GESTURE_RMB, on_pan);
     goxel_add_gesture(GESTURE_DRAG, GESTURE_MMB | GESTURE_SHIFT, on_pan);
     goxel_add_gesture(GESTURE_DRAG, GESTURE_MMB | GESTURE_CTRL, on_zoom);
-    goxel_add_gesture(GESTURE_DRAG, GESTURE_MMB, on_rotate);
+    goxel_add_gesture(GESTURE_DRAG, GESTURE_MMB, on_rotate_turntable);
     goxel_add_gesture(GESTURE_HOVER, 0, on_hover);
 
     goxel_reset();
@@ -575,7 +576,7 @@ static int on_pan(const gesture_t *gest, void *user)
 {
     camera_t *camera = get_camera();
     if (camera->fpv) {
-        return on_rotate(gest, user);
+        return on_rotate_turntable(gest, user);
     }
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
@@ -597,26 +598,34 @@ static int on_pan(const gesture_t *gest, void *user)
     return 0;
 }
 
-static int on_rotate(const gesture_t *gest, void *user)
+// Used for first person camera, use on_rotate_turntable for non-fpv
+static int on_rotate(const float viewport[4], const float origin_pos[2], const float pos[2], void *user)
 {
     float x1, y1, x2, y2, x_rot, z_rot;
     camera_t *camera = get_camera();
+
+    x1 = origin_pos[0] / viewport[2];
+    y1 = origin_pos[1] / viewport[3];
+    x2 = pos[0] / viewport[2];
+    y2 = pos[1] / viewport[3];
+    z_rot = (x1 - x2) * 2 * M_PI;
+    x_rot = (y2 - y1) * 2 * M_PI;
+    camera_turntable(camera, z_rot, x_rot);
+    return 0;
+}
+
+static int on_rotate_turntable(const gesture_t *gest, void *user) {
+    camera_t *camera = get_camera();
+    if (camera->fpv) return 0;
 
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
         vec2_copy(gest->pos, goxel.move_origin.pos);
     }
 
-    x1 = goxel.move_origin.pos[0] / gest->viewport[2];
-    y1 = goxel.move_origin.pos[1] / gest->viewport[3];
-    x2 = gest->pos[0] / gest->viewport[2];
-    y2 = gest->pos[1] / gest->viewport[3];
-    z_rot = (x1 - x2) * 2 * M_PI;
-    x_rot = (y2 - y1) * 2 * M_PI;
-
     mat4_copy(goxel.move_origin.camera_mat, camera->mat);
-    camera_turntable(camera, z_rot, x_rot);
-    return 0;
+
+    return on_rotate(gest->viewport, goxel.move_origin.pos, gest->pos, user);
 }
 
 static int on_zoom(const gesture_t *gest, void *user)
@@ -704,6 +713,10 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         return;
     }
 
+    if (camera->fpv) {
+        on_rotate(viewport, goxel.cursor.prev_xy, goxel.cursor.xy, NULL);
+    }
+
     // handle keyboard rotations
     if (!capture_keys) return;
 
@@ -760,6 +773,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
             camera_set_target(camera, p);
         }
     }
+    vec2_copy(goxel.cursor.xy, goxel.cursor.prev_xy);
 }
 
 KEEPALIVE

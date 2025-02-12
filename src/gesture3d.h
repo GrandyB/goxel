@@ -39,6 +39,7 @@ typedef struct cursor {
     int    snaped;
     int    flags; // Union of CURSOR_* values.
     float  snap_offset; // XXX: fix this.
+    float  prev_xy[2];
     float  xy[2];
 } cursor_t;
 
