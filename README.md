@@ -79,6 +79,7 @@ Changes in this fork
             - User = the user's chosen color
             - Inherited = the colour of the block beneath
             - Interpolated = USER <> INHERITED, the midpoint
+        - Noise panel added - can add random noise to texture the brush
     - Camera
         - First person camera (#)
             - Arrow keys for forward/back/left/right, Page Up/Down for up/down, RMB or MMB for look
@@ -93,6 +94,8 @@ Changes in this fork
         - Colourmap export .bmp file
         - voxlap import (e.g. kvx) no longer retains bounding box bg on import
         - Imports now automatically add to a new layer, which is named after the file
+        - hmap + cmap import - combines a black and white heightmap with a colourmap into a layer
+        - colourmap import - applies image to current layer down z
     - Hotkeys
         - Move plane up/down = < >
         - Plane visibility = /
@@ -100,6 +103,8 @@ Changes in this fork
         - Select layer under cursor = '
     - UI
         - Always add arrows to number fields < >
+        - Layer pane docked to the right
+        - Snap panel visible in top bar for tools that are affected by it
 
 
 Usage
