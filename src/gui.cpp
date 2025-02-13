@@ -777,48 +777,48 @@ static void label_aligned(const char *label, float size)
 /*
  * Custom slider widget.
  */
-static bool slider_float(float *v, float minv, float maxv, const char *format)
-{
-    bool ret;
-    float step = (maxv - minv) * 0.008;
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 rmin, rmax;
-    float k;
-    bool highlighted;
-    ImVec4 color;
-    ImU32 col;
+// static bool slider_float(float *v, float minv, float maxv, const char *format)
+// {
+//     bool ret;
+//     float step = (maxv - minv) * 0.008;
+//     ImDrawList* draw_list = ImGui::GetWindowDrawList();
+//     ImVec2 rmin, rmax;
+//     float k;
+//     bool highlighted;
+//     ImVec4 color;
+//     ImU32 col;
 
-    // Render an imgui DragFloat with transparent background.
-    draw_list->ChannelsSplit(2);
-    draw_list->ChannelsSetCurrent(1);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
-    ret = ImGui::DragFloat("", v, step, minv, maxv, format);
-    ImGui::PopStyleColor(3);
-    highlighted = ImGui::IsItemHovered();
+//     // Render an imgui DragFloat with transparent background.
+//     draw_list->ChannelsSplit(2);
+//     draw_list->ChannelsSetCurrent(1);
+//     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+//     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
+//     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
+//     ret = ImGui::DragFloat("", v, step, minv, maxv, format);
+//     ImGui::PopStyleColor(3);
+//     highlighted = ImGui::IsItemHovered();
 
-    // Render our own slider below the input.
-    rmin = ImGui::GetItemRectMin();
-    rmax = ImGui::GetItemRectMax();
+//     // Render our own slider below the input.
+//     rmin = ImGui::GetItemRectMin();
+//     rmax = ImGui::GetItemRectMax();
 
-    draw_list->ChannelsSetCurrent(0);
-    k = (*v - minv) / (maxv - minv);
+//     draw_list->ChannelsSetCurrent(0);
+//     k = (*v - minv) / (maxv - minv);
 
-    color = COLOR(NUMBER_INPUT, INNER, false);
-    if (highlighted) color = color_lighten(color);
-    col = ImGui::GetColorU32(color);
-    draw_list->AddRectFilled(rmin, rmax, col, 2);
+//     color = COLOR(NUMBER_INPUT, INNER, false);
+//     if (highlighted) color = color_lighten(color);
+//     col = ImGui::GetColorU32(color);
+//     draw_list->AddRectFilled(rmin, rmax, col, 2);
 
-    rmax.x = mix(rmin.x, rmax.x, k);
-    color = COLOR(NUMBER_INPUT, ITEM, false);
-    if (highlighted) color = color_lighten(color);
-    col = ImGui::GetColorU32(color);
-    draw_list->AddRectFilled(rmin, rmax, col, 2);
+//     rmax.x = mix(rmin.x, rmax.x, k);
+//     color = COLOR(NUMBER_INPUT, ITEM, false);
+//     if (highlighted) color = color_lighten(color);
+//     col = ImGui::GetColorU32(color);
+//     draw_list->AddRectFilled(rmin, rmax, col, 2);
 
-    draw_list->ChannelsMerge();
-    return ret;
-}
+//     draw_list->ChannelsMerge();
+//     return ret;
+// }
 
 bool gui_input_float(const char *label, float *v, float step,
                      float minv, float maxv, const char *format)
@@ -828,11 +828,11 @@ bool gui_input_float(const char *label, float *v, float step,
     const char *left_utf = "◀";
     const char *right_utf = "▶";
     float v_speed = step / 10;
-    bool show_arrows = false;
+    //bool show_arrows = false;
     //bool is_active = false;
     //bool unbounded = false;
-    ImGuiID key;
-    ImGuiStorage *storage = ImGui::GetStateStorage();
+    ///ImGuiID key;
+    //ImGuiStorage *storage = ImGui::GetStateStorage();
 
     if (minv == 0.f && maxv == 0.f) {
         minv = -FLT_MAX;

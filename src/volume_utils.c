@@ -543,7 +543,7 @@ static void tile_merge(volume_t *volume, const volume_t *other, const int pos[3]
     }
 
     // Check if the merge op has been cached.
-    if (!cache) cache = cache_create(512);
+    if (!cache) cache = cache_create(2048);
     struct {
         uint64_t id1;
         uint64_t id2;
