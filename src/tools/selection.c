@@ -247,4 +247,5 @@ TOOL_REGISTER(TOOL_SELECTION, selection, tool_selection_t,
               .gui_fn = gui,
               .default_shortcut = "R",
               .flags = TOOL_SHOW_MASK,
+              .has_snap = true,
 )
