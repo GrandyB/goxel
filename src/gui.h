@@ -111,6 +111,7 @@ bool gui_color(const char *label, uint8_t color[4]);
 bool gui_color_small(const char *label, uint8_t color[4]);
 bool gui_color_inline(const char *label, uint8_t color[4]);
 bool gui_color_small_f3(const char *label, float color[3]);
+bool gui_color_opacity(uint8_t color[4]);
 bool gui_input_text(const char *label, char *buf, int size);
 bool gui_input_text_multiline(const char *label, char *buf, int size,
                               float width, float height);

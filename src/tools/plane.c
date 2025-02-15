@@ -97,9 +97,7 @@ static int gui(tool_t *tool_)
 
     if (v) {
         gui_color_small("Plane color", goxel.grid_color);
-        float alpha = goxel.grid_color[3] / 255.;
-        if (gui_input_float("Alpha", &alpha, 0.1, 0, 1, "%.1f"))
-            goxel.grid_color[3] = roundf(alpha * 255);
+        gui_color_opacity(goxel.grid_color);
     }
 
     gui_combo("Move", &tool->move_mode, (const char*[]) {

@@ -1194,6 +1194,15 @@ bool gui_color_small_f3(const char *label, float color[3])
     return ret;
 }
 
+bool gui_color_opacity(uint8_t color[4]) {
+    int opacity = roundf((color[3] / 255.) * 100);
+    bool ret = gui_input_int("Opacity %", &opacity, 0, 100);
+    if (ret) {
+        color[3] = roundf((opacity / 100.0f) * 255.0f);
+    }
+    return ret;
+}
+
 bool gui_checkbox(const char *label, bool *v, const char *hint)
 {
     bool ret;
