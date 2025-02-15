@@ -373,7 +373,7 @@ static int gui(tool_t *tool)
     tool_placer_t *placer = (tool_placer_t*)tool;
     float rotation[4][4] = MAT4_IDENTITY;
     float rot_degs[3];
-    bool reset_rotation;
+    bool reset_rotation = false;
     int origin_x, origin_y, origin_z, offset_x, offset_y, offset_z;
     mat4_to_eul_degxyz(placer->rot, rot_degs);
     

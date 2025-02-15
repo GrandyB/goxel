@@ -843,7 +843,7 @@ bool gui_input_float(const char *label, float *v, float step,
     //bool show_arrows = false;
     //bool is_active = false;
     //bool unbounded = false;
-    ///ImGuiID key;
+    //ImGuiID key;
     //ImGuiStorage *storage = ImGui::GetStateStorage();
 
     if (minv == 0.f && maxv == 0.f) {
