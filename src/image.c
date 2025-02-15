@@ -160,7 +160,7 @@ void image_update(image_t *img)
 
     DL_FOREACH(img->layers, layer) {
         base = img_get_layer(img, layer->base_id);
-        if (base && layer->base_volume_key != volume_get_key(base->volume)) {
+        if (base && layer->base_volume_key != volume_get_key(base->volume) && layer->visible) {
             volume_set(layer->volume, base->volume);
             volume_move(layer->volume, layer->mat);
             layer->base_volume_key = volume_get_key(base->volume);

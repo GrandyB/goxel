@@ -58,6 +58,14 @@ void gui_layers_panel_impl(bool inner_scroll)
             layer->visible = visible;
             if (gui_is_key_down(KEY_LEFT_SHIFT))
                 toggle_layer_only_visible(layer);
+            layer_t *base;
+            base = img_get_layer(goxel.image, layer->base_id);
+            if (visible && base && layer->base_volume_key != volume_get_key(base->volume)) {
+                // cloned layer is becoming visible, update with latest from base
+                volume_set(layer->volume, base->volume);
+                volume_move(layer->volume, layer->mat);
+                layer->base_volume_key = volume_get_key(base->volume);
+            }
         }
         i++;
     }
