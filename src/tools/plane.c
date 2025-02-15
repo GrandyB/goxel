@@ -95,6 +95,14 @@ static int gui(tool_t *tool_)
         set_flag(&goxel.snap_mask, SNAP_PLANE, v);
     }
 
+    if (v) {
+        gui_color_small("Plane color", goxel.grid_color);
+        int alpha = goxel.grid_color[3];
+        if (gui_input_int("Alpha", &alpha, 0, 255)) {
+            goxel.grid_color[3] = alpha;
+        }
+    }
+
     gui_combo("Move", &tool->move_mode, (const char*[]) {
               "Relative", "Absolute"}, 2);
 

@@ -276,9 +276,10 @@ int tool_gui_color(void)
         float alpha;
         gui_color_inline("", goxel.painter.color);
         if (goxel.painter.mode == MODE_PAINT) {
-            alpha = goxel.painter.color[3] / 255.;
-            if (gui_input_float("Alpha", &alpha, 0.1, 0, 1, "%.1f"))
-                goxel.painter.color[3] = alpha * 255;
+            int alpha = goxel.painter.color[3];
+            if (gui_input_int("Alpha", &alpha, 0, 255)) {
+                goxel.painter.color[3] = alpha;
+            }
         }
         gui_text("Blend mode");
         gui_group_begin(NULL);
