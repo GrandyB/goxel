@@ -497,6 +497,17 @@ static void render_popups(int index)
     ImGui::PopStyleVar();
 }
 
+static void render_fps(int fps) {
+    ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+
+    ImVec2 pos = ImVec2(2, ImGui::GetIO().DisplaySize.y - 15);
+
+    char buffer[32]; // Buffer for FPS text
+    sprintf(buffer, "FPS: %d", fps); // Convert integer to string
+
+    draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), pos, IM_COL32(255, 255, 255, 255), buffer);
+}
+
 static void render_view_cube(void)
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -619,6 +630,7 @@ static void gui_iter(const inputs_t *inputs)
     if (!io.WantCaptureKeyboard) {
         actions_iter(check_action_shortcut, NULL);
     }
+    render_fps((int)round(goxel.fps));
     ImGui::EndFrame();
 
     sys_show_keyboard(io.WantTextInput);
