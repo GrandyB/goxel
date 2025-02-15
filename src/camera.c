@@ -27,7 +27,7 @@ camera_t *camera_new(const char *name)
     mat4_set_identity(cam->mat);
     cam->dist = 96;
     cam->aspect = 1;
-    cam->speed = 50;
+    cam->speed = 2.5;
     cam->fovy = 40.;
     cam->fovy_fpv = 100.;
     mat4_itranslate(cam->mat, 0, 0, cam->dist);
@@ -96,7 +96,7 @@ static void compute_clip(const float view_mat[4][4], float *near_, float *far_)
         }
     }
     if (n >= f) n = 1;
-    n = max(n, 1);
+    n = max(n, 0.1);
     *near_ = n;
     *far_ = f;
 }
