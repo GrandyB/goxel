@@ -273,13 +273,11 @@ static bool color_blend_button(const char *label, int s)
 int tool_gui_color(void)
 {
     if (gui_section_begin("Color", true)) {
-        float alpha;
         gui_color_inline("", goxel.painter.color);
         if (goxel.painter.mode == MODE_PAINT) {
-            int alpha = goxel.painter.color[3];
-            if (gui_input_int("Alpha", &alpha, 0, 255)) {
-                goxel.painter.color[3] = alpha;
-            }
+            float alpha = goxel.painter.color[3] / 255.;
+            if (gui_input_float("Alpha", &alpha, 0.1, 0, 1, "%.1f"))
+                goxel.painter.color[3] = roundf(alpha * 255);
         }
         gui_text("Blend mode");
         gui_group_begin(NULL);
