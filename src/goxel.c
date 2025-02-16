@@ -375,7 +375,7 @@ void goxel_reset(void)
     };
     goxel.rend.settings = (render_settings_t) {
         .occlusion_strength = 0.4,
-        .ambient = 0.3,
+        .ambient = 1.0,
         .shadow = 0.0,
     };
     if (DEFINED(NO_SHADOW))
