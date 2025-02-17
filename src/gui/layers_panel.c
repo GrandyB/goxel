@@ -34,42 +34,40 @@ static void toggle_layer_only_visible(layer_t *layer)
     layer->visible = true;
 }
 
+static bool render_layer_item(void *item, int idx, bool current)
+{
+    layer_t *layer = item;
+    int icons_count, icons[8];
+    bool visible;
+    visible = layer->visible;
+    icons_count = 0;
+    if (layer->base_id) icons[icons_count++] = ICON_LINK;
+    if (layer->shape) icons[icons_count++] = ICON_SHAPE;
+    gui_layer_item(idx, icons_count, icons, &visible, &current,
+                   layer->name, sizeof(layer->name));
+    if (visible != layer->visible) {
+        layer->visible = visible;
+        if (gui_is_key_down(KEY_LEFT_SHIFT))
+            toggle_layer_only_visible(layer);
+    }
+    return current;
+}
+
 void gui_layers_panel_impl(bool inner_scroll)
 {
     layer_t *layer;
     material_t *material;
-    int i = 0, icon, bbox[2][3];
-    bool current, visible, bounded;
+    bool bounded;
+    int bbox[2][3];
 
     if (inner_scroll) {
         gui_scrollable_begin(gui_get_available_height() - 210);
     }
-    gui_group_begin(NULL);
-    DL_FOREACH_REVERSE(goxel.image->layers, layer) {
-        current = goxel.image->active_layer == layer;
-        visible = layer->visible;
-        icon = layer->base_id ? ICON_LINK : layer->shape ? ICON_SHAPE : -1;
-        gui_layer_item(i, icon, &visible, &current,
-                       layer->name, sizeof(layer->name));
-        if (current && goxel.image->active_layer != layer) {
-            goxel.image->active_layer = layer;
-        }
-        if (visible != layer->visible) {
-            layer->visible = visible;
-            if (gui_is_key_down(KEY_LEFT_SHIFT))
-                toggle_layer_only_visible(layer);
-            layer_t *base;
-            base = img_get_layer(goxel.image, layer->base_id);
-            if (visible && base && layer->base_volume_key != volume_get_key(base->volume)) {
-                // cloned layer is becoming visible, update with latest from base
-                volume_set(layer->volume, base->volume);
-                volume_move(layer->volume, layer->mat);
-                layer->base_volume_key = volume_get_key(base->volume);
-            }
-        }
-        i++;
-    }
-    gui_group_end();
+    gui_list(&(gui_list_t) {
+        .items = (void**)&goxel.image->layers,
+        .current = (void**)&goxel.image->active_layer,
+        .render = render_layer_item,
+    });
     if (inner_scroll) {
         gui_scrollable_end();
     }
@@ -141,6 +139,7 @@ void gui_layers_panel_impl(bool inner_scroll)
         gui_combo_end();
     }
 }
+
 void gui_layers_panel(void) {
     gui_layers_panel_impl(false);
 }
