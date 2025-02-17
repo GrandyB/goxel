@@ -56,7 +56,7 @@ static int gui_mode_select(void)
 static bool inline_snap_button(const char *label, int s)
 {
     bool v = goxel.snap_mask & s;
-    if (gui_selectable(label, &v, NULL, strlen(label) * 10)) {
+    if (gui_condensed_selectable(label, &v, NULL, strlen(label) * 10)) {
         set_flag(&goxel.snap_mask, s, v);
         return true;
     }
@@ -67,7 +67,8 @@ static int tool_gui_snap_inline(void)
 {
     gui_group_begin(NULL);
     gui_row_begin(0);
-    gui_text_wrapped("Snap on: ");
+    gui_text("Snap on: ");
+    gui_same_line();
     inline_snap_button("Volume", SNAP_VOLUME);
     inline_snap_button("Plane", SNAP_PLANE);
     if (!box_is_null(goxel.selection)) {

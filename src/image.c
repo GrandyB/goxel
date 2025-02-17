@@ -957,12 +957,12 @@ ACTION_REGISTER(img_del_camera,
 
 static void a_img_move_camera_up(void)
 {
-    image_move_camera(goxel.image, goxel.image->active_camera, +1);
+    image_move_camera(goxel.image, goxel.image->active_camera, -1);
 }
 
 static void a_img_move_camera_down(void)
 {
-    image_move_camera(goxel.image, goxel.image->active_camera, -1);
+    image_move_camera(goxel.image, goxel.image->active_camera, +1);
 }
 
 ACTION_REGISTER(img_move_camera_up,

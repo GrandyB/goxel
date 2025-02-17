@@ -28,6 +28,14 @@ void gui_app(void);
 void gui_render_panel(void);
 }
 
+#ifndef GUI_ITEM_HEIGHT
+#   define GUI_ITEM_HEIGHT 18
+#endif
+
+#ifndef GUI_ICON_HEIGHT
+#   define GUI_ICON_HEIGHT 32
+#endif
+
 #ifndef typeof
 #   define typeof __typeof__
 #endif
@@ -70,6 +78,7 @@ static const float LABEL_SIZE = 90;
 // Base height of items (note: maybe remove and use the font size instead?).
 static const float ITEM_HEIGHT = 18;
 static const float ICON_HEIGHT = 32;
+static const float CONDENSE_FACTOR = 0.7;
 static const ImVec2 ITEM_SPACING = ImVec2(8, 4);
 
 #define COL_HEX(x) ImVec4( \
@@ -333,7 +342,7 @@ static void load_fonts_texture()
     GL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
     GL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
                     GL_RGBA, GL_UNSIGNED_BYTE, pixels));
-    io.Fonts->TexID = (void *)(intptr_t)tex_id;
+    io.Fonts->TexID = (intptr_t)tex_id;
 }
 
 static void init_ImGui(void)
@@ -993,7 +1002,7 @@ bool gui_action_button(int id, const char *label, float size)
 }
 
 static bool _selectable(const char *label, bool *v, const char *tooltip,
-                        float w, int icon)
+                        float w, int icon, bool condensed)
 {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     ImVec2 size;
@@ -1002,12 +1011,14 @@ static bool _selectable(const char *label, bool *v, const char *tooltip,
     bool default_v = false;
     ImVec2 uv0, uv1; // The position in the icon texture.
 
+    float icon_height = ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1);
+
     if (gui->item_size) w = gui->item_size;
 
     v = v ? v : &default_v;
     size = (icon != -1) ?
-        ImVec2(ICON_HEIGHT, ICON_HEIGHT) :
-        ImVec2(w, ITEM_HEIGHT);
+        ImVec2(icon_height, icon_height) :
+        ImVec2(w, icon_height);
 
     if (!tooltip && icon != -1) {
         tooltip = label;
@@ -1036,9 +1047,9 @@ static bool _selectable(const char *label, bool *v, const char *tooltip,
             center.y += 0.5;
             uv0 = get_icon_uv(icon);
             uv1 = uv0 + ImVec2(1. / 8, 1. / 8);
-            window->DrawList->AddImage((void*)(intptr_t)g_tex_icons->tex,
-                                       center - ImVec2(16, 16),
-                                       center + ImVec2(16, 16),
+            window->DrawList->AddImage((intptr_t)g_tex_icons->tex,
+                                       center - ImVec2(icon_height/2, icon_height/2),
+                                       center + ImVec2(icon_height/2, icon_height/2),
                                        uv0, uv1, get_icon_color(icon, *v));
         }
     } else {
@@ -1059,7 +1070,12 @@ static bool _selectable(const char *label, bool *v, const char *tooltip,
 
 bool gui_selectable(const char *name, bool *v, const char *tooltip, float w)
 {
-    return _selectable(name, v, tooltip, w, -1);
+    return _selectable(name, v, tooltip, w, -1, false);
+}
+
+bool gui_condensed_selectable(const char *name, bool *v, const char *tooltip, float w)
+{
+    return _selectable(name, v, tooltip, w, -1, true);
 }
 
 bool gui_selectable_toggle(const char *name, int *v, int set_v,
@@ -1075,7 +1091,12 @@ bool gui_selectable_toggle(const char *name, int *v, int set_v,
 
 bool gui_selectable_icon(const char *name, bool *v, int icon)
 {
-    return _selectable(name, v, NULL, 0, icon);
+    return _selectable(name, v, NULL, 0, icon, false);
+}
+
+bool gui_condensed_selectable_icon(const char *name, bool *v, int icon)
+{
+    return _selectable(name, v, NULL, 0, icon, true);
 }
 
 void gui_text(const char *label, ...)
@@ -1277,7 +1298,7 @@ bool gui_button(const char *label, float size, int icon)
                    ImGui::GetItemRectSize().y / 2);
         uv0 = ImVec2(((icon - 1) % 8) / 8.0, ((icon - 1) / 8) / 8.0);
         uv1 = ImVec2(uv0.x + 1. / 8, uv0.y + 1. / 8);
-        draw_list->AddImage((void*)(intptr_t)g_tex_icons->tex,
+        draw_list->AddImage((intptr_t)g_tex_icons->tex,
                             center - ImVec2(isize, isize),
                             center + ImVec2(isize, isize),
                             uv0, uv1, get_icon_color(icon, 0));
@@ -1492,73 +1513,101 @@ void gui_request_panel_width(float width)
     goxel.gui.panel_width = width;
 }
 
-bool gui_layer_item(int i, int icon, bool *visible, bool *edit,
-                    char *name, int len)
+
+bool _layer_item(int idx, int icons_count, const int *icons,
+                    bool *visible, bool *selected,
+                    char *name, int len, bool condensed)
 {
     bool ret = false;
-    bool edit_ = *edit;
+    bool selected_ = *selected;
     static char *edit_name = NULL;
     static bool start_edit;
     float font_size = ImGui::GetFontSize();
+    int icon;
+    int i;
     ImVec2 center;
     ImVec2 uv0, uv1;
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImGuiStyle& style = ImGui::GetStyle();
+    ImVec2 padding;
+    ImDrawList *draw_list = ImGui::GetWindowDrawList();
+    ImGuiStyle &style = ImGui::GetStyle();
 
-    ImGui::PushID(i);
-    ImGui::PushStyleColor(ImGuiCol_Button, COLOR(WIDGET, INNER, *edit));
+    ImGui::PushID(idx);
+    ImGui::PushStyleColor(ImGuiCol_Button, COLOR(WIDGET, INNER, *selected));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-            color_lighten(COLOR(WIDGET, INNER, *edit)));
-    if (visible) {
-        if (gui_selectable_icon("##visible", &edit_,
-                *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF)) {
+                          color_lighten(COLOR(WIDGET, INNER, *selected)));
+    if (visible)
+    {
+        bool visibility = condensed
+            ? gui_condensed_selectable_icon("##visible", &selected_, *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF) 
+            : gui_selectable_icon("##visible", &selected_, *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF);
+        if (visibility)
+        {
             *visible = !*visible;
             ret = true;
         }
         ImGui::SameLine();
     }
 
-    if (edit_name != name) {
+    if (edit_name != name)
+    {
         ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5));
-        if (icon != -1) {
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                    ImVec2(ICON_HEIGHT / 1.5, 0));
-        }
-        if (ImGui::Button(name, ImVec2(-1, ICON_HEIGHT))) {
-            *edit = true;
+        padding = style.FramePadding;
+        padding.x += GUI_ICON_HEIGHT * 0.75 * icons_count;
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, padding);
+        if (ImGui::Button(name, ImVec2(-1, GUI_ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1))))
+        {
+            *selected = true;
             ret = true;
         }
-        if (icon != -1) ImGui::PopStyleVar();
-        if (icon > 0) {
+        ImGui::PopStyleVar();
+
+        for (i = 0; i < icons_count; i++)
+        {
+            icon = icons[i];
             center = ImGui::GetItemRectMin() +
-                ImVec2(ICON_HEIGHT / 2 / 1.5, ICON_HEIGHT / 2);
+                     ImVec2(GUI_ICON_HEIGHT * 0.75 * (i + 0.5), GUI_ICON_HEIGHT / 2);
             uv0 = ImVec2(((icon - 1) % 8) / 8.0, ((icon - 1) / 8) / 8.0);
             uv1 = ImVec2(uv0.x + 1. / 8, uv0.y + 1. / 8);
             draw_list->AddImage(
-                    (void*)(intptr_t)g_tex_icons->tex,
+                    (intptr_t)g_tex_icons->tex,
                     center - ImVec2(12, 12),
                     center + ImVec2(12, 12),
                     uv0, uv1, get_icon_color(icon, 0));
         }
         ImGui::PopStyleVar();
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+        {
             edit_name = name;
             start_edit = true;
         }
-    } else {
-        if (start_edit) ImGui::SetKeyboardFocusHere();
+    }
+    else
+    {
+        if (start_edit)
+            ImGui::SetKeyboardFocusHere();
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(style.FramePadding.x,
-                            (ICON_HEIGHT - font_size) / 2));
+                                   (GUI_ICON_HEIGHT - font_size) / 2));
         ImGui::InputText("##name_edit", name, len,
                          ImGuiInputTextFlags_AutoSelectAll);
-        if (!start_edit && !ImGui::IsItemActive()) edit_name = NULL;
+        if (!start_edit && !ImGui::IsItemActive())
+            edit_name = NULL;
         start_edit = false;
         ImGui::PopStyleVar();
     }
     ImGui::PopStyleColor(2);
     ImGui::PopID();
     return ret;
+}
+bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
+                    bool *visible, bool *selected,
+                    char *name, int len) {
+    return _layer_item(idx, icons_count, icons, visible, selected, name, len, true);
+};
+bool gui_layer_item(int idx, int icons_count, const int *icons,
+                    bool *visible, bool *selected,
+                    char *name, int len) {
+    return _layer_item(idx, icons_count, icons, visible, selected, name, len, false);
 }
 
 bool gui_is_key_down(int key)
@@ -1625,7 +1674,7 @@ void gui_tooltip(const char *str)
 
 bool gui_tab(const char *label, int icon, bool *v)
 {
-    return _selectable(label, v, NULL, 0, icon);
+    return _selectable(label, v, NULL, 0, icon, false);
 }
 
 static bool panel_header_close_button(void)
@@ -1650,7 +1699,7 @@ static bool panel_header_close_button(void)
                ImGui::GetItemRectSize().y / 2);
     uv0 = get_icon_uv(ICON_CLOSE);
     uv1 = uv0 + ImVec2(1. / 8, 1. / 8);
-    draw_list->AddImage((void*)(intptr_t)g_tex_icons->tex,
+    draw_list->AddImage((intptr_t)g_tex_icons->tex,
                             center - ImVec2(12, 12),
                             center + ImVec2(12, 12),
                             uv0, uv1, get_icon_color(ICON_CLOSE, 0));
@@ -1748,4 +1797,58 @@ bool gui_want_capture_mouse(void)
     gui_init();
     ImGuiIO& io = ImGui::GetIO();
     return io.WantCaptureMouse;
+}
+
+typedef struct list_item list_item_t;
+struct list_item {
+    int ret;
+    list_item_t *next, *prev;
+};
+static void list_move_item(list_item_t **list, list_item_t *item, int d)
+{
+    // XXX: ugly code.
+    list_item_t *other = NULL;
+    assert(d == -1 || d == +1);
+    if (d == -1) {
+        other = item->next;
+        SWAP(other, item);
+    } else if (item != *list) {
+        other = item->prev;
+    }
+    if (!other || !item) return;
+    DL_DELETE(*list, item);
+    DL_PREPEND_ELEM(*list, other, item);
+}
+void gui_list(const gui_list_t *list)
+{
+    list_item_t **items = (list_item_t**)list->items;
+    list_item_t *item;
+    bool is_current;
+    int i;
+    int move_dir = 0;
+    int count;
+    list_item_t *move_item = NULL;
+    DL_COUNT(*items, item, count);
+    gui_group_begin(NULL);
+    i = 0;
+    DL_FOREACH_REVERSE(*items, item) {
+        is_current = *list->current == item;
+        if (list->render((void*)item, i, is_current)) {
+            *list->current = item;
+            if (is_current && list->can_be_null) {
+                *list->current = NULL;
+            }
+        }
+        if (!move_dir && ImGui::IsItemActive() && !ImGui::IsItemHovered()) {
+            move_dir = ImGui::GetMouseDragDelta(0).y < 0.f ? +1 : -1;
+            move_item = item;
+        }
+        i++;
+    }
+    gui_group_end();
+    if (move_item) {
+        list_move_item(items, move_item, move_dir);
+        move_item = NULL;
+        move_dir = 0;
+    }
 }
