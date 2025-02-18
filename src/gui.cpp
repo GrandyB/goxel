@@ -1775,11 +1775,13 @@ bool gui_panel_header(const char *label)
     float w = ImGui::GetContentRegionAvail().x - ITEM_HEIGHT;
 
     ImGui::PushID("panel_header");
+    ImGui::BeginGroup();
     ImGui::Dummy(ImVec2((w - label_w) / 2, 0));
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     gui_text(label);
     ret = panel_header_close_button();
+    ImGui::EndGroup();
     ImGui::PopID();
     if (ImGui::IsItemHovered())
         gui->can_move_window |= 1;
