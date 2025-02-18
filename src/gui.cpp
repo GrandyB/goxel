@@ -26,6 +26,7 @@ extern "C" {
 
 void gui_app(void);
 void gui_render_panel(void);
+bool gui_pan_scroll_behavior(int dir);
 }
 
 #ifndef GUI_ITEM_HEIGHT
@@ -162,7 +163,14 @@ typedef struct gui_t {
     GLuint  array_buffer;
     GLuint  index_buffer;
     margins_t margins;
-    bool    is_scrolling;
+
+    // bitmask: 1 - some window is scrolling.
+    //          2 - some window was scrolling last frame.
+    int     scrolling;
+
+    int     can_move_window;
+
+    int     win_dir; // Store the current window direction (for scrolling).
 
     int     is_row;
     float   item_size;
@@ -624,6 +632,9 @@ static void gui_iter(const inputs_t *inputs)
     style.Colors[ImGuiCol_Text] = COLOR(BASE, TEXT, false);
     style.Colors[ImGuiCol_MenuBarBg] = COLOR(MENU, BACKGROUND, false);
 
+    gui->scrolling = (gui->scrolling & 1) ? 2 : 0;
+    gui->can_move_window = (gui->can_move_window & 1) ? 2 : 0;
+
     // Old code, to remove.
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
@@ -735,32 +746,74 @@ void gui_row_end(void)
     gui->item_size = 0;
 }
 
-void gui_window_begin(const char *label, float x, float y, float w, float h,
-                      bool *moved)
+int gui_window_begin(const char *label, float x, float y, float w, float h,
+                     int flags)
 {
-    ImGuiWindowFlags flags =
+    ImGuiWindowFlags win_flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoDecoration;
-    float max_h;
+    float max_size;
+    ImGuiStorage *storage = ImGui::GetStateStorage();
+    ImGuiID key;
+    float *last_pos;
+    int ret = 0;
+    int dir = (flags & GUI_WINDOW_HORIZONTAL) ? 0 : 1;
 
+    ImGui::PushID(label);
+    if (!gui->can_move_window)
+        win_flags |= ImGuiWindowFlags_NoMove;
+    if (gui->scrolling)
+        win_flags |= ImGuiWindowFlags_NoMouseInputs;
+    if (dir == 0)
+        win_flags |= ImGuiWindowFlags_HorizontalScrollbar;
     ImGui::SetNextWindowPos(ImVec2(x, y),
-            moved == NULL ? ImGuiCond_Always : ImGuiCond_Appearing);
+                            (flags & GUI_WINDOW_MOVABLE) ? ImGuiCond_Appearing : ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(w, h));
-    if (h == 0) {
-        max_h = ImGui::GetMainViewport()->Size.y - y;
-        ImGui::SetNextWindowSizeConstraints(
-                ImVec2(0, 0), ImVec2(FLT_MAX, max_h));
-    }
-    ImGui::Begin(label, NULL, flags);
 
-    if (moved != NULL) {
-        *moved = ImGui::GetWindowPos() != ImVec2(x, y);
+    key = ImGui::GetID("last_pos");
+    last_pos = storage->GetFloatRef(key, dir == 0 ? x : y);
+
+    if ((w == 0) && (dir == 0))
+    {
+        max_size = ImGui::GetMainViewport()->Size.x - *last_pos;
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(0, 0), ImVec2(max_size, FLT_MAX));
     }
+    if ((h == 0) && (dir == 1))
+    {
+        max_size = ImGui::GetMainViewport()->Size.y - *last_pos;
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(0, 0), ImVec2(FLT_MAX, max_size));
+    }
+
+    ImGui::Begin(label, NULL, win_flags);
+
+    if (flags & GUI_WINDOW_MOVABLE)
+    {
+        if (ImGui::GetWindowPos() != ImVec2(x, y))
+            ret |= GUI_WINDOW_MOVED;
+        *last_pos = dir == 0 ? ImGui::GetWindowPos().x : ImGui::GetWindowPos().y;
+    }
+
+    gui->win_dir = dir;
+    ImGui::BeginGroup();
+    return ret;
 }
 
-void gui_window_end(void)
+gui_window_ret_t gui_window_end(void)
 {
+    gui_window_ret_t ret = {};
+    ImGui::EndGroup();
+    if (!GUI_HAS_SCROLLBARS && !gui->can_move_window) {
+        if (gui_pan_scroll_behavior(gui->win_dir))
+            gui->scrolling |= 1;
+    }
+    ret.h = ImGui::GetWindowHeight();
+    ret.w = ImGui::GetWindowWidth();
     ImGui::End();
+    ImGui::PopID();
+
+    return ret;
 }
 
 bool gui_input_int(const char *label, int *v, int minv, int maxv)
@@ -798,48 +851,53 @@ static void label_aligned(const char *label, float size)
 /*
  * Custom slider widget.
  */
-// static bool slider_float(float *v, float minv, float maxv, const char *format)
-// {
-//     bool ret;
-//     float step = (maxv - minv) * 0.008;
-//     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-//     ImVec2 rmin, rmax;
-//     float k;
-//     bool highlighted;
-//     ImVec4 color;
-//     ImU32 col;
+bool slider_float(const char *label, float *v, float minv, float maxv, const char *format)
+{
+    bool ret;
+    float step = (maxv - minv) * 0.008;
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 rmin, rmax;
+    float k;
+    bool highlighted;
+    ImVec4 color;
+    ImU32 col;
 
-//     // Render an imgui DragFloat with transparent background.
-//     draw_list->ChannelsSplit(2);
-//     draw_list->ChannelsSetCurrent(1);
-//     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-//     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
-//     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
-//     ret = ImGui::DragFloat("", v, step, minv, maxv, format);
-//     ImGui::PopStyleColor(3);
-//     highlighted = ImGui::IsItemHovered();
+    ImGui::PushID(label);
+    ImGui::BeginGroup();
+    label_aligned(label, LABEL_SIZE);
+    // Render an imgui DragFloat with transparent background.
+    draw_list->ChannelsSplit(2);
+    draw_list->ChannelsSetCurrent(1);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
+    ret = ImGui::DragFloat("", v, step, minv, maxv, format);
+    ImGui::PopStyleColor(3);
+    highlighted = ImGui::IsItemHovered();
 
-//     // Render our own slider below the input.
-//     rmin = ImGui::GetItemRectMin();
-//     rmax = ImGui::GetItemRectMax();
+    // Render our own slider below the input.
+    rmin = ImGui::GetItemRectMin();
+    rmax = ImGui::GetItemRectMax();
+    rmax.x -= 17; // don't know why, but it ate into padding exactly this much in colors.c filter
 
-//     draw_list->ChannelsSetCurrent(0);
-//     k = (*v - minv) / (maxv - minv);
+    draw_list->ChannelsSetCurrent(0);
+    k = (*v - minv) / (maxv - minv);
+    color = COLOR(NUMBER_INPUT, INNER, false);
+    if (highlighted) color = color_lighten(color);
+    col = ImGui::GetColorU32(color);
+    draw_list->AddRectFilled(rmin, rmax, col, 2);
 
-//     color = COLOR(NUMBER_INPUT, INNER, false);
-//     if (highlighted) color = color_lighten(color);
-//     col = ImGui::GetColorU32(color);
-//     draw_list->AddRectFilled(rmin, rmax, col, 2);
+    rmax.x = mix(rmin.x, rmax.x, k);
+    color = COLOR(NUMBER_INPUT, ITEM, false);
+    if (highlighted) color = color_lighten(color);
+    col = ImGui::GetColorU32(color);
+    draw_list->AddRectFilled(rmin, rmax, col, 2);
 
-//     rmax.x = mix(rmin.x, rmax.x, k);
-//     color = COLOR(NUMBER_INPUT, ITEM, false);
-//     if (highlighted) color = color_lighten(color);
-//     col = ImGui::GetColorU32(color);
-//     draw_list->AddRectFilled(rmin, rmax, col, 2);
-
-//     draw_list->ChannelsMerge();
-//     return ret;
-// }
+    draw_list->ChannelsMerge();
+    ImGui::EndGroup();
+    ImGui::PopID();
+    return ret;
+}
 
 bool gui_input_float(const char *label, float *v, float step,
                      float minv, float maxv, const char *format)
@@ -1675,7 +1733,7 @@ bool gui_menu_item(int action, const char *label, bool enabled)
 
 void gui_tooltip(const char *str)
 {
-    if (gui->is_scrolling) return;
+    if (gui->scrolling) return;
     ImGui::PushStyleColor(ImGuiCol_PopupBg, COLOR(TOOLTIP, BACKGROUND, 0));
     ImGui::SetTooltip("%s", str);
     ImGui::PopStyleColor();
@@ -1722,12 +1780,16 @@ bool gui_panel_header(const char *label)
     float w = ImGui::GetContentRegionAvail().x - ITEM_HEIGHT;
 
     ImGui::PushID("panel_header");
+    ImGui::BeginGroup();
     ImGui::Dummy(ImVec2((w - label_w) / 2, 0));
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     gui_text(label);
     ret = panel_header_close_button();
+    ImGui::EndGroup();
     ImGui::PopID();
+    if (ImGui::IsItemHovered())
+        gui->can_move_window |= 1;
     return ret;
 }
 

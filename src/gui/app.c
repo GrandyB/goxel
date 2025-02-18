@@ -34,6 +34,9 @@
 #   define YOCTO 1
 #endif
 
+#define INITIAL_FILTER_OFFSET 10
+#define RELATIVE_FILTER_OFFSET 40
+
 // Note: duplicated from gui.cpp!  To remove.
 static const float ITEM_HEIGHT = 18;
 static const float ICON_HEIGHT = 32;
@@ -94,6 +97,12 @@ static struct {
 #endif
 };
 
+typedef struct filter_layout_state filter_layout_state_t;
+
+struct filter_layout_state {
+    int next_x;
+    int next_y;
+};
 
 static void on_click(void) {
     if (DEFINED(GUI_SOUND))
@@ -114,12 +123,36 @@ static void render_left_panel(void)
     }
 }
 
+static void gui_filter_window(void *arg, filter_t *filter)
+{
+    filter_layout_state_t *state = arg;
+
+    if (filter->is_open) {
+        gui_window_begin(filter->name, state->next_x, state->next_y,
+                            goxel.gui.panel_width, 0, GUI_WINDOW_MOVABLE);
+
+        if (gui_panel_header(filter->name)) {
+            if (filter->on_close) {
+                filter->on_close(filter);
+            }
+            filter->is_open = false;
+        }
+        filter->gui_fn(filter);
+
+        gui_window_end();
+    }
+
+    state->next_x += RELATIVE_FILTER_OFFSET;
+    state->next_y += RELATIVE_FILTER_OFFSET;
+}
+
 void gui_app(void)
 {
     float x = 0, y = 0;
-    bool moved;
     const char *name;
     int i;
+    int flags;
+    filter_layout_state_t filter_layout_state;
 
     goxel.show_export_viewport = false;
 
@@ -139,32 +172,33 @@ void gui_app(void)
         y = ITEM_HEIGHT + 2;
     }
 
-    gui_window_begin("Top Bar", x, y, 0, TOP_BAR_HEIGHT, NULL);
+    gui_window_begin("Top Bar", x, y, 0, TOP_BAR_HEIGHT, 0);
     gui_top_bar();
     gui_window_end();
 
     if (goxel.tool->has_snap) {
-        gui_window_begin("Snap Bar", 280, y, 0, 32.0f, NULL);
+        gui_window_begin("Snap Bar", 280, y, 0, 32.0f, 0);
         gui_snap_bar();
         gui_window_end();
     }
 
     y += ICON_HEIGHT + 28;
-    gui_window_begin("Left Bar", x, y, 0, 0, NULL);
+    gui_window_begin("Left Bar", x, y, 0, 0, 0);
     render_left_panel();
     gui_window_end();
 
     if (goxel.gui.current_panel) {
         x += ICON_HEIGHT + 28;
         name = PANELS[goxel.gui.current_panel].name;
-        gui_window_begin(name, x, y, goxel.gui.panel_width, 0, &moved);
+        flags = gui_window_begin(
+            name, x, y, goxel.gui.panel_width, 0, GUI_WINDOW_MOVABLE);
         if (gui_panel_header(name))
             goxel.gui.current_panel = 0;
         else
             PANELS[goxel.gui.current_panel].fn();
         gui_window_end();
 
-        if (moved) {
+        if (flags & GUI_WINDOW_MOVED) {
             PANELS[goxel.gui.current_panel].detached = true;
             goxel.gui.current_panel = 0;
         }
@@ -173,7 +207,7 @@ void gui_app(void)
     for (i = 0; i < ARRAY_SIZE(PANELS); i++) {
         if (!PANELS[i].detached) continue;
         name = PANELS[i].name;
-        gui_window_begin(name, 0, 0, goxel.gui.panel_width, 0, &moved);
+        gui_window_begin(name, 0, 0, goxel.gui.panel_width, 0, GUI_WINDOW_MOVABLE);
         if (gui_panel_header(name)) {
             PANELS[i].detached = false;
         }
@@ -181,10 +215,15 @@ void gui_app(void)
         gui_window_end();
     }
     
-    gui_window_begin("Right Bar", (goxel.screen_size[0] - goxel.gui.panel_width - 5), ICON_HEIGHT, goxel.gui.panel_width, (goxel.screen_size[1] - ICON_HEIGHT), NULL);
+    gui_window_begin("Right Bar", (goxel.screen_size[0] - goxel.gui.panel_width - 5), ICON_HEIGHT, goxel.gui.panel_width, (goxel.screen_size[1] - ICON_HEIGHT), 0);
     gui_panel_header("Layers");
     gui_layers_panel_with_scroll();
     gui_window_end();
+
+    filter_layout_state.next_x = x + goxel.gui.panel_width +
+                                    INITIAL_FILTER_OFFSET;
+    filter_layout_state.next_y = y;
+    filters_iter_all(&filter_layout_state, gui_filter_window);
 
     goxel.pathtrace = goxel.pathtracer.status &&
         (goxel.gui.current_panel == PANEL_RENDER ||
