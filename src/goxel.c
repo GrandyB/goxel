@@ -1318,6 +1318,42 @@ int goxel_export_to_file(const char *path, const char *format)
     return 0;
 }
 
+void goxel_apply_color_filter(
+    void (*fn)(void *args, uint8_t color[4]), void *args)
+{
+    layer_t *layer = goxel.image->active_layer;
+    volume_t *volume;
+    volume_iterator_t iter;
+    int p[3];
+    uint8_t color[4];
+    painter_t painter;
+
+    /* Compute the volume where we want to apply the filter.  Mask, rect
+     * selection, or the whole layer.  */
+    volume = volume_copy(layer->volume);
+    if (!box_is_null(layer->box))
+    {
+        painter = (painter_t){
+            .shape = &shape_cube,
+            .mode = MODE_INTERSECT,
+            .color = {255, 255, 255, 255},
+        };
+        volume_op(volume, &painter, layer->box);
+    }
+    iter = volume_get_iterator(volume,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, p))
+    {
+        volume_get_at(volume, &iter, p, color);
+        fn(args, color);
+        volume_set_at(volume, &iter, p, color);
+    }
+
+    // Merge back into the original layer.
+    volume_merge(layer->volume, volume, MODE_OVER, NULL);
+    volume_delete(volume);
+}
+
 static void a_cut_as_new_layer(void)
 {
     layer_t *new_layer;

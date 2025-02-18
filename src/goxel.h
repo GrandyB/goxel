@@ -685,6 +685,16 @@ int box_edit(int snap, int mode, float transf[4][4], bool *first);
 void settings_load(void);
 void settings_save(void);
 
+/*
+ * goxel_apply_color_filter
+ * Apply a color filter to all the current selected voxels.
+ *
+ * This is a conveniance function so that we don't have to handle the case
+ * where we have a selection mask or not.
+ */
+void goxel_apply_color_filter(
+    void (*fn)(void *args, uint8_t color[4]), void *args);
+
 // Section: tests
 
 /* Function: tests_run
