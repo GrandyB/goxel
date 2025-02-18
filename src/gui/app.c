@@ -120,6 +120,7 @@ void gui_app(void)
     bool moved;
     const char *name;
     int i;
+    filter_t *filter;
 
     goxel.show_export_viewport = false;
 
@@ -185,6 +186,18 @@ void gui_app(void)
     gui_panel_header("Layers");
     gui_layers_panel_with_scroll();
     gui_window_end();
+
+    filter = goxel.gui.current_filter;
+    if (filter) {
+        // XXX: we should have a way to center the filter window.
+        gui_window_begin(filter->name, 100, 100, goxel.gui.panel_width, 0,
+                         GUI_WINDOW_MOVABLE);
+        if (gui_panel_header(filter->name)) {
+            goxel.gui.current_filter = NULL;
+        }
+        filter->gui_fn(filter);
+        gui_window_end();
+    }
 
     goxel.pathtrace = goxel.pathtracer.status &&
         (goxel.gui.current_panel == PANEL_RENDER ||

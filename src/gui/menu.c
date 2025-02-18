@@ -81,6 +81,16 @@ static void on_script(void *user, const char *name)
         script_execute(name);
 }
 
+static void on_filter(void *user, const filter_t *filter)
+{
+    const action_t *action;
+    if (gui_menu_item(0, filter->name, true)) {
+        action = action_get_by_name(filter->action_id);
+        assert(action);
+        action_exec(action);
+    }
+}
+
 void gui_menu(void)
 {
     if (gui_menu_begin("File", true)) {
@@ -123,6 +133,10 @@ void gui_menu(void)
         gui_menu_item(ACTION_view_top, "Top", true);
         gui_menu_item(ACTION_view_toggle_ortho, "Toggle ortho", true);
         gui_menu_item(ACTION_view_default, "Default", true);
+        gui_menu_end();
+    }
+    if (gui_menu_begin("Filters", true)) { // Note: to translate.
+        filters_iter_all(NULL, on_filter);
         gui_menu_end();
     }
     if (gui_menu_begin("Scripts", true)) {
