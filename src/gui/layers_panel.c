@@ -43,6 +43,10 @@ static bool render_layer_item(void *item, int idx, bool current)
     icons_count = 0;
     if (layer->base_id) icons[icons_count++] = ICON_LINK;
     if (layer->shape) icons[icons_count++] = ICON_SHAPE;
+    char str[12];  // Enough for any 32-bit int
+    sprintf(str, "%d", idx);
+    gui_color_small_no_label(str, layer->marker_color);
+    gui_same_line();
     gui_condensed_layer_item(idx, icons_count, icons, &visible, &current,
                    layer->name, sizeof(layer->name));
     if (visible != layer->visible) {
@@ -122,6 +126,10 @@ void gui_layers_panel_impl(bool inner_scroll)
     }
     if (bounded)
         gui_bbox(layer->box);
+    
+    if (layer) {
+        gui_color_small("Marker color", layer->marker_color);
+    }
 
     if (layer->shape) {
         tool_gui_drag_mode(&goxel.tool_drag_mode);

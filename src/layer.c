@@ -26,6 +26,8 @@ layer_t *layer_new(const char *name)
     layer->ref = 1;
     if (name) strncpy(layer->name, name, sizeof(layer->name) - 1);
     layer->volume = volume_new();
+    vec4_copy(vec4_zero, layer->marker_color);
+    layer->marker_color[3] = 255.0f;
     mat4_set_identity(layer->mat);
     return layer;
 }
@@ -70,6 +72,7 @@ layer_t *layer_copy(layer_t *other)
     layer->volume = volume_copy(other->volume);
     layer->image = texture_copy(other->image);
     layer->material = other->material;
+    memcpy(layer->marker_color, other->marker_color, sizeof(layer->marker_color));
     mat4_copy(other->box, layer->box);
     mat4_copy(other->mat, layer->mat);
     layer->id = other->id;

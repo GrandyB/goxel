@@ -36,6 +36,7 @@ struct layer {
     char        name[256];  // 256 chars max.
     float       box[4][4];  // Bounding box.
     float       mat[4][4];
+    uint8_t     marker_color[4]; // color next to layer in list
     // For 2d image layers.
     texture_t   *image;
     // For clone layers:

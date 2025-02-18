@@ -111,6 +111,7 @@ bool gui_selectable_icon(const char *name, bool *v, int icon);
 bool gui_condensed_selectable_icon(const char *name, bool *v, int icon);
 bool gui_color(const char *label, uint8_t color[4]);
 bool gui_color_small(const char *label, uint8_t color[4]);
+bool gui_color_small_no_label(const char *id, uint8_t color[4]);
 bool gui_color_inline(const char *label, uint8_t color[4]);
 bool gui_color_small_f3(const char *label, float color[3]);
 bool gui_color_opacity(uint8_t color[4]);
