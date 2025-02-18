@@ -26,6 +26,7 @@ extern "C" {
 
 void gui_app(void);
 void gui_render_panel(void);
+bool gui_pan_scroll_behavior(int dir);
 }
 
 #ifndef GUI_ITEM_HEIGHT
@@ -162,7 +163,14 @@ typedef struct gui_t {
     GLuint  array_buffer;
     GLuint  index_buffer;
     margins_t margins;
-    bool    is_scrolling;
+
+    // bitmask: 1 - some window is scrolling.
+    //          2 - some window was scrolling last frame.
+    int     scrolling;
+
+    int     can_move_window;
+
+    int     win_dir; // Store the current window direction (for scrolling).
 
     int     is_row;
     float   item_size;
@@ -624,6 +632,9 @@ static void gui_iter(const inputs_t *inputs)
     style.Colors[ImGuiCol_Text] = COLOR(BASE, TEXT, false);
     style.Colors[ImGuiCol_MenuBarBg] = COLOR(MENU, BACKGROUND, false);
 
+    gui->scrolling = (gui->scrolling & 1) ? 2 : 0;
+    gui->can_move_window = (gui->can_move_window & 1) ? 2 : 0;
+
     // Old code, to remove.
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
@@ -741,46 +752,68 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
     ImGuiWindowFlags win_flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoDecoration;
-    float max_h;
+    float max_size;
     ImGuiStorage *storage = ImGui::GetStateStorage();
     ImGuiID key;
-    float *last_y;
+    float *last_pos;
     int ret = 0;
+    int dir = (flags & GUI_WINDOW_HORIZONTAL) ? 0 : 1;
 
     ImGui::PushID(label);
     if (!gui->can_move_window)
         win_flags |= ImGuiWindowFlags_NoMove;
     if (gui->scrolling)
         win_flags |= ImGuiWindowFlags_NoMouseInputs;
+    if (dir == 0)
+        win_flags |= ImGuiWindowFlags_HorizontalScrollbar;
     ImGui::SetNextWindowPos(ImVec2(x, y),
                             (flags & GUI_WINDOW_MOVABLE) ? ImGuiCond_Appearing : ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(w, h));
 
-    key = ImGui::GetID("lasty");
-    last_y = storage->GetFloatRef(key, y);
+    key = ImGui::GetID("last_pos");
+    last_pos = storage->GetFloatRef(key, dir == 0 ? x : y);
 
-    if (h == 0)
+    if ((w == 0) && (dir == 0))
     {
-        max_h = ImGui::GetMainViewport()->Size.y - *last_y;
+        max_size = ImGui::GetMainViewport()->Size.x - *last_pos;
         ImGui::SetNextWindowSizeConstraints(
-            ImVec2(0, 0), ImVec2(FLT_MAX, max_h));
+            ImVec2(0, 0), ImVec2(max_size, FLT_MAX));
     }
+    if ((h == 0) && (dir == 1))
+    {
+        max_size = ImGui::GetMainViewport()->Size.y - *last_pos;
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(0, 0), ImVec2(FLT_MAX, max_size));
+    }
+
     ImGui::Begin(label, NULL, win_flags);
 
     if (flags & GUI_WINDOW_MOVABLE)
     {
         if (ImGui::GetWindowPos() != ImVec2(x, y))
             ret |= GUI_WINDOW_MOVED;
-        *last_y = ImGui::GetWindowPos().y;
+        *last_pos = dir == 0 ? ImGui::GetWindowPos().x : ImGui::GetWindowPos().y;
     }
 
+    gui->win_dir = dir;
     ImGui::BeginGroup();
     return ret;
 }
 
-void gui_window_end(void)
+gui_window_ret_t gui_window_end(void)
 {
+    gui_window_ret_t ret = {};
+    ImGui::EndGroup();
+    if (!GUI_HAS_SCROLLBARS && !gui->can_move_window) {
+        if (gui_pan_scroll_behavior(gui->win_dir))
+            gui->scrolling |= 1;
+    }
+    ret.h = ImGui::GetWindowHeight();
+    ret.w = ImGui::GetWindowWidth();
     ImGui::End();
+    ImGui::PopID();
+
+    return ret;
 }
 
 bool gui_input_int(const char *label, int *v, int minv, int maxv)
@@ -1695,7 +1728,7 @@ bool gui_menu_item(int action, const char *label, bool enabled)
 
 void gui_tooltip(const char *str)
 {
-    if (gui->is_scrolling) return;
+    if (gui->scrolling) return;
     ImGui::PushStyleColor(ImGuiCol_PopupBg, COLOR(TOOLTIP, BACKGROUND, 0));
     ImGui::SetTooltip("%s", str);
     ImGui::PopStyleColor();
@@ -1748,6 +1781,8 @@ bool gui_panel_header(const char *label)
     gui_text(label);
     ret = panel_header_close_button();
     ImGui::PopID();
+    if (ImGui::IsItemHovered())
+        gui->can_move_window |= 1;
     return ret;
 }
 

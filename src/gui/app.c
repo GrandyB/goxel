@@ -151,7 +151,7 @@ void gui_app(void)
     }
 
     y += ICON_HEIGHT + 28;
-    gui_window_begin("Left Bar", x, y, 0, 0, NULL);
+    gui_window_begin("Left Bar", x, y, 0, 0, 0);
     render_left_panel();
     gui_window_end();
 
@@ -183,7 +183,7 @@ void gui_app(void)
         gui_window_end();
     }
     
-    gui_window_begin("Right Bar", (goxel.screen_size[0] - goxel.gui.panel_width - 5), ICON_HEIGHT, goxel.gui.panel_width, (goxel.screen_size[1] - ICON_HEIGHT), NULL);
+    gui_window_begin("Right Bar", (goxel.screen_size[0] - goxel.gui.panel_width - 5), ICON_HEIGHT, goxel.gui.panel_width, (goxel.screen_size[1] - ICON_HEIGHT), 0);
     gui_panel_header("Layers");
     gui_layers_panel_with_scroll();
     gui_window_end();

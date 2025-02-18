@@ -36,17 +36,24 @@
 #endif
 
 enum {
-    GUI_WINDOW_MOVABLE      = 1 << 0,
+    GUI_WINDOW_MOVABLE                  = 1 << 0,
+    GUI_WINDOW_HORIZONTAL               = 1 << 1, // For scrolling.
+
     // Return flags.
-    GUI_WINDOW_MOVED        = 1 << 1,
+    GUI_WINDOW_MOVED                    = 1 << 2,
 };
+
+typedef struct {
+    float h;
+    float w;
+} gui_window_ret_t;
 
 float gui_get_available_height();
 
 int gui_window_begin(const char *label, float x, float y, float w, float h,
     int flags);
 
-void gui_window_end(void);
+gui_window_ret_t gui_window_end(void);
 
 bool gui_want_capture_mouse(void);
 
