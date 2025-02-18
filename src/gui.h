@@ -110,6 +110,7 @@ bool gui_tab(const char *label, int icon, bool *v);
 bool gui_checkbox(const char *label, bool *v, const char *hint);
 bool gui_checkbox_flag(const char *label, int *v, int flag, const char *hint);
 bool gui_input_int(const char *label, int *v, int minv, int maxv);
+bool slider_float(const char *label, float *v, float minv, float maxv, const char *format);
 bool gui_input_float(const char *label, float *v, float step,
                      float minv, float maxv, const char *format);
 bool gui_angle(const char *id, float *v, int vmin, int vmax);
