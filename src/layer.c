@@ -26,7 +26,7 @@ layer_t *layer_new(const char *name)
     layer->ref = 1;
     if (name) strncpy(layer->name, name, sizeof(layer->name) - 1);
     layer->volume = volume_new();
-    vec4_copy(vec4_zero, layer->marker_color);
+    theme_get_color(THEME_GROUP_WIDGET, THEME_COLOR_INNER, false, layer->marker_color);
     layer->marker_color[3] = 255.0f;
     mat4_set_identity(layer->mat);
     return layer;
