@@ -735,27 +735,47 @@ void gui_row_end(void)
     gui->item_size = 0;
 }
 
-void gui_window_begin(const char *label, float x, float y, float w, float h,
-                      bool *moved)
+int gui_window_begin(const char *label, float x, float y, float w, float h,
+                     int flags)
 {
-    ImGuiWindowFlags flags =
+    ImGuiWindowFlags win_flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoDecoration;
     float max_h;
+    ImGuiStorage *storage = ImGui::GetStateStorage();
+    ImGuiID key;
+    float *last_y;
+    int ret = 0;
 
+    ImGui::PushID(label);
+    if (!gui->can_move_window)
+        win_flags |= ImGuiWindowFlags_NoMove;
+    if (gui->scrolling)
+        win_flags |= ImGuiWindowFlags_NoMouseInputs;
     ImGui::SetNextWindowPos(ImVec2(x, y),
-            moved == NULL ? ImGuiCond_Always : ImGuiCond_Appearing);
+                            (flags & GUI_WINDOW_MOVABLE) ? ImGuiCond_Appearing : ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(w, h));
-    if (h == 0) {
-        max_h = ImGui::GetMainViewport()->Size.y - y;
-        ImGui::SetNextWindowSizeConstraints(
-                ImVec2(0, 0), ImVec2(FLT_MAX, max_h));
-    }
-    ImGui::Begin(label, NULL, flags);
 
-    if (moved != NULL) {
-        *moved = ImGui::GetWindowPos() != ImVec2(x, y);
+    key = ImGui::GetID("lasty");
+    last_y = storage->GetFloatRef(key, y);
+
+    if (h == 0)
+    {
+        max_h = ImGui::GetMainViewport()->Size.y - *last_y;
+        ImGui::SetNextWindowSizeConstraints(
+            ImVec2(0, 0), ImVec2(FLT_MAX, max_h));
     }
+    ImGui::Begin(label, NULL, win_flags);
+
+    if (flags & GUI_WINDOW_MOVABLE)
+    {
+        if (ImGui::GetWindowPos() != ImVec2(x, y))
+            ret |= GUI_WINDOW_MOVED;
+        *last_y = ImGui::GetWindowPos().y;
+    }
+
+    ImGui::BeginGroup();
+    return ret;
 }
 
 void gui_window_end(void)

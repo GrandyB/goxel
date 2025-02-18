@@ -35,10 +35,16 @@
 #   define GUI_PANEL_WIDTH_LARGE 400
 #endif
 
+enum {
+    GUI_WINDOW_MOVABLE      = 1 << 0,
+    // Return flags.
+    GUI_WINDOW_MOVED        = 1 << 1,
+};
+
 float gui_get_available_height();
 
-void gui_window_begin(const char *label, float x, float y, float w, float h,
-                      bool *moved);
+int gui_window_begin(const char *label, float x, float y, float w, float h,
+    int flags);
 
 void gui_window_end(void);
 
