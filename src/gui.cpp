@@ -78,7 +78,7 @@ static const float LABEL_SIZE = 90;
 // Base height of items (note: maybe remove and use the font size instead?).
 static const float ITEM_HEIGHT = 18;
 static const float ICON_HEIGHT = 32;
-static const float CONDENSE_FACTOR = 0.7;
+static const float CONDENSE_FACTOR = 0.6;
 static const ImVec2 ITEM_SPACING = ImVec2(8, 4);
 
 #define COL_HEX(x) ImVec4( \
@@ -1191,16 +1191,18 @@ bool gui_color(const char *label, uint8_t color[4])
     ImGui::PopID();
     return ret;
 }
-
-bool gui_color_small(const char *label, uint8_t color[4])
+bool gui_color_small_conditional_label(const char *label, uint8_t color[4], bool show_label)
 {
     bool ret;
     float colorf[4] = {color[0] / 255.f,
                        color[1] / 255.f,
                        color[2] / 255.f,
                        color[3] / 255.f};
+    
     ImGui::PushID(label);
-    label_aligned(label, LABEL_SIZE);
+    if (show_label) {
+        label_aligned(label, LABEL_SIZE);
+    }
     ret = ImGui::ColorEdit4("", colorf, ImGuiColorEditFlags_NoInputs);
     ImGui::PopID();
     if (ret) {
@@ -1210,6 +1212,13 @@ bool gui_color_small(const char *label, uint8_t color[4])
         color[3] = colorf[3] * 255;
     }
     return ret;
+}
+
+bool gui_color_small(const char *label, uint8_t color[4]) {
+    return gui_color_small_conditional_label(label, color, true);
+}
+bool gui_color_small_no_label(const char *id, uint8_t color[4]) {
+    return gui_color_small_conditional_label(id, color, false);
 }
 
 bool gui_color_inline(const char *label, uint8_t color[4]) {

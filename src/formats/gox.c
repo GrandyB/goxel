@@ -362,6 +362,8 @@ void save_to_file(const image_t *img, const char *path)
                                sizeof(layer->id));
         chunk_write_dict_value(&c, out, "base_id", &layer->base_id,
                                sizeof(layer->base_id));
+        chunk_write_dict_value(&c, out, "marker_color", &layer->marker_color,
+                                sizeof(layer->marker_color));
         material_idx = get_material_idx(img, layer->material);
         chunk_write_dict_value(&c, out, "material", &material_idx,
                                sizeof(material_idx));
@@ -609,6 +611,7 @@ int load_from_file(const char *path, bool replace)
                         }
                     }
                 }
+                DICT_CPY("marker_color", layer->marker_color);
                 DICT_CPY("color", layer->color);
                 DICT_CPY("visible", layer->visible);
                 if (DICT_CPY("material", material_idx))
