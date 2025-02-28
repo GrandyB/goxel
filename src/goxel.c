@@ -1701,7 +1701,7 @@ void goxel_open_file(const char *path)
         }
         return;
     }
-    gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, strdup(path),
+    gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, path ? strdup(path) : NULL,
                    unsaved_change_popup);
 }
 
