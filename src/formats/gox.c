@@ -720,7 +720,7 @@ static void a_open(void)
     load_from_file(path, true);
 }
 
-ACTION_REGISTER(open,
+ACTION_REGISTER(ACTION_open,
     .help = "Open an image",
     .cfunc = a_open,
     .default_shortcut = "Ctrl O",
@@ -742,7 +742,7 @@ static void a_save_as(void)
     sys_on_saved(path);
 }
 
-ACTION_REGISTER(save_as,
+ACTION_REGISTER(ACTION_save_as,
     .help = "Save the image as",
     .cfunc = a_save_as,
 )
@@ -762,7 +762,7 @@ static void a_save(void)
     sys_on_saved(path);
 }
 
-ACTION_REGISTER(save,
+ACTION_REGISTER(ACTION_save,
     .help = "Save the image",
     .cfunc = a_save,
     .default_shortcut = "Ctrl S"

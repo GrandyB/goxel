@@ -35,12 +35,25 @@
 #   define GUI_PANEL_WIDTH_LARGE 400
 #endif
 
+enum {
+    GUI_WINDOW_MOVABLE                  = 1 << 0,
+    GUI_WINDOW_HORIZONTAL               = 1 << 1, // For scrolling.
+
+    // Return flags.
+    GUI_WINDOW_MOVED                    = 1 << 2,
+};
+
+typedef struct {
+    float h;
+    float w;
+} gui_window_ret_t;
+
 float gui_get_available_height();
 
-void gui_window_begin(const char *label, float x, float y, float w, float h,
-                      bool *moved);
+int gui_window_begin(const char *label, float x, float y, float w, float h,
+    int flags);
 
-void gui_window_end(void);
+gui_window_ret_t gui_window_end(void);
 
 bool gui_want_capture_mouse(void);
 
@@ -97,6 +110,7 @@ bool gui_tab(const char *label, int icon, bool *v);
 bool gui_checkbox(const char *label, bool *v, const char *hint);
 bool gui_checkbox_flag(const char *label, int *v, int flag, const char *hint);
 bool gui_input_int(const char *label, int *v, int minv, int maxv);
+bool slider_float(const char *label, float *v, float minv, float maxv, const char *format);
 bool gui_input_float(const char *label, float *v, float step,
                      float minv, float maxv, const char *format);
 bool gui_angle(const char *id, float *v, int vmin, int vmax);

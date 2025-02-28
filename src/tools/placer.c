@@ -532,7 +532,7 @@ TOOL_REGISTER(TOOL_PLACER, placer, tool_placer_t,
               .has_snap = true,
 )
 
-ACTION_REGISTER(placer_acquire_selection,
+ACTION_REGISTER(ACTION_placer_acquire_selection,
     .help = "Placer - acquire selection",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = placer_acquire_selection
