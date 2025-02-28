@@ -19,9 +19,11 @@
 #include "goxel.h"
 #include "script.h"
 #include "xxhash.h"
+#include "../ext_src/stb/stb_ds.h"
 
 #include "shader_cache.h"
 
+#include <errno.h>
 #include <stdarg.h>
 
 // The global goxel instance.
@@ -310,6 +312,35 @@ void goxel_add_gesture(int type, int button,
     goxel.gestures_count++;
 }
 
+static void goxel_load_recent_files(void)
+{
+    char listpath[1024];
+    char path[1024];
+    FILE *listfile, *file;
+
+    assert(goxel.recent_files == NULL);
+
+    snprintf(listpath, sizeof(listpath), "%s/recent-files.txt",
+             sys_get_user_dir());
+    listfile = fopen(listpath, "r");
+    if (!listfile) {
+        LOG_E("Cannot open %s: %s", listpath, strerror(errno));
+        return;
+    }
+
+    while (fgets(path, sizeof(path), listfile)) {
+        if (strlen(path) < 1) continue;
+        if (path[strlen(path) - 1] == '\n')
+            path[strlen(path) - 1] = '\0';
+        file = fopen(path, "r");
+        if (!file) continue;
+        fclose(file);
+        arrput(goxel.recent_files, strdup(path));
+    }
+
+    fclose(listfile);
+}
+
 KEEPALIVE
 void goxel_init(void)
 {
@@ -331,6 +362,8 @@ void goxel_init(void)
     goxel_add_gesture(GESTURE_DRAG, GESTURE_MMB | GESTURE_CTRL, on_zoom);
     goxel_add_gesture(GESTURE_DRAG, GESTURE_MMB, on_rotate);
     goxel_add_gesture(GESTURE_HOVER, 0, on_hover);
+
+    goxel_load_recent_files();
 
     goxel_reset();
 }
@@ -1318,6 +1351,41 @@ int goxel_export_to_file(const char *path, const char *format)
     return 0;
 }
 
+void goxel_add_recent_file(const char *path)
+{
+    char listpath[1024];
+    FILE *file;
+    int i;
+
+    if (goxel.recent_files && strcmp(goxel.recent_files[0], path) == 0)
+        return;
+
+    // Remove the path from the list if it exists already.
+    for (i = 0; i < arrlen(goxel.recent_files); i++) {
+        if (strcmp(goxel.recent_files[i], path) == 0) {
+            free(goxel.recent_files[i]);
+            arrdel(goxel.recent_files, i);
+        }
+    }
+
+    // Push the path at index 0.
+    arrins(goxel.recent_files, 0, strdup(path));
+
+    // Save the new array on disk.
+    snprintf(listpath, sizeof(listpath), "%s/recent-files.txt",
+             sys_get_user_dir());
+    sys_make_dir(listpath);
+    file = fopen(listpath, "w");
+    if (!file) {
+        LOG_E("Cannot save to %s: %s", listpath, strerror(errno));
+        return;
+    }
+    for (i = 0; i < arrlen(goxel.recent_files); i++) {
+        fprintf(file, "%s\n", goxel.recent_files[i]);
+    }
+    fclose(file);
+}
+
 void goxel_apply_color_filter(
     void (*fn)(void *args, uint8_t color[4]), void *args)
 {
@@ -1601,14 +1669,18 @@ ACTION_REGISTER(ACTION_quit,
     .default_shortcut = "Ctrl Q",
 )
 
-static int new_file_popup(void *data)
+static int unsaved_change_popup(void *data)
 {
     gui_text("Discard current image?");
     int ret = 0;
 
     gui_row_begin(0);
     if (gui_button("Discard", 0, 0)) {
-        goxel_reset();
+        if (!data) {
+            goxel_reset();
+        } else {
+            load_from_file((const char *)data, true);
+        }
         ret = 1;
     }
     if (gui_button("Cancel", 0, 0)) {
@@ -1619,13 +1691,23 @@ static int new_file_popup(void *data)
     return ret;
 }
 
-static void a_reset(void)
+void goxel_open_file(const char *path)
 {
     if (image_get_key(goxel.image) == goxel.image->saved_key) {
-        goxel_reset();
+        if (!path) {
+            goxel_reset();
+        } else {
+            load_from_file(path, true);
+        }
         return;
     }
-    gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, NULL, new_file_popup);
+    gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, strdup(path),
+                   unsaved_change_popup);
+}
+
+static void a_reset(void)
+{
+    goxel_open_file(NULL);
 }
 
 ACTION_REGISTER(ACTION_reset,
@@ -1649,7 +1731,7 @@ static void a_reset_512(void)
         return;
     }
     post_reset_func = image_to_512;
-    gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, NULL, new_file_popup);
+    gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, NULL, unsaved_change_popup);
 }
 
 ACTION_REGISTER(ACTION_reset_512,
