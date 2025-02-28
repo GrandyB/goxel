@@ -7,7 +7,7 @@
 #include "goxel.h"
 
 typedef struct {
-    // Generation pieces
+    // Generation
     int max_height;
     int num_octaves;
     float amp_octave_mult;
