@@ -37,8 +37,12 @@ static int gui(filter_t *filter_)
     volume_iterator_t iter;
     int found_block_index = -1;
 
-    const char *help_text = "This tool navigates all columns of blocks, filling from bottom with the given color until it meets the first block.";
+    const char *help_text = "This tool navigates all columns of blocks, filling from bottom upwards with the given color until it meets the first block.";
     goxel_set_help_text(help_text);
+
+    if(gui_collapsing_header("Hint", false)) {
+        gui_text_wrapped(help_text);
+    }
 
     gui_group_begin(NULL);
     gui_color_small("Color", filter->color);
