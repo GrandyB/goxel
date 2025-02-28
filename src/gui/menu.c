@@ -21,6 +21,8 @@
 #include "file_format.h"
 #include "script.h"
 
+#include "../../ext_src/stb/stb_ds.h"
+
 int gui_settings_popup(void *data);
 int gui_about_popup(void *data);
 int gui_about_scripts_popup(void *data);
@@ -93,6 +95,7 @@ static void on_filter(void *user, filter_t *filter)
 
 void gui_menu(void)
 {
+    int i;
     if (gui_menu_begin("File", true)) {
         gui_menu_item(ACTION_reset, "New (32x32x32)", true);
         gui_menu_item(ACTION_reset_512, "New (512x512x64)", true);
@@ -100,6 +103,14 @@ void gui_menu(void)
                 image_get_key(goxel.image) != goxel.image->saved_key);
         gui_menu_item(ACTION_save_as, "Save as", true);
         gui_menu_item(ACTION_open, "Open", true);
+        if (gui_menu_begin("Open Recent", true)) {
+            for (i = 0; i < arrlen(goxel.recent_files); i++) {
+                if (gui_menu_item(0, goxel.recent_files[i], true)) {
+                    goxel_open_file(goxel.recent_files[i]);
+                }
+            }
+            gui_menu_end();
+        };
         if (gui_menu_begin("Import...", true)) {
             if (gui_menu_item(0, "image plane", true))
                 import_image_plane();
