@@ -1,28 +1,23 @@
-#if 0 //To compile, type: "nmake genland.cpp"
-genland.exe: genland.cpp; cl /J /TP genland.cpp /Ox /Ob2 /G6Fy /MD /QIfist /link /opt:nowin98
-	del genland.obj
-!if 0
-#endif
+// Genland - procedural landscape generator
+// by Tom Dobrowolski (http://ged.ax.pl/~tomkh) (heightmap generator)
+// and Ken Silverman (http://advsys.net/ken) (DTA/PNG/VXL writers)
 
-#if 0
-Genland - procedural landscape generator
-by Tom Dobrowolski (http://ged.ax.pl/~tomkh) (heightmap generator)
-and Ken Silverman (http://advsys.net/ken) (DTA/PNG/VXL writers)
+// This file has been modified from Ken Silverman's original release
 
-If you do something cool, feel free to write us
-(contact info can be found at our websites)
+// If you do something cool, feel free to write us
+// (contact info can be found at our websites)
 
-License for this code:
-	* No commercial exploitation please
-	* Do not remove our names from the code or credits
-	* You may distribute modified code/executables,
-	  but please make it clear that it is modified.
+// License for this code:
+// 	* No commercial exploitation please
+// 	* Do not remove our names from the code or credits
+// 	* You may distribute modified code/executables,
+// 	  but please make it clear that it is modified.
 
-History:
-	2005-12-24: Released GENLAND.EXE with Ken's GROUDRAW demos.
-	2006-03-10: Released GENLAND.CPP source code
-
-#endif
+// History:
+// 	2005-12-24: Released GENLAND.EXE with Ken's GROUDRAW demos.
+// 	2006-03-10: Released GENLAND.CPP source code
+//  ---
+//  2025-02-28: Ported to a state where it can be integrated into Goxel
 
 #include <memory.h>
 #include <math.h>
@@ -30,21 +25,56 @@ History:
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <x86intrin.h>  // Provides _rdtsc()
+
+extern "C" {
+    #include "goxel.h"
+}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic pop
+
+static inline int64_t rdtsc64() {
+    return __rdtsc();  // Works on modern compilers (MSVC, GCC, Clang)
+}
 
 #pragma pack(1)
 typedef struct { double x, y, z; } dpoint3d;
 typedef struct { unsigned char b, g, r, a; } vcol;
 
-#define max(a,b)  (((a) > (b)) ? (a) : (b))
-#define min(a,b)  (((a) < (b)) ? (a) : (b))
-
 #if 1
-	#define VSHL 10
-	#define VSID 1024
+	#define VSHL 9
+	#define VSID 512
 #else // nice for testing:
 	#define VSHL 8
 	#define VSID 256
 #endif
+
+static void process_voxel_data(volume_t *volume, vcol *argb) {
+    int pos[3];
+    volume_iterator_t iter;
+    iter = volume_get_iterator(volume,
+            VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    for (int y = 0; y < VSID; y++) {
+        for (int x = 0; x < VSID; x++, argb++) {
+            int z = (int)argb->a; // Height of the voxel at (x, y)
+            printf("%i/%i: %i\n", x,y,z);
+
+            if (z > 0) {  // Only process non-empty blocks
+                pos[0] = x;
+                pos[1] = y;
+                pos[2] = z;
+
+                printf("%i/%i: %i\n", x,y,z);
+                uint8_t color[4] = {argb->r, argb->g, argb->b, 255};  // RGBA color
+
+                volume_set_at(volume, NULL, pos, color); // Set voxel in the volume
+            }
+        }
+    }
+}
 
 long savevxl (char *filnam, vcol *argb)
 {
@@ -90,73 +120,6 @@ long savevxl (char *filnam, vcol *argb)
 	fclose(fil);
 	return(0);
 }
-
-//------------------------ Simple PNG OUT code begins ------------------------
-FILE *pngofil;
-long pngoxplc, pngoyplc, pngoxsiz, pngoysiz;
-unsigned long pngocrc, pngoadcrc;
-
-static unsigned long bswap (unsigned long a)
-	{ return(((a&0xff0000)>>8) + ((a&0xff00)<<8) + (a<<24) + (a>>24)); }
-
-long crctab32[256];  //SEE CRC32.C
-#define updatecrc32(c,crc) crc=(crctab32[(crc^c)&255]^(((unsigned)crc)>>8))
-#define updateadl32(c,crc) \
-{  c += (crc&0xffff); if (c   >= 65521) c   -= 65521; \
-	crc = (crc>>16)+c; if (crc >= 65521) crc -= 65521; \
-	crc = (crc<<16)+c; \
-} \
-
-void fputbytes (unsigned long v, long n)
-	{ for(;n;v>>=8,n--) { fputc(v,pngofil); updatecrc32(v,pngocrc); } }
-
-void pngoutopenfile (char *fnam, long xsiz, long ysiz)
-{
-	long i, j, k;
-	unsigned char a[40];
-
-	pngoxsiz = xsiz; pngoysiz = ysiz; pngoxplc = pngoyplc = 0;
-	for(i=255;i>=0;i--)
-	{
-		k = i; for(j=8;j;j--) k = ((unsigned long)k>>1)^((-(k&1))&0xedb88320);
-		crctab32[i] = k;
-	}
-	pngofil = fopen(fnam,"wb");
-	*(long *)&a[0] = 0x474e5089; *(long *)&a[4] = 0x0a1a0a0d;
-	*(long *)&a[8] = 0x0d000000; *(long *)&a[12] = 0x52444849;
-	*(long *)&a[16] = bswap(xsiz); *(long *)&a[20] = bswap(ysiz);
-	*(long *)&a[24] = 0x00000608; *(long *)&a[28] = 0;
-	for(i=12,j=-1;i<29;i++) updatecrc32(a[i],j);
-	*(long *)&a[29] = bswap(j^-1);
-	fwrite(a,37,1,pngofil);
-	pngocrc = -1; pngoadcrc = 1;
-	fputbytes(0x54414449,4); fputbytes(0x0178,2);
-}
-
-void pngoutputpixel (long rgbcol)
-{
-	long a[4];
-
-	if (!pngoxplc)
-	{
-		fputbytes(pngoyplc==pngoysiz-1,1);
-		fputbytes(((pngoxsiz*4+1)*0x10001)^0xffff0000,4);
-		fputbytes(0,1); a[0] = 0; updateadl32(a[0],pngoadcrc);
-	}
-	a[0] = (rgbcol>>16)&255; fputbytes(a[0],1); updateadl32(a[0],pngoadcrc);
-	a[0] = (rgbcol>> 8)&255; fputbytes(a[0],1); updateadl32(a[0],pngoadcrc);
-	a[0] = (rgbcol    )&255; fputbytes(a[0],1); updateadl32(a[0],pngoadcrc);
-	a[0] = (rgbcol>>24)&255; fputbytes(a[0],1); updateadl32(a[0],pngoadcrc);
-	pngoxplc++; if (pngoxplc < pngoxsiz) return;
-	pngoxplc = 0; pngoyplc++; if (pngoyplc < pngoysiz) return;
-	fputbytes(bswap(pngoadcrc),4);
-	a[0] = bswap(pngocrc^-1); a[1] = 0; a[2] = 0x444e4549; a[3] = 0x826042ae;
-	fwrite(a,1,16,pngofil);
-	a[0] = bswap(ftell(pngofil)-(33+8)-16);
-	fseek(pngofil,33,SEEK_SET); fwrite(a,1,4,pngofil);
-	fclose(pngofil);
-}
-//------------------------- Simple PNG OUT code ends -------------------------
 
 //----------------------------------------------------------------------------
 // Noise algo based on "Improved Perlin Noise" by Ken Perlin
@@ -331,7 +294,7 @@ static unsigned char signfplc[] =
 	//Disabling this will result in lots of crashing and viruses in your future! :P
 void signprint (long x, long y)
 {
-	long *lptr = (long *)(((y*VSID + x)<<2) + ((long)buf));
+	long *lptr = (long *)(intptr_t)(((y * VSID + x) << 2) + (intptr_t)buf);
 	for(y=0;y<SIGNYSIZ;y++,lptr+=VSID)
 		for(x=0;x<SIGNXSIZ;x++)
 			if (signfplc[y*SIGNBPL+(x>>3)]&(1<<(x&7))) lptr[x] -= 0x01101010;
@@ -388,8 +351,9 @@ static void Hist3d (tiletype *tt, long *vwt, long *vmr, long *vmg, long *vmb, fl
 	long i, x, y, r, g, b, *lptr, sq[256];
 
 	for(i=0;i<256;i++) sq[i] = i*i;
-	lptr = (long *)tt->f;
-	for(y=0;y<tt->y;y++,lptr=(long *)(((long)lptr)+tt->p))
+	lptr = (long *)(intptr_t)tt->f;
+
+    for(y = 0; y < tt->y; y++, lptr = (long *)(intptr_t)(((intptr_t)lptr) + tt->p))
 		for(x=0;x<tt->x;x++)
 		{
 			r = (lptr[x]>>16)&255;
@@ -469,8 +433,9 @@ static long Bot (box *cube, unsigned char dir, long *mmt)
 							+mmt[cube->r0*(33*33)+cube->g0*33+cube->b1] - mmt[cube->r0*(33*33)+cube->g0*33+cube->b0]); break;
 		case 0: return(-mmt[cube->r1*(33*33)+cube->g1*33+cube->b0] + mmt[cube->r1*(33*33)+cube->g0*33+cube->b0]
 							+mmt[cube->r0*(33*33)+cube->g1*33+cube->b0] - mmt[cube->r0*(33*33)+cube->g0*33+cube->b0]); break;
-		default: __assume(0); //tells MSVC default can't be reached
+		default: __builtin_unreachable(); //tells MSVC default can't be reached
 	}
+    return 1;
 }
 
 	//Compute rest of Vol(cube,mmt), substituting pos for r1/g1/b1 (depending on dir)
@@ -484,8 +449,9 @@ static long Top (box *cube, unsigned char dir, long pos, long *mmt)
 							-mmt[cube->r0*(33*33)+pos*33+cube->b1] + mmt[cube->r0*(33*33)+pos*33+cube->b0]); break;
 		case 0: return(+mmt[cube->r1*(33*33)+cube->g1*33+pos] - mmt[cube->r1*(33*33)+cube->g0*33+pos]
 							-mmt[cube->r0*(33*33)+cube->g1*33+pos] + mmt[cube->r0*(33*33)+cube->g0*33+pos]); break;
-		default: __assume(0); //tells MSVC default can't be reached
+		default: __builtin_unreachable(); //tells MSVC default can't be reached
 	}
+    return 1;
 }
 
 	//Compute weighted variance of box. NB: as w/raw statistics, this is really variance * pic.x*pic.y
@@ -665,90 +631,18 @@ void genpal_32to8 (tiletype *rt, tiletype *wt)
 	long i, x, y, xe, ye, *lptr;
 	unsigned char *cptr;
 
-	cptr = (unsigned char *)wt->f; i = 0;
-	lptr = (long *)rt->f;
+	cptr = (unsigned char *)(intptr_t)wt->f; i = 0;
+	lptr = (long *)(intptr_t)rt->f;
 	xe = rt->x; if (xe < wt->x) xe = wt->x;
 	ye = rt->y; if (ye < wt->y) ye = wt->y;
-	for(y=0;y<ye;y++,cptr+=wt->p,lptr=(long *)(((long)lptr)+rt->p))
+    for(y = 0; y < ye; y++, cptr += wt->p, lptr = (long *)(intptr_t)(((intptr_t)lptr) + rt->p))
 		for(x=0;x<xe;x++,i++)
 			cptr[x] = tag[((((lptr[x]>>16)&255)>>3)+1)*(33*33)+
 							  ((((lptr[x]>> 8)&255)>>3)+1)*33+
 							  ((((lptr[x]    )&255)>>3)+1)];
 }
 
-//--------------------------------------------------------------------------------------------------
-
-void savepcx (char *filnam, tiletype *tt, long *pal, long optimizepal)
-{
-	static unsigned char pcxhead[128] =
-	{
-		10,5,1,8,0,0,0,0,63,1,199,0,64,1,200,0,0,0,0,8,8,8,16,16,16,24,24,24,32,32,32,40,
-		40,40,48,48,48,56,56,56,64,64,64,72,72,72,80,80,80,88,88,88,96,96,96,104,104,104,112,112,112,120,120,120,
-		0,1,64,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	};
-	FILE *fil;
-	long x, y, nx, palfrq[256], gap;
-	unsigned char ch, palut[256], palut2[256];
-	unsigned char *cptr;
-
-	*(short *)&pcxhead[8] = (short)(tt->x-1);
-	*(short *)&pcxhead[10] = (short)(tt->y-1);
-	*(short *)&pcxhead[12] = *(short *)&pcxhead[66] = tt->x;
-	*(short *)&pcxhead[14] = (short)tt->y;
-
-	fil = fopen(filnam,"wb"); if (!fil) return;
-	fwrite(pcxhead,128,1,fil);
-
-	if (optimizepal)
-	{
-		memset(palfrq,0,sizeof(palfrq));
-		cptr = (unsigned char *)tt->f;
-		for(y=0;y<tt->y;y++,cptr+=tt->p)
-			for(x=0;x<tt->x;x=nx)
-			{
-				for(nx=x+1;(nx < tt->x) && (cptr[nx] == cptr[x]) && (nx-x < 64-1);nx++);
-				if (nx-x <= 1) palfrq[cptr[x]]++;
-			}
-		for(x=0;x<256;x++) palut2[x] = x;
-
-			//Sort points by y's
-		for(gap=(256>>1);gap;gap>>=1)
-			for(x=0;x<256-gap;x++)
-				for(y=x;y>=0;y-=gap)
-				{
-					if (palfrq[y] >= palfrq[y+gap]) break;
-					nx = pal[y];    pal[y] = pal[y+gap];       pal[y+gap] = nx;
-					nx = palfrq[y]; palfrq[y] = palfrq[y+gap]; palfrq[y+gap] = nx;
-					ch = palut2[y]; palut2[y] = palut2[y+gap]; palut2[y+gap] = ch;
-				}
-		for(x=0;x<256;x++) palut[palut2[x]] = x;
-	} else { for(x=0;x<256;x++) palut[x] = x; }
-
-	cptr = (unsigned char *)tt->f;
-	for(y=0;y<tt->y;y++,cptr+=tt->p)
-		for(x=0;x<tt->x;x=nx)
-		{
-			for(nx=x+1;(nx < tt->x) && (cptr[nx] == cptr[x]) && (nx-x < 64-1);nx++);
-			if ((nx-x > 1) || (palut[cptr[x]]&0xc0)) fputc((nx-x)|0xc0,fil);
-			fputc(palut[cptr[x]],fil);
-		}
-
-	fputc(0xc,fil);
-	for(x=0;x<256;x++)
-	{
-		fputc((pal[x]>>16)&255,fil);
-		fputc((pal[x]>> 8)&255,fil);
-		fputc((pal[x]    )&255,fil);
-	}
-	fclose(fil);
-}
-
-//--------------------------------------------------------------------------------------------------
-
-static __forceinline __int64 rdtsc64 () { _asm rdtsc }
-
-int main (int argc, char **argv)
+extern "C" void generate_tomland_terrain(volume_t *volume)
 {
 	#define OCTMAX 10
 	#define EPS 0.1
@@ -756,25 +650,8 @@ int main (int argc, char **argv)
 	double dot, nx, ny, nz, gr, gg, gb;
 	float f;
 	long i, j, x, y, k, o, maxa, pal[256], msklut[OCTMAX];
-	long writedta = 0, writepng = 0, writevxl = 0;
-
-	for(i=argc-1;i>0;i--)
-	{
-		if ((argv[i][0] != '/') && (argv[i][0] != '-')) continue;
-		if (!stricmp(&argv[i][1],"dta")) { writedta = 1; continue; }
-		if (!stricmp(&argv[i][1],"png")) { writepng = 1; continue; }
-		if (!stricmp(&argv[i][1],"vxl")) { writevxl = 1; continue; }
-	}
 	printf("Heightmap generator by Tom Dobrowoski (http://ged.ax.pl/~tomkh)\n");
 	printf("Output formats by Ken Silverman (http://advsys.net/ken)\n");
-	if ((argc < 2) || ((!writedta) && (!writepng) && (!writevxl)))
-	{
-		printf("\ngenland [/format] ...\n");
-		printf("   /dta: generate C1.DTA and D1.DTA (Comanche compatible landscape)\n");
-		printf("   /png: generate TOMLAND.PNG (32-bit PNG file with height stored in alpha)\n");
-		printf("   /vxl: generate TOMLAND.VXL (Voxlap compatible landscape)\n");
-		exit(1);
-	}
 
 	noiseinit();
 
@@ -874,7 +751,7 @@ int main (int argc, char **argv)
 
 			hgt[k] = csamp[0];
 		}
-		i = ((y+1)*100)/VSID; if (i > (y*100)/VSID) printf("\r%i%%",i);
+		i = ((y+1)*100)/VSID; if (i > (y*100)/VSID) printf("\r%ld%%", i);  // Correct format for long int
 	}
 	//q1 = rdtsc64(); printf("%I64d cc\n",q1-q0);
 	printf("\r");
@@ -913,51 +790,9 @@ int main (int argc, char **argv)
 
 	signprint(426,982);
 
-	if (writevxl)
-	{
-		printf("Writing tomland.vxl..\n"); //12/04/2005
-		if (savevxl("tomland.vxl",buf)) printf("Error in savevxl!\n");
-	}
-	if (writepng)
-	{
-		printf("Writing tomland.png..\n");
-		pngoutopenfile("tomland.png",VSID,VSID);
-		k = 0;
-		for(y=0;y<VSID;y++)
-			for(x=0;x<VSID;x++,k++)
-				pngoutputpixel(*(long *)&buf[k]);
-	}
-	if (writedta)
-	{
-		tiletype rt, wt;
-		long xx, yy;
-		unsigned char *cbuf;
-
-		cbuf = (unsigned char *)malloc(VSID*VSID); if (!cbuf) { puts("Error"); exit(1); }
-
-		k = 0;
-		for(y=0;y<VSID;y++)
-			for(x=0;x<VSID;x++,k++)
-				cbuf[y*VSID+x] = (unsigned char)(175-buf[k].a); //a ranges from 0 to 175
-		for(i=0;i<256;i++) pal[i] = i*0x10101;
-		wt.f = (long)cbuf; wt.p = VSID; wt.x = VSID; wt.y = VSID;
-		printf("Writing d1.dta\n");
-		savepcx("d1.dta",&wt,pal,0);
-	
-		rt.f = (long)buf; rt.x = rt.y = VSID; rt.p = (rt.x<<2);
-		if (genpal_init()) { printf("Error!"); exit(1); }
-		genpal_addhist(&rt); //Call for every tile
-		genpal(pal);
-		wt = rt; wt.p = rt.x; genpal_32to8(&rt,&wt); //Call for every tile
-		genpal_free();
-		printf("Writing c1.dta\n");
-		savepcx("c1.dta",&wt,pal,1);
-	
-		free(cbuf);
-	}
+	process_voxel_data(volume, buf);
 
 	printf("Done!");
-	return(0);
 }
 
 #if 0

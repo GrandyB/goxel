@@ -4,7 +4,7 @@
 #define EXTERNC
 #endif
 
-EXTERNC void framecap_init(void);
-EXTERNC void framecap_sleep(void);
+#include "goxel.h"
+EXTERNC void generate_tomland_terrain(volume_t *volume);
 
 #undef EXTERNC
