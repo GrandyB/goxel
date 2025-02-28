@@ -37,7 +37,7 @@ static int gui(filter_t *filter_)
     volume_iterator_t iter;
     int found_block_index = -1;
 
-    const char *help_text = "This tool navigates all columns of blocks, filling from bottom upwards with the given color until it meets the first block.";
+    const char *help_text = "This filter navigates all columns of blocks, filling from bottom upwards with the given color until it meets the first block.";
     goxel_set_help_text(help_text);
 
     if(gui_collapsing_header("Hint", false)) {
@@ -114,6 +114,6 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(fillz, filter_fillz_t,
-                .name = "Fill Z by color",
+                .name = "Bulk - Fill upwards by color",
                 .on_open = on_open,
                 .gui_fn = gui, )

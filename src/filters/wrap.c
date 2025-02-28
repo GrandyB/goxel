@@ -210,6 +210,6 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(wrap, filter_wrap_t,
-                .name = "Wrap voxels",
+                .name = "Translation - Wrap layer/image",
                 .on_open = on_open,
                 .gui_fn = gui, )

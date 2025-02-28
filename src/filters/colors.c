@@ -208,6 +208,6 @@ static int gui(filter_t *filter_)
 }
 
 FILTER_REGISTER(colors, filter_colors_t,
-                .name = "Adjust Colors",
+                .name = "Colors - H/S/L/C for layer",
                 .on_open = on_open,
                 .gui_fn = gui, )

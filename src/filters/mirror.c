@@ -155,6 +155,6 @@
  }
  
  FILTER_REGISTER(mirror, filter_mirror_t,
-     .name = "Mirror",
+     .name = "Translation - Mirror",
      .gui_fn = gui,
  )

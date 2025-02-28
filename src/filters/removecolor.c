@@ -37,7 +37,7 @@ static int gui(filter_t *filter_)
     uint8_t cur_block_color[4];
     volume_iterator_t iter;
 
-    const char *help_text = "This tool removes all blocks of the specified color from the current layer.";
+    const char *help_text = "This filter removes all blocks of the specified color from the current layer.";
     goxel_set_help_text(help_text);
 
     if(gui_collapsing_header("Hint", false)) {
@@ -102,6 +102,6 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(removecolor, filter_removecolor_t,
-                .name = "Remove block by color",
+                .name = "Bulk - Remove by color",
                 .on_open = on_open,
                 .gui_fn = gui, )
