@@ -137,6 +137,6 @@ static void export_render_buf_to_photos(void)
     free(img);
 }
 
-ACTION_REGISTER(export_render_buf_to_photos,
+ACTION_REGISTER(ACTION_export_render_buf_to_photos,
     .cfunc = export_render_buf_to_photos,
 )

@@ -120,7 +120,7 @@ void gui_menu(void)
         gui_menu_item(ACTION_undo, "Undo", true);
         gui_menu_item(ACTION_redo, "Redo", true);
         gui_menu_item(ACTION_copy, "Copy", true);
-        gui_menu_item(ACTION_past, "Paste", true);
+        gui_menu_item(ACTION_paste, "Paste", true);
         if (gui_menu_item(0, "Settings", true))
             gui_open_popup("Settings", GUI_POPUP_FULL | GUI_POPUP_RESIZE,
                            NULL, gui_settings_popup);

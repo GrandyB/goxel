@@ -1382,8 +1382,8 @@ static void a_cut_as_new_layer(void)
     volume_op(layer->volume, &painter, *box);
 }
 
-ACTION_REGISTER(cut_as_new_layer,
-    .help = "Cut into a new layer",
+ACTION_REGISTER(ACTION_cut_as_new_layer,
+    .help = "Cuts the selected area into a new layer",
     .cfunc = a_cut_as_new_layer,
     .flags = ACTION_TOUCH_IMAGE,
 )
@@ -1398,8 +1398,7 @@ static void a_reset_selection(void)
     mat4_copy(mat4_zero, goxel.selection);
 }
 
-ACTION_REGISTER(reset_selection,
-    .help = "Reset the selection",
+ACTION_REGISTER(ACTION_reset_selection,
     .cfunc = a_reset_selection,
 )
 
@@ -1416,7 +1415,7 @@ static void a_fill_selection(void)
     volume_op(layer->volume, &goxel.painter, goxel.selection);
 }
 
-ACTION_REGISTER(fill_selection,
+ACTION_REGISTER(ACTION_fill_selection_box,
     .help = "Fill the selection with the current paint settings",
     .cfunc = a_fill_selection,
     .flags = ACTION_TOUCH_IMAGE,
@@ -1440,7 +1439,7 @@ static void a_add_selection(void)
     volume_delete(tmp);
 }
 
-ACTION_REGISTER(add_selection,
+ACTION_REGISTER(ACTION_add_selection,
     .help = "Add the selection to the current mask",
     .cfunc = a_add_selection,
 )
@@ -1457,7 +1456,7 @@ static void a_sub_selection(void)
     volume_op(goxel.mask, &painter, goxel.selection);
 }
 
-ACTION_REGISTER(sub_selection,
+ACTION_REGISTER(ACTION_sub_selection,
     .help = "Subtract the selection from the current mask",
     .cfunc = a_sub_selection,
 )
@@ -1500,14 +1499,14 @@ static void past_action(void)
     volume_delete(tmp);
 }
 
-ACTION_REGISTER(copy,
+ACTION_REGISTER(ACTION_copy,
     .help = "Copy",
     .cfunc = copy_action,
     .default_shortcut = "Ctrl C",
     .flags = 0,
 )
 
-ACTION_REGISTER(past,
+ACTION_REGISTER(ACTION_paste,
     .help = "Past",
     .cfunc = past_action,
     .default_shortcut = "Ctrl V",
@@ -1545,7 +1544,7 @@ static void a_view_toggle_ortho(void)
     camera->ortho = !camera->ortho;
 }
 
-ACTION_REGISTER(view_left,
+ACTION_REGISTER(ACTION_view_left,
     .help = "Set camera view to left",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc_data = a_view_set,
@@ -1553,7 +1552,7 @@ ACTION_REGISTER(view_left,
     .default_shortcut = "Ctrl 3",
 )
 
-ACTION_REGISTER(view_right,
+ACTION_REGISTER(ACTION_view_right,
     .help = "Set camera view to right",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc_data = a_view_set,
@@ -1561,7 +1560,7 @@ ACTION_REGISTER(view_right,
     .default_shortcut = "3",
 )
 
-ACTION_REGISTER(view_top,
+ACTION_REGISTER(ACTION_view_top,
     .help = "Set camera view to top",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc_data = a_view_set,
@@ -1569,14 +1568,14 @@ ACTION_REGISTER(view_top,
     .default_shortcut = "7",
 )
 
-ACTION_REGISTER(view_default,
+ACTION_REGISTER(ACTION_view_default,
     .help = "Set camera view to default",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_view_default,
     .default_shortcut = "0",
 )
 
-ACTION_REGISTER(view_front,
+ACTION_REGISTER(ACTION_view_front,
     .help = "Set camera view to front",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc_data = a_view_set,
@@ -1584,7 +1583,7 @@ ACTION_REGISTER(view_front,
     .default_shortcut = "1",
 )
 
-ACTION_REGISTER(view_toggle_ortho,
+ACTION_REGISTER(ACTION_view_toggle_ortho,
     .help = "Toggle between perspective and orthoggraphic view",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_view_toggle_ortho,
@@ -1595,7 +1594,7 @@ static void quit(void)
 {
     gui_query_quit();
 }
-ACTION_REGISTER(quit,
+ACTION_REGISTER(ACTION_quit,
     .help = "Quit the application",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = quit,
@@ -1629,7 +1628,7 @@ static void a_reset(void)
     gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, NULL, new_file_popup);
 }
 
-ACTION_REGISTER(reset,
+ACTION_REGISTER(ACTION_reset,
     .help = "New",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_reset,
@@ -1652,7 +1651,7 @@ static void a_reset_512(void)
     gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, NULL, new_file_popup);
 }
 
-ACTION_REGISTER(reset_512,
+ACTION_REGISTER(ACTION_reset_512,
     .help = "New 512x64x512",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_reset_512,
@@ -1662,7 +1661,7 @@ ACTION_REGISTER(reset_512,
 static void undo(void) { image_undo(goxel.image); }
 static void redo(void) { image_redo(goxel.image); }
 
-ACTION_REGISTER(undo,
+ACTION_REGISTER(ACTION_undo,
     .help = "Undo",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = undo,
@@ -1670,7 +1669,7 @@ ACTION_REGISTER(undo,
     .icon = ICON_ARROW_BACK,
 )
 
-ACTION_REGISTER(redo,
+ACTION_REGISTER(ACTION_redo,
     .help = "Redo",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = redo,
@@ -1689,7 +1688,7 @@ static void toggle_mode(void)
     goxel.painter.mode = mode;
 }
 
-ACTION_REGISTER(toggle_mode,
+ACTION_REGISTER(ACTION_toggle_mode,
     .help = "Toggle the tool mode (add, sub, paint)",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = toggle_mode,
@@ -1701,7 +1700,7 @@ static void a_set_mode(void *data)
     goxel.painter.mode = mode;
 }
 
-ACTION_REGISTER(set_mode_add,
+ACTION_REGISTER(ACTION_set_mode_add,
     .help = "Set tool mode to 'add'",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc_data = a_set_mode,
@@ -1710,7 +1709,7 @@ ACTION_REGISTER(set_mode_add,
     .default_shortcut = "T",
 )
 
-ACTION_REGISTER(set_mode_sub,
+ACTION_REGISTER(ACTION_set_mode_sub,
     .help = "Set tool mode to 'sub'",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc_data = a_set_mode,
@@ -1719,7 +1718,7 @@ ACTION_REGISTER(set_mode_sub,
     .default_shortcut = "R",
 )
 
-ACTION_REGISTER(set_mode_paint,
+ACTION_REGISTER(ACTION_set_mode_paint,
     .help = "Set tool mode to 'sub'",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc_data = a_set_mode,
@@ -1735,19 +1734,19 @@ static void toggle_plane_visible(void) {
     set_flag(&goxel.snap_mask, SNAP_PLANE, !v);
 }
 
-ACTION_REGISTER(move_plane_up,
+ACTION_REGISTER(ACTION_move_plane_up,
     .help = "Plane - Move up",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = move_plane_up,
     .default_shortcut = "."
 )
-ACTION_REGISTER(move_plane_down,
+ACTION_REGISTER(ACTION_move_plane_down,
     .help = "Plane - Move down",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = move_plane_down,
     .default_shortcut = ","
 )
-ACTION_REGISTER(toggle_plane_visible,
+ACTION_REGISTER(ACTION_toggle_plane_visible,
     .help = "Plane - Toggle visibility",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = toggle_plane_visible,
@@ -1764,13 +1763,13 @@ static void tool_size_change(float delta) {
 static void tool_size_increase(void) { tool_size_change(0.5); }
 static void tool_size_decrease(void) { tool_size_change(-0.5); }
 
-ACTION_REGISTER(tool_size_increase,
+ACTION_REGISTER(ACTION_tool_size_increase,
     .help = "Tool size - increase",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = tool_size_increase,
     .default_shortcut = "]"
 )
-ACTION_REGISTER(tool_size_decrease,
+ACTION_REGISTER(ACTION_tool_size_decrease,
     .help = "Tool size - decrease",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = tool_size_decrease,
@@ -1783,7 +1782,7 @@ static void toggle_first_person_camera(void)
     cam->fpv = !cam->fpv;
     post_toggle_fpv(cam);
 }
-ACTION_REGISTER(toggle_first_person_camera,
+ACTION_REGISTER(ACTION_toggle_first_person_camera,
     .help = "Toggle first person camera",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = toggle_first_person_camera,
@@ -1832,7 +1831,7 @@ static void select_layer_under_cursor(void)
         LOG_D("Unable to find.");
     }
 }
-ACTION_REGISTER(select_layer_under_cursor,
+ACTION_REGISTER(ACTION_select_layer_under_cursor,
     .help = "Select layer under cursor",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = select_layer_under_cursor,

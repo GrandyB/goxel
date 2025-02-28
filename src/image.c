@@ -806,7 +806,7 @@ static void image_image_layer_to_volume(image_t *img, layer_t *layer)
     free(data);
 }
 
-ACTION_REGISTER(layer_clear,
+ACTION_REGISTER(ACTION_layer_clear,
     .help = "Clear the current layer",
     .cfunc = image_clear_layer,
     .icon = ICON_DELETE,
@@ -819,7 +819,7 @@ static void a_image_add_layer(void)
     image_add_layer(goxel.image, NULL);
 }
 
-ACTION_REGISTER(img_new_layer,
+ACTION_REGISTER(ACTION_img_new_layer,
     .help = "Add a new layer to the image",
     .cfunc = a_image_add_layer,
     .flags = ACTION_TOUCH_IMAGE,
@@ -831,7 +831,7 @@ static void a_image_delete_layer(void)
     image_delete_layer(goxel.image, goxel.image->active_layer);
 }
 
-ACTION_REGISTER(img_del_layer,
+ACTION_REGISTER(ACTION_img_del_layer,
     .help = "Delete the active layer",
     .cfunc = a_image_delete_layer,
     .flags = ACTION_TOUCH_IMAGE,
@@ -849,14 +849,14 @@ static void a_image_move_layer_down(void)
 }
 
 
-ACTION_REGISTER(img_move_layer_up,
+ACTION_REGISTER(ACTION_img_move_layer_up,
     .help = "Move the active layer up",
     .cfunc = a_image_move_layer_up,
     .flags = ACTION_TOUCH_IMAGE,
     .icon = ICON_ARROW_UPWARD,
 )
 
-ACTION_REGISTER(img_move_layer_down,
+ACTION_REGISTER(ACTION_img_move_layer_down,
     .help = "Move the active layer down",
     .cfunc = a_image_move_layer_down,
     .flags = ACTION_TOUCH_IMAGE,
@@ -868,7 +868,7 @@ static void a_image_duplicate_layer(void)
     image_duplicate_layer(goxel.image, goxel.image->active_layer);
 }
 
-ACTION_REGISTER(img_duplicate_layer,
+ACTION_REGISTER(ACTION_img_duplicate_layer,
     .help = "Duplicate the active layer",
     .cfunc = a_image_duplicate_layer,
     .flags = ACTION_TOUCH_IMAGE,
@@ -879,7 +879,7 @@ static void a_image_clone_layer(void)
     image_clone_layer(goxel.image, goxel.image->active_layer);
 }
 
-ACTION_REGISTER(img_clone_layer,
+ACTION_REGISTER(ACTION_img_clone_layer,
     .help = "Clone the active layer",
     .cfunc = a_image_clone_layer,
     .flags = ACTION_TOUCH_IMAGE,
@@ -890,7 +890,7 @@ static void a_image_unclone_layer(void)
     image_unclone_layer(goxel.image, goxel.image->active_layer);
 }
 
-ACTION_REGISTER(img_unclone_layer,
+ACTION_REGISTER(ACTION_img_unclone_layer,
     .help = "Unclone the active layer",
     .cfunc = a_image_unclone_layer,
     .flags = ACTION_TOUCH_IMAGE,
@@ -903,7 +903,7 @@ static void a_img_select_parent_layer(void)
 }
 
 
-ACTION_REGISTER(img_select_parent_layer,
+ACTION_REGISTER(ACTION_img_select_parent_layer,
     .help = "Select the parent of a layer",
     .cfunc = a_img_select_parent_layer,
     .flags = ACTION_TOUCH_IMAGE,
@@ -913,7 +913,7 @@ static void a_img_merge_layer_down(void)
 {
     image_merge_layer_down(goxel.image);
 }
-ACTION_REGISTER(img_merge_layer_down,
+ACTION_REGISTER(ACTION_img_merge_layer_down,
     .help = "Merge layer down",
     .cfunc = a_img_merge_layer_down,
     .flags = ACTION_TOUCH_IMAGE,
@@ -925,7 +925,7 @@ static void a_img_merge_visible_layers(void)
     image_merge_visible_layers(goxel.image);
 }
 
-ACTION_REGISTER(img_merge_visible_layers,
+ACTION_REGISTER(ACTION_img_merge_visible_layers,
     .help = "Merge all the visible layers",
     .cfunc = a_img_merge_visible_layers,
     .flags = ACTION_TOUCH_IMAGE,
@@ -936,7 +936,7 @@ static void a_img_new_camera(void)
     image_add_camera(goxel.image, NULL);
 }
 
-ACTION_REGISTER(img_new_camera,
+ACTION_REGISTER(ACTION_img_new_camera,
     .help = "Add a new camera to the image",
     .cfunc = a_img_new_camera,
     .flags = ACTION_TOUCH_IMAGE,
@@ -948,7 +948,7 @@ static void a_img_del_camera(void)
     image_delete_camera(goxel.image, goxel.image->active_camera);
 }
 
-ACTION_REGISTER(img_del_camera,
+ACTION_REGISTER(ACTION_img_del_camera,
     .help = "Delete the active camera",
     .cfunc = a_img_del_camera,
     .flags = ACTION_TOUCH_IMAGE,
@@ -965,14 +965,14 @@ static void a_img_move_camera_down(void)
     image_move_camera(goxel.image, goxel.image->active_camera, +1);
 }
 
-ACTION_REGISTER(img_move_camera_up,
+ACTION_REGISTER(ACTION_img_move_camera_up,
     .help = "Move the active camera up",
     .cfunc = a_img_move_camera_up,
     .flags = ACTION_TOUCH_IMAGE,
     .icon = ICON_ARROW_UPWARD,
 )
 
-ACTION_REGISTER(img_move_camera_down,
+ACTION_REGISTER(ACTION_img_move_camera_down,
     .help = "Move the active camera down",
     .cfunc = a_img_move_camera_down,
     .flags = ACTION_TOUCH_IMAGE,
@@ -984,7 +984,7 @@ static void a_img_image_layer_to_volume(void)
     image_image_layer_to_volume(goxel.image, goxel.image->active_layer);
 }
 
-ACTION_REGISTER(img_image_layer_to_volume,
+ACTION_REGISTER(ACTION_img_image_layer_to_volume,
     .help = "Turn an image layer into a volume",
     .cfunc = a_img_image_layer_to_volume,
     .flags = ACTION_TOUCH_IMAGE,
@@ -995,7 +995,7 @@ static void a_img_new_shape_layer(void)
     image_add_shape_layer(goxel.image);
 }
 
-ACTION_REGISTER(img_new_shape_layer,
+ACTION_REGISTER(ACTION_img_new_shape_layer,
     .help = "Add a new shape layer to the image",
     .cfunc = a_img_new_shape_layer,
     .flags = ACTION_TOUCH_IMAGE,
@@ -1006,7 +1006,7 @@ static void a_img_new_material(void)
     image_add_material(goxel.image, NULL);
 }
 
-ACTION_REGISTER(img_new_material,
+ACTION_REGISTER(ACTION_img_new_material,
     .help = "Add a new material to the image",
     .cfunc = a_img_new_material,
     .flags = ACTION_TOUCH_IMAGE,
@@ -1018,20 +1018,20 @@ static void a_img_del_material(void)
     image_delete_material(goxel.image, goxel.image->active_material);
 }
 
-ACTION_REGISTER(img_del_material,
+ACTION_REGISTER(ACTION_img_del_material,
     .help = "Delete a material",
     .cfunc = a_img_del_material,
     .flags = ACTION_TOUCH_IMAGE,
     .icon = ICON_REMOVE,
 )
 
-ACTION_REGISTER(img_auto_resize,
+ACTION_REGISTER(ACTION_img_auto_resize,
     .help = "Auto resize the image to fit the layers",
     .cfunc = a_image_auto_resize,
     .flags = ACTION_TOUCH_IMAGE,
 )
 
-ACTION_REGISTER(img_auto_resize_reset,
+ACTION_REGISTER(ACTION_img_auto_resize_reset,
     .help = "Auto resize the image to fit visible layers and reset the origin",
     .cfunc = a_image_auto_resize_reset,
     .flags = ACTION_TOUCH_IMAGE,
