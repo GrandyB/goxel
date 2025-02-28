@@ -28,6 +28,29 @@ typedef struct
     genland_settings_t *settings;
 } filter_genland_t;
 
+static void reset_to_default(filter_genland_t *filter) {
+    filter->settings = (genland_settings_t *)malloc(sizeof(genland_settings_t));
+
+    filter->settings->max_height = 64;
+    filter->settings->num_octaves = 10;
+
+    // Colors
+    uint8_t ground[4] = {140, 125, 115, 255};
+    uint8_t grass1[4] = {72, 80, 32, 255};
+    uint8_t grass2[4] = {68, 78, 40, 255};
+    uint8_t water[4] = {60, 100, 120, 255};
+    memcpy(filter->settings->color_ground, ground, sizeof(ground));
+    memcpy(filter->settings->color_grass1, grass1, sizeof(grass1));
+    memcpy(filter->settings->color_grass2, grass2, sizeof(grass2));
+    memcpy(filter->settings->color_water, water, sizeof(water));
+}
+
+static void on_open(filter_t *filter_)
+{
+    filter_genland_t *filter = (void *)filter_;
+    reset_to_default(filter);
+}
+
 static int gui(filter_t *filter_)
 {
     filter_genland_t *filter = (void *)filter_;
@@ -50,32 +73,18 @@ static int gui(filter_t *filter_)
     gui_color_small("Grass2", filter->settings->color_grass2);
     gui_color_small("Water", filter->settings->color_water);
     gui_group_end();
+    
+    if (gui_button("Reset to defaults", -1, 0))
+    {
+        reset_to_default(filter);
+    }
 
-    if (gui_button("Apply", -1, 0))
+    if (gui_button("Generate", -1, 0))
     {
         image_history_push(goxel.image);
         generate_tomland_terrain(layer->volume, filter->settings);
     }
     return 0;
-}
-
-static void on_open(filter_t *filter_)
-{
-    filter_genland_t *filter = (void *)filter_;
-    filter->settings = (genland_settings_t *)malloc(sizeof(genland_settings_t));
-
-    filter->settings->max_height = 64;
-    filter->settings->num_octaves = 10;
-
-    // Colors
-    uint8_t ground[4] = {140, 125, 115, 255};
-    uint8_t grass1[4] = {72, 80, 32, 255};
-    uint8_t grass2[4] = {68, 78, 40, 255};
-    uint8_t water[4] = {60, 100, 120, 255};
-    memcpy(filter->settings->color_ground, ground, sizeof(ground));
-    memcpy(filter->settings->color_grass1, grass1, sizeof(grass1));
-    memcpy(filter->settings->color_grass2, grass2, sizeof(grass2));
-    memcpy(filter->settings->color_water, water, sizeof(water));
 }
 
 FILTER_REGISTER(genland, filter_genland_t,
