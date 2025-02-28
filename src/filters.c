@@ -39,6 +39,7 @@
  
  void filter_register_(filter_t *filter)
  {
+    LOG_D("registering action: %s", filter->action_id);
      action_t action;
      action = (action_t) {
          .id = filter->action_id,
