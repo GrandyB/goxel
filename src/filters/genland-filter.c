@@ -38,6 +38,8 @@ static void reset_to_default(filter_genland_t *filter) {
     filter->settings->river_width = 0.02;
     filter->settings->variety = 20.0;
     filter->settings->offset = 28.0;
+    filter->settings->noise_terrain = 9.5;
+    filter->settings->noise_river = 13.2;
 
     // Colors
     uint8_t ground[4] = {140, 125, 115, 255};
@@ -79,6 +81,8 @@ static int gui(filter_t *filter_)
     gui_input_float("River width", &filter->settings->river_width, 0.01, 0, 1, "%.2f");
     gui_input_float("Variety", &filter->settings->variety, 1.00, 0, 100, "%.0f");
     gui_input_float("Offset", &filter->settings->offset, 1.00, 0, 100, "%.0f");
+    gui_input_float("Terrain noise", &filter->settings->noise_terrain, 0.1, 0, 100, "%.1f");
+    gui_input_float("River noise", &filter->settings->noise_river, 0.1, 0, 100, "%.1f");
 
     gui_group_begin("Colors");
     gui_color_small("Ground", filter->settings->color_ground);

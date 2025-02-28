@@ -264,9 +264,9 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
                 // Accumulate multi-fractal noise over all octaves
                 for (octave = 0; octave < settings->num_octaves; octave++)
                 {
-                    tempValue += noise3d(sampleX, sampleY, 9.5, maskLUT[octave])
+                    tempValue += noise3d(sampleX, sampleY, settings->noise_terrain, maskLUT[octave])
                                  * octaveAmplitudes[octave] * (tempValue * 1.6 + 1.0);
-                    riverNoise += noise3d(sampleX, sampleY, 13.2, maskLUT[octave])
+                    riverNoise += noise3d(sampleX, sampleY, settings->noise_river, maskLUT[octave])
                                   * octaveAmplitudes[octave];
                     sampleX *= 2;  // Increase frequency for next octave
                     sampleY *= 2;

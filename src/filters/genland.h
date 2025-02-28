@@ -14,6 +14,8 @@ typedef struct {
     float river_width;
     float variety;
     float offset;
+    float noise_terrain;
+    float noise_river;
 
     // Colors
     uint8_t color_ground[4];
