@@ -7,6 +7,7 @@
 #include "goxel.h"
 
 typedef struct {
+    // Generation pieces
     int max_height;
     int num_octaves;
     float amp_octave_mult;
@@ -14,10 +15,15 @@ typedef struct {
     float variety;
     float offset;
 
+    // Colors
     uint8_t color_ground[4];
     uint8_t color_grass1[4];
     uint8_t color_grass2[4];
     uint8_t color_water[4];
+
+    // Lighting
+    float shadow_factor;
+    float ambience_factor;
 } genland_settings_t;
 
 EXTERNC void generate_tomland_terrain(volume_t *volume, genland_settings_t *settings);

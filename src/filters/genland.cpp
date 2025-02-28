@@ -53,14 +53,9 @@ typedef struct
     unsigned char b, g, r, a;
 } vcol;
 
-// Anything less than 9/512 seems to crash
-#if 1
-#define VSHL 9
+// Anything less than 512/9 seems to crash
 #define VSID 512
-#else // nice for testing:
-#define VSHL 8
-#define VSID 256
-#endif
+#define VSHL 9
 
 static void process_voxel_data(volume_t *volume, genland_settings_t *settings, vcol *argb)
 {
@@ -90,76 +85,6 @@ static void process_voxel_data(volume_t *volume, genland_settings_t *settings, v
             }
         }
     }
-}
-
-
-long savevxl(char *filnam, vcol *argb)
-{
-    dpoint3d ipo, ist, ihe, ifo;
-    long i, j, x, y, z, zz;
-    FILE *fil;
-
-    if (!(fil = fopen(filnam, "wb")))
-        return (-1);
-
-    i = 0x09072000;
-    fwrite(&i, 4, 1, fil); // Version
-    i = VSID;
-    fwrite(&i, 4, 1, fil);
-    i = VSID;
-    fwrite(&i, 4, 1, fil);
-
-    ipo.x = ipo.y = VSID * .5;
-    ipo.z = argb[(VSID >> 1) * VSID + (VSID >> 1)].a - 64;
-    ist.x = 1;
-    ist.y = 0;
-    ist.z = 0;
-    ihe.x = 0;
-    ihe.y = 0;
-    ihe.z = 1;
-    ifo.x = 0;
-    ifo.y = -1;
-    ifo.z = 0;
-    fwrite(&ipo, 24, 1, fil);
-    fwrite(&ist, 24, 1, fil);
-    fwrite(&ihe, 24, 1, fil);
-    fwrite(&ifo, 24, 1, fil);
-
-    for (y = 0; y < VSID; y++)
-        for (x = 0; x < VSID; x++, argb++)
-        {
-            z = (long)argb[0].a;
-            zz = z + 1;
-            for (i = -1; i <= 1; i += 2)
-            {
-                if ((unsigned long)(x + i) < VSID)
-                {
-                    j = (long)argb[i].a;
-                    if (j > zz)
-                        zz = j;
-                }
-                if ((unsigned long)(y + i) < VSID)
-                {
-                    j = (long)argb[i * VSID].a;
-                    if (j > zz)
-                        zz = j;
-                }
-            }
-
-            // Write slab header for column(x,y)
-            fputc(0, fil);
-            fputc(z, fil);
-            fputc((zz - 1) & 255, fil);
-            fputc(0, fil);
-
-            i = (((*(long *)argb) & 0xffffff) | 0x80000000);
-            // Write list of colors on column(x,y)
-            for (; z < zz; z++)
-                fwrite(&i, 4, 1, fil);
-        }
-
-    fclose(fil);
-    return (0);
 }
 
 //----------------------------------------------------------------------------
@@ -308,7 +233,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     long maskLUT[settings->num_octaves];
 
     printf("Heightmap generator by Tom Dobrowoski (http://ged.ax.pl/~tomkh)\n");
-    printf("Output formats by Ken Silverman (http://advsys.net/ken)\n");
+    printf("Assistance by Ken Silverman (http://advsys.net/ken)\n");
 
     noiseinit();
 
@@ -397,7 +322,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
             groundBlue += ((settings->color_water[2] * grassBlend) - groundBlue) * secondaryBlend;
 
             // Compute ambient color contribution using a fixed ambient factor
-            tempValue = 0.3;  // Ambient factor
+            tempValue = settings->ambience_factor;
             amb[globalIndex].r = (unsigned char)min(max(groundRed * tempValue, 0), 255);
             amb[globalIndex].g = (unsigned char)min(max(groundGreen * tempValue, 0), 255);
             amb[globalIndex].b = (unsigned char)min(max(groundBlue * tempValue, 0), 255);
@@ -422,7 +347,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     }
     printf("\r");
 
-    printf("Applying shadows\n");
+    printf("Applying lighting/shadows\n");
 
     // Initialize shadow map to zero
     memset(sh, 0, sizeof(sh));
@@ -435,13 +360,13 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
             shadowCheckValue = hgt[globalIndex] + 0.44;
             // Step through offsets to determine if shadow should be cast
             for (shadowIter = 1, octaveIndex = 1;
-                 octaveIndex < (VSID >> 2);
-                 shadowIter++, octaveIndex++, shadowCheckValue += 0.44)
+                octaveIndex < (VSID >> 2);
+                shadowIter++, octaveIndex++, shadowCheckValue += 0.44)
             {
                 if (hgt[(((pixelY - (shadowIter >> 1)) & (VSID - 1)) << VSHL)
                         + ((pixelX - octaveIndex) & (VSID - 1))] > shadowCheckValue)
                 {
-                    sh[globalIndex] = 32;
+                    sh[globalIndex] = settings->shadow_factor;
                     break;
                 }
             }
@@ -454,10 +379,10 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
         for (pixelX = 0; pixelX < VSID; pixelX++, globalIndex++)
         {
             sh[globalIndex] = (sh[globalIndex] +
-                     sh[(((pixelY + 1) & (VSID - 1)) << VSHL) + pixelX] +
-                     sh[(pixelY << VSHL) + ((pixelX + 1) & (VSID - 1))] +
-                     sh[(((pixelY + 1) & (VSID - 1)) << VSHL) + ((pixelX + 1) & (VSID - 1))]
-                     + 2) >> 2;
+                    sh[(((pixelY + 1) & (VSID - 1)) << VSHL) + pixelX] +
+                    sh[(pixelY << VSHL) + ((pixelX + 1) & (VSID - 1))] +
+                    sh[(((pixelY + 1) & (VSID - 1)) << VSHL) + ((pixelX + 1) & (VSID - 1))]
+                    + 2) >> 2;
         }
     }
     // Apply shadow effect to final color buffer by darkening colors
@@ -467,9 +392,9 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
         for (pixelX = 0; pixelX < VSID; pixelX++, globalIndex++)
         {
             colorIndex = 256 - (sh[globalIndex] << 2);
-            buf[globalIndex].r = ((buf[globalIndex].r * colorIndex) >> 8) + amb[globalIndex].r;
-            buf[globalIndex].g = ((buf[globalIndex].g * colorIndex) >> 8) + amb[globalIndex].g;
-            buf[globalIndex].b = ((buf[globalIndex].b * colorIndex) >> 8) + amb[globalIndex].b;
+            buf[globalIndex].r = clamp(((buf[globalIndex].r * colorIndex) >> 8) + amb[globalIndex].r, 0, 255);
+            buf[globalIndex].g = clamp(((buf[globalIndex].g * colorIndex) >> 8) + amb[globalIndex].g, 0, 255);
+            buf[globalIndex].b = clamp(((buf[globalIndex].b * colorIndex) >> 8) + amb[globalIndex].b, 0, 255);
         }
     }
 

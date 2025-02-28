@@ -31,7 +31,8 @@ typedef struct
 static void reset_to_default(filter_genland_t *filter) {
     filter->settings = (genland_settings_t *)malloc(sizeof(genland_settings_t));
 
-    filter->settings->max_height = 190;
+    // Generation
+    filter->settings->max_height = 64;
     filter->settings->num_octaves = 10;
     filter->settings->amp_octave_mult = 0.4;
     filter->settings->river_width = 0.02;
@@ -47,6 +48,10 @@ static void reset_to_default(filter_genland_t *filter) {
     memcpy(filter->settings->color_grass1, grass1, sizeof(grass1));
     memcpy(filter->settings->color_grass2, grass2, sizeof(grass2));
     memcpy(filter->settings->color_water, water, sizeof(water));
+
+    // Lighting
+    filter->settings->shadow_factor = 32;
+    filter->settings->ambience_factor = 0.3;
 }
 
 static void on_open(filter_t *filter_)
@@ -80,6 +85,11 @@ static int gui(filter_t *filter_)
     gui_color_small("Grass1", filter->settings->color_grass1);
     gui_color_small("Grass2", filter->settings->color_grass2);
     gui_color_small("Water", filter->settings->color_water);
+    gui_group_end();
+
+    gui_group_begin("Lighting");
+    gui_input_float("Shadow", &filter->settings->shadow_factor, 1.00, 0, 255, "%.0f");
+    gui_input_float("Ambient", &filter->settings->ambience_factor, 0.01, 0, 1, "%.2f");
     gui_group_end();
 
     if (gui_button("Reset to defaults", -1, 0))
