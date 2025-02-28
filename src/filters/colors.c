@@ -26,7 +26,6 @@
 typedef struct
 {
     filter_t filter;
-    volume_t *original;
     float hue;
     float lightness;
     float saturation;
@@ -145,15 +144,8 @@ static void on_open(filter_t *filter_)
     filter->lightness = 0;
     filter->saturation = 0;
     filter->contrast = 0;
-    filter->original = volume_copy(goxel.image->active_layer->volume);
 }
 
-static void on_close(filter_t *filter_)
-{
-    filter_colors_t *filter = (void *)filter_;
-    volume_delete(filter->original);
-    image_history_push(goxel.image);
-}
 
 static void move_value(float *x, float v)
 {
@@ -178,12 +170,11 @@ static void apply_values(void *args, uint8_t color[4])
 static int gui(filter_t *filter_)
 {
     filter_colors_t *filter = (void *)filter_;
-    layer_t *layer = goxel.image->active_layer;
     float hue = filter->hue;
     float lightness = filter->lightness;
     float saturation = filter->saturation;
     float contrast = filter->contrast;
-    bool changed;
+    //bool changed;
 
     const char* help_text = "Color adjustment filter acts on the current layer as it was when the filter panel was opened, until you hit 're-acquire'. 'Reset' will reset to the state the volume had when this panel was opened. Both will reset the four values to 0.";
     goxel_set_help_text(help_text);
@@ -193,30 +184,21 @@ static int gui(filter_t *filter_)
     slider_float("Saturation", &saturation, -100., +100., "%.1f");
     slider_float("Contrast", &contrast, -100., +100., "%.1f");
 
-    changed = hue != filter->hue || lightness != filter->lightness ||
-              saturation != filter->saturation || contrast != filter->contrast;
-    if (changed)
+    //changed = hue != filter->hue || lightness != filter->lightness ||
+    //          saturation != filter->saturation || contrast != filter->contrast;
+    filter->hue = hue;
+    filter->lightness = lightness;
+    filter->saturation = saturation;
+    filter->contrast = contrast;
+
+    if (gui_button("Apply", -1, 0))
     {
-        volume_set(layer->volume, filter->original);
-        filter->hue = hue;
-        filter->lightness = lightness;
-        filter->saturation = saturation;
-        filter->contrast = contrast;
+        image_history_push(goxel.image);
         goxel_apply_color_filter(apply_values, filter);
     }
 
-    if (gui_button("Undo", -1, 0))
+    if (gui_button("Reset sliders", -1, 0))
     {
-        volume_set(layer->volume, filter->original);
-        filter->hue = 0;
-        filter->lightness = 0;
-        filter->saturation = 0;
-        filter->contrast = 0;
-    }
-
-    if (gui_button("Re-acquire", -1, 0))
-    {
-        volume_set(filter->original, layer->volume);
         filter->hue = 0;
         filter->lightness = 0;
         filter->saturation = 0;
@@ -228,5 +210,4 @@ static int gui(filter_t *filter_)
 FILTER_REGISTER(colors, filter_colors_t,
                 .name = "Adjust Colors",
                 .on_open = on_open,
-                .on_close = on_close,
                 .gui_fn = gui, )

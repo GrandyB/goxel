@@ -27,10 +27,11 @@ typedef struct
 {
     filter_t filter;
     bool current_only;
+    int distance;
 } filter_wrap_t;
 
 static void volume_wrap(volume_t *volume, int axis, int sign,
-                        const int aabb[2][3])
+                        const int aabb[2][3], int filter_distance)
 {
     int pos[3];
     int buffer_pos[3];
@@ -39,10 +40,11 @@ static void volume_wrap(volume_t *volume, int axis, int sign,
     uint8_t *buffer;
     int i;
     size_t buffer_offset;
+    int distance;
 
     if (aabb[1][axis] - aabb[0][axis] == 1)
     {
-        return;
+        return; // No space to move
     }
 
     size[0] = aabb[1][0] - aabb[0][0];
@@ -51,6 +53,9 @@ static void volume_wrap(volume_t *volume, int axis, int sign,
 
     buffer = malloc(4 * size[0] * size[1] * size[2]);
 
+    distance = (filter_distance % size[axis]) * sign; // Ensure wrapping works correctly
+
+    // Step 1: Copy voxels into buffer with adjusted positions
     for (pos[0] = 0; pos[0] < size[0]; pos[0]++)
     {
         for (pos[1] = 0; pos[1] < size[1]; pos[1]++)
@@ -62,11 +67,12 @@ static void volume_wrap(volume_t *volume, int axis, int sign,
 
                 for (i = 0; i < 3; i++)
                 {
-                    volume_pos[i] += aabb[0][i];
+                    volume_pos[i] += aabb[0][i]; // Convert local position to volume position
                 }
 
-                buffer_pos[axis] += sign;
+                buffer_pos[axis] += distance;
 
+                // Wrap around when exceeding boundaries
                 if (buffer_pos[axis] < 0)
                 {
                     buffer_pos[axis] += size[axis];
@@ -82,6 +88,7 @@ static void volume_wrap(volume_t *volume, int axis, int sign,
         }
     }
 
+    // Step 2: Apply modified buffer back to volume
     for (pos[0] = 0; pos[0] < size[0]; pos[0]++)
     {
         for (pos[1] = 0; pos[1] < size[1]; pos[1]++)
@@ -92,7 +99,7 @@ static void volume_wrap(volume_t *volume, int axis, int sign,
 
                 for (i = 0; i < 3; i++)
                 {
-                    volume_pos[i] += aabb[0][i];
+                    volume_pos[i] += aabb[0][i]; // Convert local position to volume position
                 }
 
                 buffer_offset = 4 * (pos[2] * size[0] * size[1] +
@@ -159,6 +166,8 @@ static int gui(filter_t *filter)
     if (box_is_null(box))
         memcpy(box, goxel.image->box, sizeof(box));
 
+    gui_input_int("Distance", &wrap->distance, 0, 9999);
+
     gui_group_begin(NULL);
 
     should_wrap = wrap_box(&axis, &sign);
@@ -186,7 +195,7 @@ static int gui(filter_t *filter)
             if (wrap->current_only && layer != goxel.image->active_layer)
                 continue;
 
-            volume_wrap(layer->volume, axis, sign, aabb);
+            volume_wrap(layer->volume, axis, sign, aabb, wrap->distance);
         }
         image_history_push(goxel.image);
     }
@@ -194,6 +203,13 @@ static int gui(filter_t *filter)
     return 0;
 }
 
+static void on_open(filter_t *filter_)
+{
+    filter_wrap_t *filter = (void *)filter_;
+    filter->distance = 1;
+}
+
 FILTER_REGISTER(wrap, filter_wrap_t,
                 .name = "Wrap voxels",
+                .on_open = on_open,
                 .gui_fn = gui, )

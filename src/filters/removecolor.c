@@ -25,19 +25,19 @@ typedef struct
 {
     filter_t filter;
     uint8_t color[4];
-} filter_fillz_t;
+} filter_removecolor_t;
 
 static int gui(filter_t *filter_)
 {
-    filter_fillz_t *filter = (void *)filter_;
+    filter_removecolor_t *filter = (void *)filter_;
     layer_t *layer = goxel.image->active_layer;
+    uint8_t empty_color[4] = {0, 0, 0, 0};
     float box[4][4];
     int start_x, start_y, start_z, vol_w, vol_h, vol_d, x, y, z, pos[3];
     uint8_t cur_block_color[4];
     volume_iterator_t iter;
-    int found_block_index = -1;
 
-    const char *help_text = "This tool navigates all columns of blocks, filling from bottom with the given color until it meets the first block.";
+    const char *help_text = "This tool removes all blocks of a specified color";
     goxel_set_help_text(help_text);
 
     gui_group_begin(NULL);
@@ -74,26 +74,14 @@ static int gui(filter_t *filter_)
             VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
         for (x = 0; x < vol_w; x++) {
             for (y = 0; y < vol_h; y++) {
-                found_block_index = -1;
                 for (z = 0; z < vol_d; z++)
                 {
                     pos[0] = start_x - x - 1; // x seemed to be flipped, this fixes it despite looking like an outlier
                     pos[1] = y + start_y;
                     pos[2] = z + start_z;
-                    // Work from bottom y upwards, filling with the color until we meet a block
                     volume_get_at(layer->volume, &iter, pos, cur_block_color);
-                    if (cur_block_color[3] != 0) {
-                        // Reached a block
-                        found_block_index = z;
-                        break;
-                    }
-                }
-                if (found_block_index != -1) {
-                    for (z = 0; z < found_block_index; z++) {
-                        pos[0] = start_x - x - 1; // x seemed to be flipped, this fixes it despite looking like an outlier
-                        pos[1] = y + start_y;
-                        pos[2] = z + start_z;
-                        volume_set_at(layer->volume, &iter, pos, filter->color);
+                    if (memcmp(filter->color, cur_block_color, 4) == 0) {
+                        volume_set_at(layer->volume, &iter, pos, empty_color);
                     }
                 }
             }
@@ -104,12 +92,12 @@ static int gui(filter_t *filter_)
 
 static void on_open(filter_t *filter_)
 {
-    filter_fillz_t *filter = (void *)filter_;
+    filter_removecolor_t *filter = (void *)filter_;
     uint8_t default_color[4] = {103, 64, 40, 255};
     memcpy(filter->color, default_color, sizeof(default_color));
 }
 
-FILTER_REGISTER(fillz, filter_fillz_t,
-                .name = "Fill Z by color",
+FILTER_REGISTER(removecolor, filter_removecolor_t,
+                .name = "Remove block by color",
                 .on_open = on_open,
                 .gui_fn = gui, )
