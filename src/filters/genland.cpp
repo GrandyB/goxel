@@ -30,6 +30,7 @@
 
 extern "C" {
     #include "goxel.h"
+    #include "genland.h"
 }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -60,14 +61,14 @@ static void process_voxel_data(volume_t *volume, vcol *argb) {
     for (int y = 0; y < VSID; y++) {
         for (int x = 0; x < VSID; x++, argb++) {
             int z = (int)argb->a; // Height of the voxel at (x, y)
-            printf("%i/%i: %i\n", x,y,z);
+            //printf("%i/%i: %i\n", x,y,z);
 
             if (z > 0) {  // Only process non-empty blocks
                 pos[0] = x;
                 pos[1] = y;
                 pos[2] = z;
 
-                printf("%i/%i: %i\n", x,y,z);
+                //printf("%i/%i: %i\n", x,y,z);
                 uint8_t color[4] = {argb->r, argb->g, argb->b, 255};  // RGBA color
 
                 volume_set_at(volume, NULL, pos, color); // Set voxel in the volume
@@ -163,8 +164,6 @@ static void noiseinit ()
 	for(i=512-1;i>=0;i--) noisep15[i] = noisep[i]&15;
 }
 
-#define NEWNOISE 0
-#if (NEWNOISE == 0)
 double noise3d (double fx, double fy, double fz, long mask)
 {
 	long i, l[6], a[4];
@@ -195,68 +194,7 @@ double noise3d (double fx, double fy, double fz, long mask)
 	f[1] = (f[3]-f[1])*p[1] + f[1];
 	return((f[1]-f[0])*p[0] + f[0]);
 }
-#else
-	//At attempt at optimization... didn't help much
-double noise3d (double fx, double fy, double fz, long mask, double stp, double *nx, double *ny)
-{
-	long i, l[6], a[8];
-	float p[3], t[3], f[8];
-	float g[8], h[4], ff;
-	double ret;
-	const double gradx[16] = {1,-1,1,-1,1,-1,1,-1,0,0,0,0,1,-1,0,0};
-	const double grady[16] = {1,1,-1,-1,0,0,0,0,1,-1,1,-1,1,1,1,-1};
 
-	//if (mask > 255) mask = 255; //Checked before call
-	l[0] = fx-.5; p[0] = fx-((float)l[0]); l[0] &= mask; l[3] = (l[0]+1)&mask;
-	l[1] = fy-.5; p[1] = fy-((float)l[1]); l[1] &= mask; l[4] = (l[1]+1)&mask;
-	l[2] = fz-.5; p[2] = fz-((float)l[2]); l[2] &= mask; l[5] = (l[2]+1)&mask;
-	i = noisep[l[0]]; a[0] = noisep[i+l[1]]; a[2] = noisep[i+l[4]];
-	i = noisep[l[3]]; a[1] = noisep[i+l[1]]; a[3] = noisep[i+l[4]];
-	a[4] = noisep15[a[0]+l[5]]; a[0] = noisep15[a[0]+l[2]];
-	a[5] = noisep15[a[1]+l[5]]; a[1] = noisep15[a[1]+l[2]];
-	a[6] = noisep15[a[2]+l[5]]; a[2] = noisep15[a[2]+l[2]];
-	a[7] = noisep15[a[3]+l[5]]; a[3] = noisep15[a[3]+l[2]];
-	f[0] = fgrad(a[0],p[0]  ,p[1]  ,p[2]);
-	f[1] = fgrad(a[1],p[0]-1,p[1]  ,p[2]);
-	f[2] = fgrad(a[2],p[0]  ,p[1]-1,p[2]);
-	f[3] = fgrad(a[3],p[0]-1,p[1]-1,p[2]); p[2]--;
-	f[4] = fgrad(a[4],p[0]  ,p[1]  ,p[2])-f[0];
-	f[5] = fgrad(a[5],p[0]-1,p[1]  ,p[2])-f[1];
-	f[6] = fgrad(a[6],p[0]  ,p[1]-1,p[2])-f[2];
-	f[7] = fgrad(a[7],p[0]-1,p[1]-1,p[2])-f[3]; p[2]++;
-
-	t[0] = (3.0 - 2.0*p[0])*p[0]*p[0];
-	t[1] = (3.0 - 2.0*p[1])*p[1]*p[1];
-	t[2] = (3.0 - 2.0*p[2])*p[2]*p[2];
-	g[0] = f[4]*t[2] + f[0];
-	g[1] = f[5]*t[2] + f[1];
-	g[2] = f[6]*t[2] + f[2];
-	g[3] = f[7]*t[2] + f[3];
-	h[0] = (g[2]-g[0])*t[1] + g[0];
-	h[1] = (g[3]-g[1])*t[1] + g[1];
-	ret  = (h[1]-h[0])*t[0] + h[0];
-
-	h[0] = gradx[a[0]]; h[0] = ((gradx[a[4]]-h[0])*t[2] + h[0])*stp + g[0];
-	h[1] = gradx[a[1]]; h[1] = ((gradx[a[5]]-h[1])*t[2] + h[1])*stp + g[1];
-	h[2] = gradx[a[2]]; h[2] = ((gradx[a[6]]-h[2])*t[2] + h[2])*stp + g[2];
-	h[3] = gradx[a[3]]; h[3] = ((gradx[a[7]]-h[3])*t[2] + h[3])*stp + g[3];
-	h[0] = (h[2]-h[0])*t[1] + h[0];
-	h[1] = (h[3]-h[1])*t[1] + h[1];
-	p[0] += stp; ff = (3.0 - 2.0*p[0])*p[0]*p[0];
-	(*nx)= (h[1]-h[0])*ff + h[0] + ret;
-
-	h[0] = grady[a[0]]; h[0] = ((grady[a[4]]-h[0])*t[2] + h[0])*stp + g[0];
-	h[1] = grady[a[1]]; h[1] = ((grady[a[5]]-h[1])*t[2] + h[1])*stp + g[1];
-	h[2] = grady[a[2]]; h[2] = ((grady[a[6]]-h[2])*t[2] + h[2])*stp + g[2];
-	h[3] = grady[a[3]]; h[3] = ((grady[a[7]]-h[3])*t[2] + h[3])*stp + g[3];
-	p[1] += stp; ff = (3.0 - 2.0*p[1])*p[1]*p[1];
-	h[0] = (h[2]-h[0])*ff + h[0];
-	h[1] = (h[3]-h[1])*ff + h[1];
-	(*ny)= (h[1]-h[0])*t[0] + h[0] + ret;
-
-	return(ret);
-}
-#endif
 //--------------------------------------------------------------------------------------------------
 
 vcol buf[VSID*VSID];
@@ -339,13 +277,13 @@ Free to distribute, comments and suggestions are appreciated.
 	//r0 < col <= r1, etc..
 typedef struct { long r0, r1, g0, g1, b0, b1, vol; } box;
 
-	//Histogram is in elements 1..HISTSIZE along each axis,
-	//element 0 is for base or marginal value. Note:these must start out 0!
+//Histogram is in elements 1..HISTSIZE along each axis,
+//element 0 is for base or marginal value. Note:these must start out 0!
 static long *wt = 0, *mr = 0, *mg = 0, *mb = 0;
 static float *m2 = 0;
 static unsigned char *tag;
 
-	//build 3-D color histogram of counts, r/g/b, c^2
+//build 3-D color histogram of counts, r/g/b, c^2
 static void Hist3d (tiletype *tt, long *vwt, long *vmr, long *vmg, long *vmb, float *m2)
 {
 	long i, x, y, r, g, b, *lptr, sq[256];
@@ -642,7 +580,7 @@ void genpal_32to8 (tiletype *rt, tiletype *wt)
 							  ((((lptr[x]    )&255)>>3)+1)];
 }
 
-extern "C" void generate_tomland_terrain(volume_t *volume)
+extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *settings)
 {
 	#define OCTMAX 10
 	#define EPS 0.1
@@ -669,8 +607,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume)
 	{
 		for(x=0;x<VSID;x++,k++)
 		{
-#if (NEWNOISE == 0)
-				//Get 3 samples (0,0), (EPS,0), (0,EPS):
+			//Get 3 samples (0,0), (EPS,0), (0,EPS):
 			for(i=0;i<3;i++)
 			{
 				dx = (x*(256.0/(double)VSID) + (double)(i&1)*EPS)*(1.0/64.0);
@@ -689,33 +626,6 @@ extern "C" void generate_tomland_terrain(volume_t *volume)
 				samp[i] *= d;
 				if (csamp[i] < samp[i]) csamp[i] = -log(1.0-csamp[i]); // simulate water normal ;)
 			}
-#else
-			double rt[3], nt[3];
-
-				//Get 3 samples (0,0), (EPS,0), (0,EPS):
-			dx = x*(4.0/(double)VSID);
-			dy = y*(4.0/(double)VSID);
-			for(i=0;i<3;i++) nt[i] = rt[i] = 0.0;
-			d = EPS*(1.0/64.0);
-			for(o=0;o<OCTMAX;o++)
-			{
-				nt[0] += noise3d(dx,dy,9.5,msklut[o],d,&nx,&ny)*amplut[o]*(nt[0]*1.6+1.0); //multi-fractal
-				nt[1] += nx*amplut[o]*(nt[1]*1.6+1.0);
-				nt[2] += ny*amplut[o]*(nt[2]*1.6+1.0);
-				rt[0] += noise3d(dx,dy,13.2,msklut[o],d,&nx,&ny)*amplut[o];
-				rt[1] += nx*amplut[o];
-				rt[2] += ny*amplut[o];
-				dx *= 2; dy *= 2; d *= 2;
-			}
-			for(i=0;i<3;i++)
-			{
-				samp[i] = nt[i]*-20.0 + 28.0;
-				nt[i] = sin(x*(PI/256.0) + rt[i]*4.0)*.52+.48; if (nt[i] > 1) nt[i] = 1;
-				csamp[i] = samp[i]*nt[i]; if (nt[i] < 0) nt[i] = 0;
-				samp[i] *= nt[i];
-				if (csamp[i] < samp[i]) csamp[i] = -log(1.0-csamp[i]); // simulate water normal ;)
-			}
-#endif
 				//Get normal using cross-product
 			nx = csamp[1]-csamp[0];
 			ny = csamp[2]-csamp[0];
@@ -723,11 +633,9 @@ extern "C" void generate_tomland_terrain(volume_t *volume)
 			d = 1.0/sqrt(nx*nx + ny*ny + nz*nz); nx *= d; ny *= d; nz *= d;
 
 			gr = 140; gg = 125; gb = 115; //Ground
-#if (NEWNOISE == 0)
+            
 			g = min(max(max(-nz,0)*1.4 - csamp[0]/32.0 + noise3d(x*(1.0/64.0),y*(1.0/64.0),.3,15)*.3,0),1);
-#else
-			g = min(max(max(-nz,0)*1.4 - csamp[0]/32.0 + noise3d(x*(1.0/64.0),y*(1.0/64.0),.3,15,0.0,&dx,&dy)*.3,0),1);
-#endif
+            
 			gr += (72-gr)*g; gg += (80-gg)*g; gb += (32-gb)*g; //Grass
 			g2 = (1-fabs(g-.5)*2)*.7;
 			gr += (68-gr)*g2; gg += (78-gg)*g2; gb += (40-gb)*g2; //Grass2
@@ -786,7 +694,6 @@ extern "C" void generate_tomland_terrain(volume_t *volume)
 			buf[k].g = ((buf[k].g*i)>>8) + amb[k].g;
 			buf[k].b = ((buf[k].b*i)>>8) + amb[k].b;
 		}
-
 
 	signprint(426,982);
 

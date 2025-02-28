@@ -25,11 +25,12 @@
 typedef struct
 {
     filter_t filter;
+    genland_settings_t *settings;
 } filter_genland_t;
 
 static int gui(filter_t *filter_)
 {
-    //filter_genland_t *filter = (void *)filter_;
+    filter_genland_t *filter = (void *)filter_;
     layer_t *layer = goxel.image->active_layer;
 
     const char *help_text = "Genland by Tom Dobrowolski";
@@ -40,14 +41,24 @@ static int gui(filter_t *filter_)
         gui_text_wrapped(help_text);
     }
 
+    gui_input_int("Max height", &filter->settings->max_height, 0, 9999);
+
     if (gui_button("Apply", -1, 0))
     {
         image_history_push(goxel.image);
-        generate_tomland_terrain(layer->volume);
+        generate_tomland_terrain(layer->volume, filter->settings);
     }
     return 0;
 }
 
+static void on_open(filter_t *filter_)
+{
+    filter_genland_t *filter = (void *)filter_;
+    filter->settings = (genland_settings_t *)malloc(sizeof(genland_settings_t));
+    filter->settings->max_height = 64;
+}
+
 FILTER_REGISTER(genland, filter_genland_t,
                 .name = "Generation - Genland",
+                .on_open = on_open,
                 .gui_fn = gui, )
