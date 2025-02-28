@@ -1640,6 +1640,7 @@ void image_to_512() {
     goxel.image->box[0][0] = 256;
     goxel.image->box[1][1] = 256;
     goxel.image->box[2][2] = 32;
+    goxel.image->box[3][2] = 0;
 }
 static void a_reset_512(void)
 {
