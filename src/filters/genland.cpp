@@ -61,33 +61,36 @@ typedef struct
 #define VSID 256
 #endif
 
-static void process_voxel_data(volume_t *volume, vcol *argb)
+static void process_voxel_data(volume_t *volume, genland_settings_t *settings, vcol *argb)
 {
     int pos[3];
-    volume_iterator_t iter;
-    iter = volume_get_iterator(volume,
-                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    // Loop over each (x, y) coordinate in the buffer grid
     for (int y = 0; y < VSID; y++)
     {
         for (int x = 0; x < VSID; x++, argb++)
         {
-            int z = (int)argb->a; // Height of the voxel at (x, y)
-            // printf("%i/%i: %i\n", x,y,z);
-
-            if (z > 0)
-            { // Only process non-empty blocks
-                pos[0] = x;
-                pos[1] = y;
-                pos[2] = z;
-
-                // printf("%i/%i: %i\n", x,y,z);
-                uint8_t color[4] = {argb->r, argb->g, argb->b, 255}; // RGBA color
-
-                volume_set_at(volume, NULL, pos, color); // Set voxel in the volume
+            // The alpha channel holds the height value, but with 0 at the top.
+            // Convert it so that 0 becomes the bottom of the volume.
+            // settings->max_height - 1 is the maximum z index in the volume.
+            int voxelTopZ = clamp((settings->max_height - 1) - (int)argb->a, 0, settings->max_height);
+            
+            // Only process columns with a valid height.
+            if (voxelTopZ >= 0)
+            {
+                // Fill the column from the bottom (z = 0) up to voxelTopZ with the same color.
+                for (int z = 0; z <= voxelTopZ; z++)
+                {
+                    pos[0] = x;
+                    pos[1] = y;
+                    pos[2] = z;
+                    uint8_t color[4] = {argb->r, argb->g, argb->b, 255};
+                    volume_set_at(volume, NULL, pos, color);
+                }
             }
         }
     }
 }
+
 
 long savevxl(char *filnam, vcol *argb)
 {
@@ -996,12 +999,26 @@ void genpal_32to8(tiletype *rt, tiletype *wt)
 }
 
 #define EPS 0.1
+
 extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *settings)
 {
-    double dx, dy, d, g, g2, river, amplut[settings->num_octaves], samp[3], csamp[3];
-    double dot, nx, ny, nz, gr, gg, gb;
-    float f;
-    long i, j, x, y, k, o, maxa, pal[256], msklut[settings->num_octaves];
+    // Variables for noise sampling, blending, and color computations
+    double sampleX, sampleY, tempValue, grassBlend, secondaryBlend, riverNoise;
+    // Array storing amplitude for each octave of noise
+    double octaveAmplitudes[settings->num_octaves];
+    // Base height samples and corrected height samples (for normal calculation)
+    double baseSamples[3], correctedSamples[3];
+    double unusedDot, normalX, normalY, normalZ;
+    // Ground color components (red, green, blue)
+    double groundRed, groundGreen, groundBlue;
+    // Temporary variable used in shadow calculations
+    float shadowCheckValue;
+    // Loop indices and temporary variables
+    long octaveIndex, shadowIter, pixelX, pixelY, globalIndex, octave, progressPercent, maxAmbient, colorIndex;
+    long palette[256]; // Unused palette array
+    // Lookup table for noise mask values per octave
+    long maskLUT[settings->num_octaves];
+
     printf("Heightmap generator by Tom Dobrowoski (http://ged.ax.pl/~tomkh)\n");
     printf("Output formats by Ken Silverman (http://advsys.net/ken)\n");
 
@@ -1009,139 +1026,174 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
 
     // Tom's algorithm from 12/04/2005
     printf("Generating landscape\n");
-    //__int64 q0, q1; q0 = rdtsc64();
-    d = 1.0;
-    for (i = 0; i < settings->num_octaves; i++)
+    // Initialize octave amplitudes and mask lookup table
+    tempValue = 1.0;
+    for (octaveIndex = 0; octaveIndex < settings->num_octaves; octaveIndex++)
     {
-        amplut[i] = d;
-        d *= .4;
-        msklut[i] = min((1 << (i + 2)) - 1, 255);
+        octaveAmplitudes[octaveIndex] = tempValue;
+        tempValue *= 0.4;  // Reduce amplitude per octave
+        maskLUT[octaveIndex] = min((1 << (octaveIndex + 2)) - 1, 255);
     }
-    k = 0;
-    for (y = 0; y < VSID; y++)
+    globalIndex = 0;
+    // Loop over each pixel in the terrain grid (VSID is the grid size)
+    for (pixelY = 0; pixelY < VSID; pixelY++)
     {
-        for (x = 0; x < VSID; x++, k++)
+        for (pixelX = 0; pixelX < VSID; pixelX++, globalIndex++)
         {
-            // Get 3 samples (0,0), (EPS,0), (0,EPS):
-            for (i = 0; i < 3; i++)
+            // Get 3 height samples with slight offsets: (0,0), (EPS,0), (0,EPS)
+            for (octaveIndex = 0; octaveIndex < 3; octaveIndex++)
             {
-                dx = (x * (256.0 / (double)VSID) + (double)(i & 1) * EPS) * (1.0 / 64.0);
-                dy = (y * (256.0 / (double)VSID) + (double)(i >> 1) * EPS) * (1.0 / 64.0);
-                d = 0;
-                river = 0;
-                for (o = 0; o < settings->num_octaves; o++)
+                // Convert grid coordinates to noise space, adding offset based on sample index
+                sampleX = (pixelX * (256.0 / (double)VSID) + (double)(octaveIndex & 1) * EPS) * (1.0 / 64.0);
+                sampleY = (pixelY * (256.0 / (double)VSID) + (double)(octaveIndex >> 1) * EPS) * (1.0 / 64.0);
+                tempValue = 0;       // Reset noise accumulator for this sample
+                riverNoise = 0;      // Reset river noise accumulator
+                // Accumulate multi-fractal noise over all octaves
+                for (octave = 0; octave < settings->num_octaves; octave++)
                 {
-                    d += noise3d(dx, dy, 9.5, msklut[o]) * amplut[o] * (d * 1.6 + 1.0); // multi-fractal
-                    river += noise3d(dx, dy, 13.2, msklut[o]) * amplut[o];
-                    dx *= 2;
-                    dy *= 2;
+                    tempValue += noise3d(sampleX, sampleY, 9.5, maskLUT[octave])
+                                 * octaveAmplitudes[octave] * (tempValue * 1.6 + 1.0);
+                    riverNoise += noise3d(sampleX, sampleY, 13.2, maskLUT[octave])
+                                  * octaveAmplitudes[octave];
+                    sampleX *= 2;  // Increase frequency for next octave
+                    sampleY *= 2;
                 }
-                samp[i] = d * -20.0 + 28.0;
-                d = sin(x * (PI / 256.0) + river * 4.0) * (.5 + .02) + (.5 - .02); // .02 = river width
-                if (d > 1)
-                    d = 1;
-                csamp[i] = samp[i] * d;
-                if (d < 0)
-                    d = 0;
-                samp[i] *= d;
-                if (csamp[i] < samp[i])
-                    csamp[i] = -log(1.0 - csamp[i]); // simulate water normal ;)
+                // Compute base height for the sample
+                baseSamples[octaveIndex] = tempValue * -20.0 + 28.0;
+                // Modulate height using sine to simulate river effect (.02 approximates river width)
+                tempValue = sin(pixelX * (PI / 256.0) + riverNoise * 4.0) * (0.5 + 0.02) + (0.5 - 0.02);
+                if (tempValue > 1)
+                    tempValue = 1;
+                correctedSamples[octaveIndex] = baseSamples[octaveIndex] * tempValue;
+                if (tempValue < 0)
+                    tempValue = 0;
+                baseSamples[octaveIndex] *= tempValue;
+                // If the corrected sample is lower than the base, adjust to simulate water surface normal
+                if (correctedSamples[octaveIndex] < baseSamples[octaveIndex])
+                    correctedSamples[octaveIndex] = -log(1.0 - correctedSamples[octaveIndex]);
             }
-            // Get normal using cross-product
-            nx = csamp[1] - csamp[0];
-            ny = csamp[2] - csamp[0];
-            nz = -EPS;
-            d = 1.0 / sqrt(nx * nx + ny * ny + nz * nz);
-            nx *= d;
-            ny *= d;
-            nz *= d;
+            // Compute surface normal using cross-product from height differences
+            normalX = correctedSamples[1] - correctedSamples[0];
+            normalY = correctedSamples[2] - correctedSamples[0];
+            normalZ = -EPS;  // Approximate vertical change
+            tempValue = 1.0 / sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
+            normalX *= tempValue;
+            normalY *= tempValue;
+            normalZ *= tempValue;
 
-            // Set ground color from settings
-            gr = settings->color_ground[0];
-            gg = settings->color_ground[1];
-            gb = settings->color_ground[2]; // Ground
+            // Initialize ground color from terrain settings
+            groundRed = settings->color_ground[0];
+            groundGreen = settings->color_ground[1];
+            groundBlue = settings->color_ground[2];
 
-            g = min(max(max(-nz, 0.0) * 1.4 - csamp[0] / 32.0 + 
-                                noise3d(x * (1.0 / 64.0), y * (1.0 / 64.0), 0.3, 15) * 0.3, 0.0), 1.0);
+            // Calculate blend factor for grass using normal and additional noise
+            grassBlend = min(max(max(-normalZ, 0.0) * 1.4 - correctedSamples[0] / 32.0 +
+                                noise3d(pixelX * (1.0 / 64.0), pixelY * (1.0 / 64.0), 0.3, 15) * 0.3, 0.0), 1.0);
+            // Blend towards first grass color
+            groundRed += (settings->color_grass1[0] - groundRed) * grassBlend;
+            groundGreen += (settings->color_grass1[1] - groundGreen) * grassBlend;
+            groundBlue += (settings->color_grass1[2] - groundBlue) * grassBlend;
 
-            gr += (settings->color_grass1[0] - gr) * g;
-            gg += (settings->color_grass1[1] - gg) * g;
-            gb += (settings->color_grass1[2] - gb) * g; // Grass
+            // Compute secondary blend factor for a second grass tone
+            secondaryBlend = (1 - fabs(grassBlend - 0.5) * 2) * 0.7;
+            groundRed += (settings->color_grass2[0] - groundRed) * secondaryBlend;
+            groundGreen += (settings->color_grass2[1] - groundGreen) * secondaryBlend;
+            groundBlue += (settings->color_grass2[2] - groundBlue) * secondaryBlend;
 
-            g2 = (1 - fabs(g - 0.5) * 2) * 0.7;
-            gr += (settings->color_grass2[0] - gr) * g2;
-            gg += (settings->color_grass2[1] - gg) * g2;
-            gb += (settings->color_grass2[2] - gb) * g2; // Grass2
+            // Calculate water blend factor based on difference between base and corrected height
+            secondaryBlend = max(min((baseSamples[0] - correctedSamples[0]) * 1.5, 1.0), 0.0);
+            // Adjust water intensity factor
+            grassBlend = 1 - secondaryBlend * 0.2;
+            groundRed += ((settings->color_water[0] * grassBlend) - groundRed) * secondaryBlend;
+            groundGreen += ((settings->color_water[1] * grassBlend) - groundGreen) * secondaryBlend;
+            groundBlue += ((settings->color_water[2] * grassBlend) - groundBlue) * secondaryBlend;
 
-            g2 = max(min((samp[0] - csamp[0]) * 1.5, 1.0), 0.0);
-            g = 1 - g2 * 0.2;
-            gr += ((settings->color_water[0] * g) - gr) * g2;
-            gg += ((settings->color_water[1] * g) - gg) * g2;
-            gb += ((settings->color_water[2] * g) - gb) * g2; // Water
+            // Compute ambient color contribution using a fixed ambient factor
+            tempValue = 0.3;  // Ambient factor
+            amb[globalIndex].r = (unsigned char)min(max(groundRed * tempValue, 0), 255);
+            amb[globalIndex].g = (unsigned char)min(max(groundGreen * tempValue, 0), 255);
+            amb[globalIndex].b = (unsigned char)min(max(groundBlue * tempValue, 0), 255);
+            maxAmbient = max(max(amb[globalIndex].r, amb[globalIndex].g), amb[globalIndex].b);
 
-            d = .3;
-            amb[k].r = (unsigned char)min(max(gr * d, 0), 255);
-            amb[k].g = (unsigned char)min(max(gg * d, 0), 255);
-            amb[k].b = (unsigned char)min(max(gb * d, 0), 255);
-            maxa = max(max(amb[k].r, amb[k].g), amb[k].b);
+            // Lighting: adjust color based on surface normal and fixed light direction
+            tempValue = (normalX * 0.5 + normalY * 0.25 - normalZ)
+                        / sqrt(0.5 * 0.5 + 0.25 * 0.25 + 1.0 * 1.0);
+            tempValue *= 1.2;
+            buf[globalIndex].a = (unsigned char)(175.0 - baseSamples[0] * ((double)VSID / 256.0));
+            buf[globalIndex].r = (unsigned char)min(max(groundRed * tempValue, 0), 255 - maxAmbient);
+            buf[globalIndex].g = (unsigned char)min(max(groundGreen * tempValue, 0), 255 - maxAmbient);
+            buf[globalIndex].b = (unsigned char)min(max(groundBlue * tempValue, 0), 255 - maxAmbient);
 
-            // lighting
-            d = (nx * .5 + ny * .25 - nz) / sqrt(.5 * .5 + .25 * .25 + 1.0 * 1.0);
-            d *= 1.2;
-            buf[k].a = (unsigned char)(175.0 - samp[0] * ((double)VSID / 256.0));
-            buf[k].r = (unsigned char)min(max(gr * d, 0), 255 - maxa);
-            buf[k].g = (unsigned char)min(max(gg * d, 0), 255 - maxa);
-            buf[k].b = (unsigned char)min(max(gb * d, 0), 255 - maxa);
-
-            hgt[k] = csamp[0];
+            // Save the primary corrected height sample for shadow computation
+            hgt[globalIndex] = correctedSamples[0];
         }
-        i = ((y + 1) * 100) / VSID;
-        if (i > (y * 100) / VSID)
-            printf("\r%ld%%", i); // Correct format for long int
+        // Update and display progress percentage
+        progressPercent = ((pixelY + 1) * 100) / VSID;
+        if (progressPercent > (pixelY * 100) / VSID)
+            printf("\r%ld%%", progressPercent);
     }
-    // q1 = rdtsc64(); printf("%I64d cc\n",q1-q0);
     printf("\r");
 
     printf("Applying shadows\n");
 
-    // Shadows:
+    // Initialize shadow map to zero
     memset(sh, 0, sizeof(sh));
-    for (k = y = 0; y < VSID; y++)
-        for (x = 0; x < VSID; x++, k++)
+    globalIndex = 0;
+    // Compute shadows by checking if neighboring heights block light
+    for (pixelY = 0; pixelY < VSID; pixelY++)
+    {
+        for (pixelX = 0; pixelX < VSID; pixelX++, globalIndex++)
         {
-            f = hgt[k] + .44;
-            for (i = j = 1; i < (VSID >> 2); j++, i++, f += .44)
-                if (hgt[(((y - (j >> 1)) & (VSID - 1)) << VSHL) + ((x - i) & (VSID - 1))] > f)
+            shadowCheckValue = hgt[globalIndex] + 0.44;
+            // Step through offsets to determine if shadow should be cast
+            for (shadowIter = 1, octaveIndex = 1;
+                 octaveIndex < (VSID >> 2);
+                 shadowIter++, octaveIndex++, shadowCheckValue += 0.44)
+            {
+                if (hgt[(((pixelY - (shadowIter >> 1)) & (VSID - 1)) << VSHL)
+                        + ((pixelX - octaveIndex) & (VSID - 1))] > shadowCheckValue)
                 {
-                    sh[k] = 32;
+                    sh[globalIndex] = 32;
                     break;
                 }
+            }
         }
-    // for(i=2;i>0;i--) // smooth sh 2 times
-    for (y = 0, k = 0; y < VSID; y++)
-        for (x = 0; x < VSID; x++, k++)
+    }
+    // Smooth the shadow map by averaging with neighboring pixels
+    globalIndex = 0;
+    for (pixelY = 0; pixelY < VSID; pixelY++)
+    {
+        for (pixelX = 0; pixelX < VSID; pixelX++, globalIndex++)
         {
-            sh[k] = (sh[k] +
-                     sh[(((y + 1) & (VSID - 1)) << VSHL) + x] +
-                     sh[(y << VSHL) + ((x + 1) & (VSID - 1))] +
-                     sh[(((y + 1) & (VSID - 1)) << VSHL) + ((x + 1) & (VSID - 1))] + 2) >>
-                    2;
+            sh[globalIndex] = (sh[globalIndex] +
+                     sh[(((pixelY + 1) & (VSID - 1)) << VSHL) + pixelX] +
+                     sh[(pixelY << VSHL) + ((pixelX + 1) & (VSID - 1))] +
+                     sh[(((pixelY + 1) & (VSID - 1)) << VSHL) + ((pixelX + 1) & (VSID - 1))]
+                     + 2) >> 2;
         }
-    for (y = 0, k = 0; y < VSID; y++)
-        for (x = 0; x < VSID; x++, k++)
+    }
+    // Apply shadow effect to final color buffer by darkening colors
+    globalIndex = 0;
+    for (pixelY = 0; pixelY < VSID; pixelY++)
+    {
+        for (pixelX = 0; pixelX < VSID; pixelX++, globalIndex++)
         {
-            i = 256 - (sh[k] << 2);
-            buf[k].r = ((buf[k].r * i) >> 8) + amb[k].r;
-            buf[k].g = ((buf[k].g * i) >> 8) + amb[k].g;
-            buf[k].b = ((buf[k].b * i) >> 8) + amb[k].b;
+            colorIndex = 256 - (sh[globalIndex] << 2);
+            buf[globalIndex].r = ((buf[globalIndex].r * colorIndex) >> 8) + amb[globalIndex].r;
+            buf[globalIndex].g = ((buf[globalIndex].g * colorIndex) >> 8) + amb[globalIndex].g;
+            buf[globalIndex].b = ((buf[globalIndex].b * colorIndex) >> 8) + amb[globalIndex].b;
         }
+    }
 
+    // Print sign at fixed coordinates (for debugging or watermark)
     signprint(426, 982);
 
-    process_voxel_data(volume, buf);
+    // Process and integrate the voxel data into the volume structure
+    process_voxel_data(volume, settings, buf);
 
-    printf("Done!");
+    printf("Done!\n");
 }
+
 
 #if 0
 !endif
