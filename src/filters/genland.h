@@ -9,6 +9,10 @@
 typedef struct {
     int max_height;
     int num_octaves;
+    float amp_octave_mult;
+    float river_width;
+    float variety;
+    float offset;
 
     uint8_t color_ground[4];
     uint8_t color_grass1[4];

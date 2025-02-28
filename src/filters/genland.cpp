@@ -1031,7 +1031,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     for (octaveIndex = 0; octaveIndex < settings->num_octaves; octaveIndex++)
     {
         octaveAmplitudes[octaveIndex] = tempValue;
-        tempValue *= 0.4;  // Reduce amplitude per octave
+        tempValue *= settings->amp_octave_mult;  // Reduce amplitude per octave
         maskLUT[octaveIndex] = min((1 << (octaveIndex + 2)) - 1, 255);
     }
     globalIndex = 0;
@@ -1059,9 +1059,9 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
                     sampleY *= 2;
                 }
                 // Compute base height for the sample
-                baseSamples[octaveIndex] = tempValue * -20.0 + 28.0;
+                baseSamples[octaveIndex] = (tempValue * - settings->variety) + settings->offset;
                 // Modulate height using sine to simulate river effect (.02 approximates river width)
-                tempValue = sin(pixelX * (PI / 256.0) + riverNoise * 4.0) * (0.5 + 0.02) + (0.5 - 0.02);
+                tempValue = sin(pixelX * (PI / 256.0) + riverNoise * 4.0) * (0.5 + settings->river_width) + (0.5 - settings->river_width);
                 if (tempValue > 1)
                     tempValue = 1;
                 correctedSamples[octaveIndex] = baseSamples[octaveIndex] * tempValue;
@@ -1119,7 +1119,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
             tempValue = (normalX * 0.5 + normalY * 0.25 - normalZ)
                         / sqrt(0.5 * 0.5 + 0.25 * 0.25 + 1.0 * 1.0);
             tempValue *= 1.2;
-            buf[globalIndex].a = (unsigned char)(175.0 - baseSamples[0] * ((double)VSID / 256.0));
+            buf[globalIndex].a = (unsigned char)(settings->max_height - baseSamples[0]);// * ((double)VSID / 256.0));
             buf[globalIndex].r = (unsigned char)min(max(groundRed * tempValue, 0), 255 - maxAmbient);
             buf[globalIndex].g = (unsigned char)min(max(groundGreen * tempValue, 0), 255 - maxAmbient);
             buf[globalIndex].b = (unsigned char)min(max(groundBlue * tempValue, 0), 255 - maxAmbient);

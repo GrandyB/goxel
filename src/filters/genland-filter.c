@@ -31,8 +31,12 @@ typedef struct
 static void reset_to_default(filter_genland_t *filter) {
     filter->settings = (genland_settings_t *)malloc(sizeof(genland_settings_t));
 
-    filter->settings->max_height = 64;
+    filter->settings->max_height = 190;
     filter->settings->num_octaves = 10;
+    filter->settings->amp_octave_mult = 0.4;
+    filter->settings->river_width = 0.02;
+    filter->settings->variety = 20.0;
+    filter->settings->offset = 28.0;
 
     // Colors
     uint8_t ground[4] = {140, 125, 115, 255};
@@ -65,7 +69,11 @@ static int gui(filter_t *filter_)
     }
 
     gui_input_int("Max height", &filter->settings->max_height, 0, 9999);
-    gui_input_int("# octaves", &filter->settings->num_octaves, 0, 20);
+    gui_input_int("# Octaves", &filter->settings->num_octaves, 0, 20);
+    gui_input_float("Octave mult", &filter->settings->amp_octave_mult, 0.01, 0, 1, "%.2f");
+    gui_input_float("River width", &filter->settings->river_width, 0.01, 0, 1, "%.2f");
+    gui_input_float("Variety", &filter->settings->variety, 1.00, 0, 100, "%.0f");
+    gui_input_float("Offset", &filter->settings->offset, 1.00, 0, 100, "%.0f");
 
     gui_group_begin("Colors");
     gui_color_small("Ground", filter->settings->color_ground);
@@ -73,7 +81,7 @@ static int gui(filter_t *filter_)
     gui_color_small("Grass2", filter->settings->color_grass2);
     gui_color_small("Water", filter->settings->color_water);
     gui_group_end();
-    
+
     if (gui_button("Reset to defaults", -1, 0))
     {
         reset_to_default(filter);
