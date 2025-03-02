@@ -20,6 +20,8 @@
 #include "file_format.h"
 #include "utlist.h"
 
+#define BOOL_STR(b) ((b) ? "true" : "false")
+
 static file_format_t *g_current = NULL;
 
 typedef struct {
@@ -171,7 +173,7 @@ static void center_origin(tool_placer_t *placer)
     pos[1] = round((bbox[0][1] + bbox[1][1] - 1) / 2.0); // centre y
     pos[2] = bbox[0][2]; // bottom level z
 
-    LOG_D("center_origin:");
+    //LOG_D("center_origin:");
     //LOG_D("    Cursor: %f / %f / %f", goxel.cursor.pos[0], goxel.cursor.pos[1], goxel.cursor.pos[2]);
     //LOG_D("    BBox: (%i,%i,%i) (%i,%i,%i)", bbox[0][0], bbox[0][1], bbox[0][2], bbox[1][0], bbox[1][1], bbox[1][2]);
     //debug_log_vec3_float("    found center:", pos);
@@ -375,6 +377,7 @@ static int gui(tool_t *tool)
     float rot_degs[3];
     bool reset_rotation = false;
     int origin_x, origin_y, origin_z, offset_x, offset_y, offset_z;
+    bool changed = false;
     mat4_to_eul_degxyz(placer->rot, rot_degs);
     
     if (!box_is_null(goxel.selection)) {
@@ -429,39 +432,69 @@ static int gui(tool_t *tool)
         offset_x = (int)round(placer->offset[0]);
         offset_y = (int)round(placer->offset[1]);
         offset_z = (int)round(placer->offset[2]);
+            
+        gui_row_begin(1);
+        char *msg;
+        asprintf(&msg, "Rotation: %.1f / %.1f / %.1f", zero(rot_degs[0]), zero(rot_degs[1]), zero(rot_degs[2]));
+        gui_text(msg);
+        if (gui_button("Reset##rotation", 0, 0)) {
+            reset_rotation = true;
+        }
+        gui_row_end();
 
         if (gui_section_begin("Rotation", true)) {
             gui_group_begin(NULL);
             gui_row_begin(2);
-            if (gui_button("-X", 0, 0))
+            if (gui_button("-X", 0, 0)) {
                 mat4_irotate(rotation, -M_PI / 8, 1, 0, 0);
-            if (gui_button("+X", 0, 0))
-                mat4_irotate(rotation, +M_PI / 8, 1, 0, 0);
-            gui_row_end();
-
-            gui_row_begin(2);
-            if (gui_button("-Y", 0, 0))
-                mat4_irotate(rotation, -M_PI / 8, 0, 1, 0);
-            if (gui_button("+Y", 0, 0))
-                mat4_irotate(rotation, +M_PI / 8, 0, 1, 0);
-            gui_row_end();
-
-            gui_row_begin(2);
-            if (gui_button("-Z", 0, 0))
-                mat4_irotate(rotation, -M_PI / 8, 0, 0, 1);
-            if (gui_button("+Z", 0, 0))
-                mat4_irotate(rotation, +M_PI / 8, 0, 0, 1);
-            gui_row_end();
-            
-            gui_row_begin(1);
-            char *msg;
-            asprintf(&msg, "Rotation: %.1f / %.1f / %.1f", zero(rot_degs[0]), zero(rot_degs[1]), zero(rot_degs[2]));
-            gui_text(msg);
-            gui_row_end();
-            if (gui_button("Reset", 0, 0)) {
-                reset_rotation = true;
+                changed = true;
             }
+            if (gui_button("+X", 0, 0)) {
+                mat4_irotate(rotation, +M_PI / 8, 1, 0, 0);
+                changed = true;
+            }
+            gui_row_end();
+
+            gui_row_begin(2);
+            if (gui_button("-Y", 0, 0)) {
+                mat4_irotate(rotation, -M_PI / 8, 0, 1, 0);
+                changed = true;
+            }
+            if (gui_button("+Y", 0, 0)) {
+                mat4_irotate(rotation, +M_PI / 8, 0, 1, 0);
+                changed = true;
+            }
+            gui_row_end();
+
+            gui_row_begin(2);
+            if (gui_button("-Z", 0, 0)) {
+                mat4_irotate(rotation, -M_PI / 8, 0, 0, 1);
+                changed = true;
+            }
+            if (gui_button("+Z", 0, 0)) {
+                mat4_irotate(rotation, +M_PI / 8, 0, 0, 1);
+                changed = true;
+            }
+            gui_row_end();
             gui_group_end();
+        }
+        gui_section_end();
+
+        if (gui_section_begin("Flip", true)) {
+            gui_row_begin(3);
+            if (gui_button("X", -1, 0)) {
+                mat4_iscale(rotation, -1,  1,  1);
+                changed = true;
+            }
+            if (gui_button("Y", -1, 0)) {
+                mat4_iscale(rotation,  1, -1,  1);
+                changed = true;
+            }
+            if (gui_button("Z", -1, 0)) {
+                mat4_iscale(rotation,  1,  1, -1);
+                changed = true;
+            }
+            gui_row_end();
         }
         gui_section_end();
 
@@ -515,7 +548,7 @@ static int gui(tool_t *tool)
         }
     } gui_section_end();
 
-    if (reset_rotation || (placer->imported_volume && !mat4_equal(rotation, mat4_identity))) {
+    if (reset_rotation || (placer->imported_volume && changed)) {
         if (reset_rotation) mat4_set_identity(placer->rot);
         apply_rotation(placer, rotation);
     }
