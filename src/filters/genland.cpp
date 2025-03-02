@@ -21,7 +21,6 @@
 
 #include <memory.h>
 #include <math.h>
-#include <conio.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -91,7 +90,7 @@ static void process_voxel_data(volume_t *volume, genland_settings_t *settings, v
 // Noise algo based on "Improved Perlin Noise" by Ken Perlin
 // http://mrl.nyu.edu/~perlin/
 
-static __forceinline float fgrad(long h, float x, float y, float z)
+static inline float fgrad(long h, float x, float y, float z)
 {
     switch (h) // h masked before call (h&15)
     {
@@ -137,7 +136,6 @@ static unsigned char noisep[512], noisep15[512];
 static void noiseinit()
 {
     long i, j, k;
-    float f;
 
     for (i = 256 - 1; i >= 0; i--)
         noisep[i] = i;
@@ -221,14 +219,13 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     double octaveAmplitudes[settings->num_octaves];
     // Base height samples and corrected height samples (for normal calculation)
     double baseSamples[3], correctedSamples[3];
-    double unusedDot, normalX, normalY, normalZ;
+    double normalX, normalY, normalZ;
     // Ground color components (red, green, blue)
     double groundRed, groundGreen, groundBlue;
     // Temporary variable used in shadow calculations
     float shadowCheckValue;
     // Loop indices and temporary variables
     long octaveIndex, shadowIter, pixelX, pixelY, globalIndex, octave, progressPercent, maxAmbient, colorIndex;
-    long palette[256]; // Unused palette array
     // Lookup table for noise mask values per octave
     long maskLUT[settings->num_octaves];
 

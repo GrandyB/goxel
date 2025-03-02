@@ -383,7 +383,6 @@ static void create_palette_texture(
     image->buffer_view = buffer_view;
     texture = add_item(g->data, textures);
     texture->image = image;
-    free(png);
 }
 
 static void gltf_export(const image_t *img, const char *path,
