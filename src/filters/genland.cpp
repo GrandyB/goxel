@@ -137,7 +137,6 @@ static unsigned char noisep[512], noisep15[512];
 static void noiseinit()
 {
     long i, j, k;
-    float f;
 
     for (i = 256 - 1; i >= 0; i--)
         noisep[i] = i;
@@ -221,14 +220,13 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     double octaveAmplitudes[settings->num_octaves];
     // Base height samples and corrected height samples (for normal calculation)
     double baseSamples[3], correctedSamples[3];
-    double unusedDot, normalX, normalY, normalZ;
+    double normalX, normalY, normalZ;
     // Ground color components (red, green, blue)
     double groundRed, groundGreen, groundBlue;
     // Temporary variable used in shadow calculations
     float shadowCheckValue;
     // Loop indices and temporary variables
     long octaveIndex, shadowIter, pixelX, pixelY, globalIndex, octave, progressPercent, maxAmbient, colorIndex;
-    long palette[256]; // Unused palette array
     // Lookup table for noise mask values per octave
     long maskLUT[settings->num_octaves];
 
