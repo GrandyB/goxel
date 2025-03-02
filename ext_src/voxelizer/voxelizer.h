@@ -664,9 +664,9 @@ vx_aabb_t vx__aabb_merge(vx_aabb_t* a, vx_aabb_t* b)
 
 size_t vx__vertex_hash(vx_vertex_t pos, size_t n)
 {
-    size_t a = (size_t)(pos.x * 73856093);
-    size_t b = (size_t)(pos.y * 19349663);
-    size_t c = (size_t)(pos.z * 83492791);
+    size_t a = (size_t)(pos.x * 73856093.0F);
+    size_t b = (size_t)(pos.y * 19349663.0F);
+    size_t c = (size_t)(pos.z * 83492791.0F);
 
     return (a ^ b ^ c) % n;
 }
