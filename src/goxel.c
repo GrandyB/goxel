@@ -28,7 +28,7 @@
 
 // The global goxel instance.
 goxel_t goxel = {};
-double time = 0.0;
+double g_time = 0.0;
 
 static void (*post_reset_func)() = NULL;
 
@@ -694,8 +694,8 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     float p[3], n[3];
     camera_t *camera = get_camera();
     double frameTime = get_unix_time();
-    double deltaTime = frameTime - time;
-    time = frameTime;
+    double deltaTime = frameTime - g_time;
+    g_time = frameTime;
 
     painter_t painter = goxel.painter;
     gesture_update(goxel.gestures_count, goxel.gestures,
