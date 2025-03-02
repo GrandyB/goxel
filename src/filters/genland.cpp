@@ -25,7 +25,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <x86intrin.h> // Provides _rdtsc()
 
 extern "C"
 {
@@ -36,11 +35,6 @@ extern "C"
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #pragma GCC diagnostic pop
-
-static inline int64_t rdtsc64()
-{
-    return __rdtsc(); // Works on modern compilers (MSVC, GCC, Clang)
-}
 
 #pragma pack(1)
 typedef struct
