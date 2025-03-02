@@ -31,6 +31,13 @@ static float        g_scale = 1;
 
 static void on_glfw_error(int code, const char *msg)
 {
+    // Discard GLFW error 65548
+    // This error indicates that setting the window icon was unsuccessful,
+    // which is not fatal and normal on Wayland.
+    if (code == 65548) {
+        return;
+    }
+
     fprintf(stderr, "glfw error %d (%s)\n", code, msg);
     assert(false);
 }
