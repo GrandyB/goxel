@@ -1897,7 +1897,7 @@ static void select_layer_under_cursor(void)
     vec3_set(int_pos, (int)pos[0], (int)pos[1], (int)pos[2]);
     LOG_D("Position to analyse: %i / %i / %i", int_pos[0], int_pos[1], int_pos[2]);
 
-    bool found;
+    bool found = false;
     DL_FOREACH_REVERSE(img->layers, layer) {
         if (!layer->visible) continue;
         if (!layer->volume) continue;

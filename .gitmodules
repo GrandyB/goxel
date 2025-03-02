@@ -1,0 +1,3 @@
+[submodule "ext_src/libvxl"]
+	path = ext_src/libvxl
+	url = https://github.com/xtreme8000/libvxl.git
