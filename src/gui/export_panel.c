@@ -16,6 +16,8 @@
  * goxel.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <string.h>
+#include <stddef.h>
 #include "goxel.h"
 #include "file_format.h"
 
@@ -56,6 +58,22 @@ static void on_format(void *user, file_format_t *f)
     }
 }
 
+static const char* dumb_basename(const char* path)
+{
+    size_t length = strlen(path);
+    size_t offset = 0;
+
+    for (size_t i = 0; i < length; i++) {
+        int is_separator = path[i] == '/' || path[i] == '\\';
+
+        if (is_separator && i != length - 1) {
+            offset = i + 1;
+        }
+    }
+
+    return path + offset;
+}
+
 void gui_export_panel(void)
 {
     char label[128];
@@ -70,8 +88,31 @@ void gui_export_panel(void)
 
     if (g_current->export_gui)
         g_current->export_gui(g_current);
-    if (gui_button("Export", 1, 0))
-        goxel_export_to_file(NULL, g_current->name);
+
+    if (goxel.last_export_panel_path && gui_button("Reset export path", 1, 0)) {
+        free((void*) goxel.last_export_panel_path);
+        goxel.last_export_panel_path = NULL;
+    }
+
+    char export_label[128];
+    if (goxel.last_export_panel_path) {
+        snprintf(export_label, 128, "Export %s", dumb_basename(goxel.last_export_panel_path));
+    } else {
+        strcpy(export_label, "Export");
+    }
+
+    if (gui_button(export_label, 1, 0)) {
+        if (!goxel.last_export_panel_path) {
+            const file_format_t *f = file_format_for_path(NULL, g_current->name, "w");
+            const char* chosen_path = sys_get_save_path("", f->exts, f->exts_desc);
+            if (!chosen_path)
+                return;
+
+            goxel.last_export_panel_path = strdup(chosen_path);
+        }
+
+        goxel_export_to_file(goxel.last_export_panel_path, g_current->name);
+    }
 }
 
 #endif // GUI_CUSTOM_EXPORT_PANEL

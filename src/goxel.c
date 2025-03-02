@@ -429,6 +429,9 @@ void goxel_reset(void)
         },
     };
 
+    free((void*) goxel.last_export_panel_path);
+    goxel.last_export_panel_path = NULL;
+
     if (post_reset_func != NULL) {
         post_reset_func();
         post_reset_func = NULL;
