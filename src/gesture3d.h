@@ -28,8 +28,9 @@ enum {
     CURSOR_PRESSED      = 1 << 0,
     CURSOR_SHIFT        = 1 << 1,
     CURSOR_CTRL         = 1 << 2,
+    CURSOR_LEFT_ALT     = 1 << 3,
 
-    CURSOR_OUT          = 1 << 3, // Outside of sensing area.
+    CURSOR_OUT          = 1 << 4, // Outside of sensing area.
 };
 
 typedef struct cursor {

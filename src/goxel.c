@@ -702,6 +702,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
                    inputs, viewport, NULL);
     set_flag(&goxel.cursor.flags, CURSOR_SHIFT, inputs->keys[KEY_LEFT_SHIFT]);
     set_flag(&goxel.cursor.flags, CURSOR_CTRL, inputs->keys[KEY_CONTROL]);
+    set_flag(&goxel.cursor.flags, CURSOR_LEFT_ALT, inputs->keys[KEY_LEFT_ALT]);
 
     // Need to set the cursor snap mask to default because the tool might
     // change it.

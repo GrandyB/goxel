@@ -123,11 +123,18 @@ static int on_drag(gesture3d_t *gest, void *user)
     float r_z = goxel.radius_z;
     int nb, i;
     float pos[3];
+    bool alt = curs->flags & CURSOR_LEFT_ALT;
+
+    float target[3];
+    vec3_copy(curs->pos, target);
+    if (alt) {
+        target[2] = brush->start_pos[2];
+    }
 
     if (gest->state == GESTURE_BEGIN) {
         volume_set(brush->volume_orig, goxel.image->active_layer->volume);
         brush->last_op.mode = 0; // Discard last op.
-        vec3_copy(curs->pos, brush->last_pos);
+        vec3_copy(target, brush->last_pos);
         image_history_push(goxel.image);
         volume_clear(brush->volume);
 
@@ -136,7 +143,7 @@ static int on_drag(gesture3d_t *gest, void *user)
             painter.mode = MODE_MAX;
             // Why was this a thing?
             //vec4_set(painter.color, 255, 255, 255, 255);
-            get_box3(brush->start_pos, curs->pos, curs->normal, r_x, r_y, r_z, NULL, box);
+            get_box3(brush->start_pos, target, curs->normal, r_x, r_y, r_z, NULL, box);
             volume_op(brush->volume, &painter, box);
         }
     }
@@ -156,10 +163,12 @@ static int on_drag(gesture3d_t *gest, void *user)
     // Base on radius x?
     nb = ceil(vec3_dist(curs->pos, brush->last_pos) / 1); //(2 * goxel.radius_x));
     nb = max(nb, 1);
-    for (i = 0; i < nb; i++) {
-        vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
-        get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
-        volume_op(brush->volume, &painter, box);
+    if (!alt) {
+        for (i = 0; i < nb; i++) {
+            vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
+            get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
+            volume_op(brush->volume, &painter, box);
+        }
     }
 
     painter = *(painter_t*)USER_GET(user, 1);
@@ -173,7 +182,7 @@ static int on_drag(gesture3d_t *gest, void *user)
     // DL_APPEND(goxel.image->layers, brushvolume);
     volume_merge(goxel.tool_volume, brush->volume, painter.mode, NULL);
         //painter.color_blend == COLOR_INHERITED ? NULL : painter.color);
-    vec3_copy(curs->pos, brush->start_pos);
+    vec3_copy(target, brush->start_pos);
     brush->last_op.volume_key = volume_get_key(goxel.tool_volume);
 
     if (gest->state == GESTURE_END) {
@@ -182,7 +191,7 @@ static int on_drag(gesture3d_t *gest, void *user)
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
     }
-    vec3_copy(curs->pos, brush->last_pos);
+    vec3_copy(target, brush->last_pos);
     return 0;
 }
 
@@ -194,6 +203,7 @@ static int on_hover(gesture3d_t *gest, void *user)
     cursor_t *curs = gest->cursor;
     float box[4][4];
     bool shift = curs->flags & CURSOR_SHIFT;
+    bool alt = curs->flags & CURSOR_LEFT_ALT;
 
     if (gest->state == GESTURE_END || !curs->snaped) {
         volume_delete(goxel.tool_volume);
@@ -202,10 +212,16 @@ static int on_hover(gesture3d_t *gest, void *user)
     }
 
     if (shift) {
+        float target[3];
+        vec3_copy(curs->pos, target);
+        if (alt) {
+            target[2] = brush->start_pos[2];
+        }
+
         float diff[3];
-        vec3_sub(brush->start_pos, curs->pos, diff);
+        vec3_sub(brush->start_pos, target, diff);
         goxel_set_help_text("Line drawing mode - distance: [%.0f/%.0f/%.0f] (%0.1f)", diff[0], diff[1], diff[2], sqrtf(diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]));
-        render_line(&goxel.rend, brush->start_pos, curs->pos, NULL, 0);
+        render_line(&goxel.rend, brush->start_pos, target, NULL, 0);
     }
 
     if (goxel.tool_volume && check_can_skip(brush, curs, painter->mode))
