@@ -201,8 +201,12 @@ static int on_hover(gesture3d_t *gest, void *user)
         return 0;
     }
 
-    if (shift)
+    if (shift) {
+        float diff[3];
+        vec3_sub(brush->start_pos, curs->pos, diff);
+        goxel_set_help_text("Line drawing mode - distance: [%.0f/%.0f/%.0f] (%0.1f)", diff[0], diff[1], diff[2], sqrtf(diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]));
         render_line(&goxel.rend, brush->start_pos, curs->pos, NULL, 0);
+    }
 
     if (goxel.tool_volume && check_can_skip(brush, curs, painter->mode))
         return 0;
