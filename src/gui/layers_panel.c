@@ -103,6 +103,7 @@ void gui_layers_panel_impl(bool inner_scroll)
     if (gui_action_button(ACTION_img_new_shape_layer, "New Shape Layer", 1)) {
         action_exec2(ACTION_tool_set_move);
     }
+    gui_action_button(ACTION_delete_hidden_layers, "Delete hidden layers", 1);
 
     gui_group_end();
 

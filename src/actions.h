@@ -103,6 +103,7 @@ enum
     ACTION_toggle_first_person_camera,
     ACTION_reset_512,
     ACTION_img_auto_resize_reset,
+    ACTION_delete_hidden_layers,
 
     ACTION_COUNT
 };

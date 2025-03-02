@@ -64,6 +64,8 @@ layer_t *image_duplicate_layer(image_t *img, layer_t *layer);
 void image_merge_visible_layers(image_t *img);
 layer_t *img_get_layer(const image_t *img, int id);
 
+void image_delete_hidden_layers(image_t *img);
+
 void image_history_push(image_t *img);
 void image_undo(image_t *img);
 void image_redo(image_t *img);

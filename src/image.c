@@ -404,6 +404,15 @@ layer_t *image_clone_layer(image_t *img, layer_t *other)
     return layer;
 }
 
+void image_delete_hidden_layers(image_t *img) {
+    layer_t *layer;
+    DL_FOREACH(img->layers, layer) {
+        if (!layer->visible) {
+            DL_DELETE(img->layers, layer);
+        }
+    }
+}
+
 void image_unclone_layer(image_t *img, layer_t *layer)
 {
     assert(img);
@@ -878,6 +887,17 @@ static void a_image_clone_layer(void)
 {
     image_clone_layer(goxel.image, goxel.image->active_layer);
 }
+
+static void a_delete_hidden_layers(void)
+{
+    image_delete_hidden_layers(goxel.image);
+}
+
+ACTION_REGISTER(ACTION_delete_hidden_layers,
+    .help = "Delete hidden layers",
+    .cfunc = a_delete_hidden_layers,
+    .flags = ACTION_TOUCH_IMAGE,
+)
 
 ACTION_REGISTER(ACTION_img_clone_layer,
     .help = "Clone the active layer",
