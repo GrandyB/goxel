@@ -141,7 +141,9 @@ static void noiseinit()
         noisep[i] = i;
     for (i = 256 - 1; i > 0; i--)
     {
-        j = ((rand() * (i + 1)) >> 15);
+        // RAND_MAX differs between Windows and other platforms
+        long n = ((float) rand() / (float) RAND_MAX) * 32767;
+        j = ((n * (i + 1)) >> 15);
         k = noisep[i];
         noisep[i] = noisep[j];
         noisep[j] = k;
