@@ -21,7 +21,6 @@
 
 #include <memory.h>
 #include <math.h>
-#include <conio.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -91,7 +90,7 @@ static void process_voxel_data(volume_t *volume, genland_settings_t *settings, v
 // Noise algo based on "Improved Perlin Noise" by Ken Perlin
 // http://mrl.nyu.edu/~perlin/
 
-static __forceinline float fgrad(long h, float x, float y, float z)
+static inline float fgrad(long h, float x, float y, float z)
 {
     switch (h) // h masked before call (h&15)
     {
