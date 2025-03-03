@@ -74,6 +74,19 @@ static const char* dumb_basename(const char* path)
     return path + offset;
 }
 
+static int choose_export_path()
+{
+    const file_format_t *f = file_format_for_path(NULL, g_current->name, "w");
+    const char* chosen_path = sys_get_save_path("", f->exts, f->exts_desc);
+    if (!chosen_path)
+        return 1;
+
+    free((void*) goxel.last_export_panel_path);
+    goxel.last_export_panel_path = strdup(chosen_path);
+
+    return 0;
+}
+
 void gui_export_panel(void)
 {
     char label[128];
@@ -89,9 +102,10 @@ void gui_export_panel(void)
     if (g_current->export_gui)
         g_current->export_gui(g_current);
 
-    if (goxel.last_export_panel_path && gui_button("Reset export path", 1, 0)) {
-        free((void*) goxel.last_export_panel_path);
-        goxel.last_export_panel_path = NULL;
+    if (gui_button("Export As...", 1, 0)) {
+        if (choose_export_path() == 0) {
+            goxel_export_to_file(goxel.last_export_panel_path, g_current->name);
+        }
     }
 
     char export_label[128];
@@ -103,12 +117,9 @@ void gui_export_panel(void)
 
     if (gui_button(export_label, 1, 0)) {
         if (!goxel.last_export_panel_path) {
-            const file_format_t *f = file_format_for_path(NULL, g_current->name, "w");
-            const char* chosen_path = sys_get_save_path("", f->exts, f->exts_desc);
-            if (!chosen_path)
+            if (choose_export_path() == 1) {
                 return;
-
-            goxel.last_export_panel_path = strdup(chosen_path);
+            }
         }
 
         goxel_export_to_file(goxel.last_export_panel_path, g_current->name);
