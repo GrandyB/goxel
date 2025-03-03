@@ -127,9 +127,11 @@ static inline float fgrad(long h, float x, float y, float z)
 }
 
 static unsigned char noisep[512], noisep15[512];
-static void noiseinit()
+static void noiseinit(int seed)
 {
     long i, j, k;
+
+    srand(seed);
 
     for (i = 256 - 1; i >= 0; i--)
         noisep[i] = i;
@@ -228,7 +230,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     printf("Heightmap generator by Tom Dobrowoski (http://ged.ax.pl/~tomkh)\n");
     printf("Assistance by Ken Silverman (http://advsys.net/ken)\n");
 
-    noiseinit();
+    noiseinit(settings->seed);
 
     // Tom's algorithm from 12/04/2005
     printf("Generating landscape\n");
