@@ -128,8 +128,8 @@ static void gui_filter_window(void *arg, filter_t *filter)
     filter_layout_state_t *state = arg;
 
     if (filter->is_open) {
-        gui_window_begin(filter->name, state->next_x, state->next_y,
-                            goxel.gui.panel_width, 0, GUI_WINDOW_MOVABLE);
+        float width = filter->panel_width ? filter->panel_width : goxel.gui.panel_width;
+        gui_window_begin(filter->name, state->next_x, state->next_y, width, 0, GUI_WINDOW_MOVABLE);
 
         if (gui_panel_header(filter->name)) {
             if (filter->on_close) {

@@ -30,6 +30,7 @@
      const char *name;
      const char *action_id;
      const char *default_shortcut;
+     const float panel_width;
      bool is_open;
  };
  
