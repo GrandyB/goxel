@@ -10,6 +10,7 @@ typedef struct {
     // Generation
     int max_height;
     int num_octaves;
+    int seed;
     float amp_octave_mult;
     float river_width;
     float variety;

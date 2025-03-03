@@ -18,6 +18,8 @@
 
 #include "genland.h"
 #include "goxel.h"
+#include <time.h>
+#include <stdlib.h>
 
 /*
  * Filter that uses Tom Dobrowolski's terrain generator.
@@ -32,6 +34,7 @@ static void reset_to_default(filter_genland_t *filter) {
     filter->settings = (genland_settings_t *)malloc(sizeof(genland_settings_t));
 
     // Generation
+    filter->settings->seed = 0;
     filter->settings->max_height = 64;
     filter->settings->num_octaves = 10;
     filter->settings->amp_octave_mult = 0.4;
@@ -77,6 +80,13 @@ static int gui(filter_t *filter_)
 
     gui_input_int("Max height", &filter->settings->max_height, 0, 9999);
     gui_input_int("# Octaves", &filter->settings->num_octaves, 0, 20);
+    gui_input_int("Seed", &filter->settings->seed, 0, RAND_MAX);
+    if (gui_button("Randomize seed", -1, 0))
+    {
+        srand(time(NULL));
+        filter->settings->seed = rand();
+    }
+
     gui_input_float("Octave mult", &filter->settings->amp_octave_mult, 0.01, 0, 1, "%.2f");
     gui_input_float("River width", &filter->settings->river_width, 0.01, 0, 1, "%.2f");
     gui_input_float("Variety", &filter->settings->variety, 1.00, 0, 100, "%.0f");
