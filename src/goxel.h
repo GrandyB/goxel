@@ -579,6 +579,9 @@ typedef struct goxel
     } gui;
 
     char **recent_files; // stb arraw of most recently used files.
+
+    // Last save path specified in the Export panel
+    const char* last_export_panel_path;
 } goxel_t;
 
 // the global goxel instance.
