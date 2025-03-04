@@ -154,6 +154,7 @@ void gui_separator(void);
 void gui_push_id(const char *id);
 void gui_pop_id(void);
 
+bool _model_item(int idx, bool *_selected, const char *name, int len);
 bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);
 bool gui_layer_item(int idx, int icons_count, const int *icons,

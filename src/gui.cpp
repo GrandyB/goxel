@@ -1580,6 +1580,29 @@ void gui_request_panel_width(float width)
     goxel.gui.panel_width = width;
 }
 
+bool _model_item(int idx, bool *selected, const char *name, int len)
+{
+    
+    bool ret = false;
+
+    ImDrawList *draw_list = ImGui::GetWindowDrawList();
+    ImGuiStyle &style = ImGui::GetStyle();
+
+    ImGui::PushID(idx);
+    ImGui::PushStyleColor(ImGuiCol_Button, COLOR(WIDGET, INNER, *selected));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          color_lighten(COLOR(WIDGET, INNER, *selected)));
+
+    if (ImGui::Button(name, ImVec2(-1, GUI_ICON_HEIGHT)))
+    {
+        *selected = true;
+        ret = true;
+    }
+    ImGui::PopStyleColor(2);
+    ImGui::PopID();
+    return ret;
+}
+
 
 bool _layer_item(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
