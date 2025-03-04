@@ -31,8 +31,8 @@ static int gui(filter_t *filter_)
 {
     filter_fillz_t *filter = (void *)filter_;
     layer_t *layer = goxel.image->active_layer;
-    float box[4][4];
-    int start_x, start_y, start_z, vol_w, vol_h, vol_d, x, y, z, pos[3];
+    float box[4][4], dimensions[3], start_pos[3];
+    int x, y, z, pos[3];
     uint8_t cur_block_color[4];
     volume_iterator_t iter;
     int found_block_index = -1;
@@ -60,30 +60,19 @@ static int gui(filter_t *filter_)
         if (box_is_null(box))
             volume_get_box(layer->volume, true, box);
 
-        // Compute volume dimensions from the box (assumes box[0][0], etc., are half-dimensions)
-        vol_w = box[0][0] * 2; // volume width
-        vol_h = box[1][1] * 2; // volume height
-        vol_d = box[2][2] * 2; // volume depth
-
-        // Determine starting positions in the volume; these offsets map the image's (0,0) to the volume
-        start_x = box[0][0];   // x starting position
-        start_y = box[3][1] - box[1][1];   // y starting position
-        start_z = box[3][2] - box[2][2];   // z starting position
-
-        printf("Volume dimensions: %d x %d x %d\n", vol_w, vol_h, vol_d);
-        debug_log_44_matrix("box", box);
-        printf("Start pos: %d, %d, %d\n", start_x, start_y, start_z);
+        box_get_dimensions(box, dimensions);
+        box_get_start_pos(box, start_pos);
 
         iter = volume_get_iterator(layer->volume,
             VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
-        for (x = 0; x < vol_w; x++) {
-            for (y = 0; y < vol_h; y++) {
+        for (x = 0; x < dimensions[0]; x++) {
+            for (y = 0; y < dimensions[1]; y++) {
                 found_block_index = -1;
-                for (z = 0; z < vol_d; z++)
+                for (z = 0; z < dimensions[2]; z++)
                 {
-                    pos[0] = start_x - x - 1; // x seemed to be flipped, this fixes it despite looking like an outlier
-                    pos[1] = y + start_y;
-                    pos[2] = z + start_z;
+                    pos[0] = x + start_pos[0];
+                    pos[1] = y + start_pos[1];
+                    pos[2] = z + start_pos[2];
                     // Work from bottom y upwards, filling with the color until we meet a block
                     volume_get_at(layer->volume, &iter, pos, cur_block_color);
                     if (cur_block_color[3] != 0) {
@@ -94,9 +83,9 @@ static int gui(filter_t *filter_)
                 }
                 if (found_block_index != -1) {
                     for (z = 0; z < found_block_index; z++) {
-                        pos[0] = start_x - x - 1; // x seemed to be flipped, this fixes it despite looking like an outlier
-                        pos[1] = y + start_y;
-                        pos[2] = z + start_z;
+                        pos[0] = x + start_pos[0];
+                        pos[1] = y + start_pos[1];
+                        pos[2] = z + start_pos[2];
                         volume_set_at(layer->volume, &iter, pos, filter->color);
                     }
                 }

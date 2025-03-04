@@ -130,10 +130,20 @@ typedef struct painter {
 } painter_t;
 
 
-/* Function: mesh_get_box
+/* Function: volume_get_box
  * Compute the bounding box of a mesh.  */
-// XXX: remove this function!
 void volume_get_box(const volume_t *volume, bool exact, float box[4][4]);
+
+/*
+ * Function: box_get_dimensions
+ * Given a bounding box (volume_get_box/goxel.image->box), grab the x/y/z (width/depth/height) dimensions of the box.
+ */
+void box_get_dimensions(float box[4][4], float dimensions[3]);
+/*
+ * Function: box_get_start_pos
+ * Given a bounding box (volume_get_box output), grab the x/y/z of the starting point. Use with box_get_dimensions.
+ */
+void box_get_start_pos(float box[4][4], float start_pos[3]);
 
 /* Function: volume_op
  * Apply a paint operation to a volume.

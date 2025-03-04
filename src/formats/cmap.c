@@ -20,9 +20,9 @@
 // Colormap = top-down view of map in full colour, to export as a bmp
 static int export_as_colormap(const file_format_t *format, const image_t *image, const char *path)
 {
-    float box[4][4];
+    float box[4][4], dimensions[3], start_pos[3];
     const volume_t *volume;
-    int x, y, z, w, h, d, pos[3], start_pos[3];
+    int x, y, z, pos[3];
     uint8_t c[4];
     uint8_t *img;
     volume_iterator_t iter = {0};
@@ -31,19 +31,16 @@ static int export_as_colormap(const file_format_t *format, const image_t *image,
     mat4_copy(image->box, box);
     if (box_is_null(box))
         volume_get_box(volume, true, box);
-    w = box[0][0] * 2;
-    h = box[1][1] * 2;
-    d = box[2][2] * 2;
-    start_pos[0] = box[0][0];
-    start_pos[1] = box[3][1] - box[1][1];
-    start_pos[2] = box[3][2] - box[2][2];
-    printf("w: %u, h: %u, d: %u\n", w, h, d);
-    img = calloc(w * h, 4);
-    for (x = 0; x < w; x++)
-        for (y = 0; y < h; y++)
-            for (z = 0; z < d; z++)
+
+    box_get_dimensions(box, dimensions);
+    box_get_start_pos(box, start_pos);
+
+    img = calloc(dimensions[0] * dimensions[1], 4);
+    for (x = 0; x < dimensions[0]; x++) {
+        for (y = 0; y < dimensions[1]; y++) {
+            for (z = 0; z < dimensions[2]; z++)
             {
-                pos[0] = start_pos[0] - x - 1; // x seemed to be flipped, this fixes it despite looking like an outlier
+                pos[0] = x + start_pos[0];
                 pos[1] = y + start_pos[1];
                 pos[2] = z + start_pos[2];
                 volume_get_at(volume, &iter, pos, c);
@@ -61,14 +58,16 @@ static int export_as_colormap(const file_format_t *format, const image_t *image,
                     //      (3,1,3) = index 8, at the end of the second row of 4, etc
                     // In a heightmap's case we're overlaying stuff on top of each other so z
                     // doesn't matter other than making sure we are increasing z as we loop through
-                    int img_index = ((y * w) + x);
+                    int img_index = ((y * dimensions[0]) + x);
                     img[img_index * 4 + 0] = c[0];
                     img[img_index * 4 + 1] = c[1];
                     img[img_index * 4 + 2] = c[2];
                     img[img_index * 4 + 3] = c[3];
                 }
             }
-    img_write(img, w, h, 4, bmp, path);
+        }
+    }
+    img_write(img, dimensions[0], dimensions[1], 4, bmp, path);
     free(img);
     return 0;
 }
@@ -78,10 +77,9 @@ static int import_cmap(const file_format_t *format, image_t *image, const char *
     volume_t *volume;
     volume_iterator_t iter = {0};
     uint8_t *img;
-    float box[4][4];
+    float box[4][4], dimensions[3], start_pos[3];
     int x, y, z;
-    int file_w, file_h, vol_w, vol_h, vol_d;
-    int pos[3], start_pos[3];
+    int file_w, file_h, pos[3];
     uint8_t c[4], c2[4];
     int bpp = 0;
 
@@ -93,25 +91,16 @@ static int import_cmap(const file_format_t *format, image_t *image, const char *
     if (box_is_null(box))
         volume_get_box(volume, true, box);
 
-    // Compute volume dimensions from the box (assumes box[0][0], etc., are half-dimensions)
-    vol_w = box[0][0] * 2; // volume width
-    vol_h = box[1][1] * 2; // volume height
-    vol_d = box[2][2] * 2; // volume depth
-
-    // Determine starting positions in the volume; these offsets map the image's (0,0) to the volume
-    start_pos[0] = box[0][0];                // x starting position
-    start_pos[1] = box[3][1] - box[1][1];      // y starting position
-    start_pos[2] = box[3][2] - box[2][2];      // z starting position
-
-    printf("Volume dimensions: %d x %d x %d\n", vol_w, vol_h, vol_d);
+    box_get_dimensions(box, dimensions);
+    box_get_start_pos(box, start_pos);
 
     // Determine how many pixels we can map: stop when we exceed either the image or volume bounds
-    int max_x = (vol_w < file_w) ? vol_w : file_w;
-    int max_y = (vol_h < file_h) ? vol_h : file_h;
+    int max_x = (dimensions[0] < file_w) ? dimensions[0] : file_w;
+    int max_y = (dimensions[1] < file_h) ? dimensions[1] : file_h;
 
     // Iterate over the image pixels (which map to x/y coordinates in the volume)
-    for (y = 0; y < max_y; y++) {
-        for (x = 0; x < max_x; x++) {
+    for (x = 0; x < max_x; x++) {
+        for (y = 0; y < max_y; y++) {
             // Calculate the index into the image array (row-major order)
             int img_index = y * file_w + x;
             c[0] = img[img_index * bpp + 0];
@@ -121,16 +110,12 @@ static int import_cmap(const file_format_t *format, image_t *image, const char *
             //printf("%i/%i: %u/%u/%u/%u\n", x, y, c[0], c[1], c[2], c[3]);
 
             // Map the image x,y coordinate to a volume coordinate.
-            // Note: The x axis is flipped compared to the image, so subtract x (and an extra 1) from start_pos[0].
-            int vol_x = start_pos[0] - x - 1;
-            int vol_y = y + start_pos[1];
+            pos[0] = x + start_pos[0];
+            pos[1] = y + start_pos[1];
 
             // Apply this 2D pixel color to any existing block in this position
-            for (z = 0; z < vol_d; z++) {
-                int vol_z = z + start_pos[2];
-                pos[0] = vol_x;
-                pos[1] = vol_y;
-                pos[2] = vol_z;
+            for (z = 0; z < dimensions[2]; z++) {
+                pos[2] = z + start_pos[2];
 
                 volume_get_at(volume, &iter, pos, c2);
                 if (c2[3] != 0) {

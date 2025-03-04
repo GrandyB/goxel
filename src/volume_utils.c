@@ -507,6 +507,18 @@ void volume_get_box(const volume_t *volume, bool exact, float box[4][4])
     bbox_from_aabb(box, bbox);
 }
 
+void box_get_dimensions(float box[4][4], float dimensions[3]) {
+    dimensions[0] = box[0][0] * 2; // volume width
+    dimensions[1] = box[1][1] * 2; // volume height
+    dimensions[2] = box[2][2] * 2; // volume depth
+}
+
+void box_get_start_pos(float box[4][4], float start_pos[3]) {
+    start_pos[0] = box[3][0] - box[0][0];   // x starting position
+    start_pos[1] = box[3][1] - box[1][1];   // y starting position
+    start_pos[2] = box[3][2] - box[2][2];   // z starting position
+}
+
 // for brush, volume = tool_volume, other = brush volume
 static void tile_merge(volume_t *volume, const volume_t *other, const int pos[3],
                         int mode, const uint8_t color[4])
