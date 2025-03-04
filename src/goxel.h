@@ -353,6 +353,8 @@ bool str_replace_ext(const char *str, const char *new_ext,
  */
 char* get_file_name_from_path(const char *path);
 
+/* Safely generate a random integer between bounds. */
+int random_int(int min, int max);
 /* Debug log a [4][4] float matrix. Looking at YOU, view matrices. */
 void debug_log_44_matrix(const char* name, float mat[4][4]);
 /* Debug log a const [4][4] float matrix. Looking at YOU, view matrices. */

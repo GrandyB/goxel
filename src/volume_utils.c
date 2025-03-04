@@ -507,16 +507,59 @@ void volume_get_box(const volume_t *volume, bool exact, float box[4][4])
     bbox_from_aabb(box, bbox);
 }
 
-void box_get_dimensions(float box[4][4], float dimensions[3]) {
+void box_get_dimensions(float box[4][4], int dimensions[3]) {
     dimensions[0] = box[0][0] * 2; // volume width
     dimensions[1] = box[1][1] * 2; // volume height
     dimensions[2] = box[2][2] * 2; // volume depth
 }
 
-void box_get_start_pos(float box[4][4], float start_pos[3]) {
+void box_get_start_pos(float box[4][4], int start_pos[3]) {
     start_pos[0] = box[3][0] - box[0][0];   // x starting position
     start_pos[1] = box[3][1] - box[1][1];   // y starting position
     start_pos[2] = box[3][2] - box[2][2];   // z starting position
+}
+
+void allocate_heights(int dimensions[3], int **heights) {
+    *heights = (int *)malloc(dimensions[0] * dimensions[1] * sizeof(int));
+
+    for (int i = 0; i < dimensions[0] * dimensions[1]; i++) {
+        (*heights)[i] = -1;
+    }
+}
+void volume_get_heights(const volume_t *volume, int* heights) {
+    float box[4][4];
+    int dimensions[3], start_pos[3];
+    mat4_copy(goxel.image->box, box);
+    if (box_is_null(box))
+        volume_get_box(volume, true, box);
+
+    box_get_dimensions(box, dimensions);
+    box_get_start_pos(box, start_pos);
+    volume_get_heights_in_box(volume, dimensions, start_pos, heights);
+}
+void volume_get_heights_in_box(const volume_t *volume, int dimensions[3], int start_pos[3], int* heights)
+{
+    // We assume heights has already been instatiated using allocate_heights above
+    int x, y, z, pos[3];
+    uint8_t cur_block_color[4];
+    volume_iterator_t iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    
+    for (x = 0; x < dimensions[0]; x++) {
+        for (y = 0; y < dimensions[1]; y++) {
+            pos[0] = x + start_pos[0];
+            pos[1] = y + start_pos[1];
+            // Start from top and go down
+            for (z = dimensions[2]; z >= 0; z--) {
+                pos[2] = z + start_pos[2];
+                // Get the block color at the position; if has alpha, is a block
+                volume_get_at(volume, &iter, pos, cur_block_color);
+                if (cur_block_color[3] != 0) {
+                    heights[y * dimensions[0] + x] = z;
+                    break;
+                }
+            }
+        }
+    }
 }
 
 // for brush, volume = tool_volume, other = brush volume

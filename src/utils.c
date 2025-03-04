@@ -228,6 +228,10 @@ int utf_16_to_8(const wchar_t *in16, char *out8, size_t size8)
     return err;
 }
 
+int random_int(int min, int max) {
+    return min + (int)((double)rand() / ((double)RAND_MAX + 1) * (max - min + 1));
+}
+
 void debug_log_44_matrix(const char* name, float mat[4][4]) {
     LOG_D(name);
     LOG_D("    [%f][%f][%f][%f]", mat[0][0], mat[0][1], mat[0][2], mat[0][3]);

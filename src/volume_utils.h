@@ -138,12 +138,23 @@ void volume_get_box(const volume_t *volume, bool exact, float box[4][4]);
  * Function: box_get_dimensions
  * Given a bounding box (volume_get_box/goxel.image->box), grab the x/y/z (width/depth/height) dimensions of the box.
  */
-void box_get_dimensions(float box[4][4], float dimensions[3]);
+void box_get_dimensions(float box[4][4], int dimensions[3]);
 /*
  * Function: box_get_start_pos
  * Given a bounding box (volume_get_box output), grab the x/y/z of the starting point. Use with box_get_dimensions.
  */
-void box_get_start_pos(float box[4][4], float start_pos[3]);
+void box_get_start_pos(float box[4][4], int start_pos[3]);
+
+/* Function: allocate_heights
+ * Allocate the int array of heights given the dimensions.
+ */
+void allocate_heights(int dimensions[3], int **heights);
+/*
+ * Function: get_heights
+ * Allocates and fills a 1d array of the highest block in each column. [y * dimensions[0] + x] to get 2d item.
+ */
+void volume_get_heights(const volume_t *volume, int* heights);
+void volume_get_heights_in_box(const volume_t *volume, int dimensions[3], int start_pos[3], int* heights);
 
 /* Function: volume_op
  * Apply a paint operation to a volume.

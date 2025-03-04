@@ -31,8 +31,8 @@ static int gui(filter_t *filter_)
 {
     filter_fillz_t *filter = (void *)filter_;
     layer_t *layer = goxel.image->active_layer;
-    float box[4][4], dimensions[3], start_pos[3];
-    int x, y, z, pos[3];
+    float box[4][4];
+    int x, y, z, pos[3], dimensions[3], start_pos[3];
     uint8_t cur_block_color[4];
     volume_iterator_t iter;
     int found_block_index = -1;

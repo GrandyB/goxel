@@ -20,9 +20,9 @@
 // Colormap = top-down view of map in full colour, to export as a bmp
 static int export_as_colormap(const file_format_t *format, const image_t *image, const char *path)
 {
-    float box[4][4], dimensions[3], start_pos[3];
+    float box[4][4];
     const volume_t *volume;
-    int x, y, z, pos[3];
+    int x, y, z, pos[3], dimensions[3], start_pos[3];;
     uint8_t c[4];
     uint8_t *img;
     volume_iterator_t iter = {0};
@@ -77,9 +77,9 @@ static int import_cmap(const file_format_t *format, image_t *image, const char *
     volume_t *volume;
     volume_iterator_t iter = {0};
     uint8_t *img;
-    float box[4][4], dimensions[3], start_pos[3];
+    float box[4][4];
     int x, y, z;
-    int file_w, file_h, pos[3];
+    int file_w, file_h, pos[3], dimensions[3], start_pos[3];;
     uint8_t c[4], c2[4];
     int bpp = 0;
 
