@@ -42,6 +42,10 @@ typedef struct
     filter_t filter;
     int num_doodads;
     int max_placement_attempts;
+    bool rotate90;
+    bool rotate45;
+    bool rotate22pt5;
+    bool randomly_flip;
 
     doodad_model_t *models;
     doodad_model_t *active_model;
@@ -103,7 +107,37 @@ static int get_doodad_height(doodad_model_t *model)
     return dimensions[2];
 }
 
-static void set_origin_offset(doodad_model_t *doodad, float trans[4][4])
+static void randomly_flip_rotate(filter_doodadplacement_t *filter, doodad_model_t *doodad, float trans[4][4])
+{
+    if (filter->randomly_flip) {
+        int i = random_int(0, 3);
+        // 0 = no flipping
+        if (i == 1 || i == 3) mat4_iscale(trans, -1,  1,  1); // flip x
+        if (i == 2 || i == 3) mat4_iscale(trans, 1,  -1,  1); // flip y
+    }
+    if (!filter->rotate90 && !filter->rotate45 && !filter->rotate22pt5) return;
+
+    int possible = 4;
+    if (filter->rotate22pt5) possible = 16;
+    if (filter->rotate45) possible = 8;
+    
+    mat4_irotate(trans, (M_PI / possible) * random_int(1, possible), 0, 0, 1);
+}
+
+static void set_initial_offset(doodad_model_t *doodad, float trans[4][4])
+{
+    float box[4][4];
+    int start_pos[3];
+    volume_get_box(doodad->volume, true, box);
+    box_get_start_pos(box, start_pos);
+
+    // Offset overall based on start position of volume (because some outputs are completely elsewhere to begin with)
+    trans[3][0] -= start_pos[0];
+    trans[3][1] -= start_pos[1];
+    trans[3][2] -= start_pos[2];
+}
+
+static void dynamically_offset(doodad_model_t *doodad, float trans[4][4])
 {
     float box[4][4];
     int x, y, z, num_found_blocks, dimensions[3], start_pos[3], pos[3];
@@ -116,11 +150,6 @@ static void set_origin_offset(doodad_model_t *doodad, float trans[4][4])
     box_get_start_pos(box, start_pos);
 
     iter = volume_get_iterator(doodad->volume, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
-
-    // Offset overall based on start position of volume (because some outputs are completely elsewhere to begin with)
-    trans[3][0] -= start_pos[0];
-    trans[3][1] -= start_pos[1];
-    trans[3][2] -= start_pos[2];
 
     //LOG_D("Dimensions: %i by %i by %i", dimensions[0], dimensions[1], dimensions[2]);
     for (z = 0; z < dimensions[2]; z++) {
@@ -195,6 +224,17 @@ static void place_doodads(filter_doodadplacement_t *filter)
         volume_t *doodad_clone = volume_copy(doodad->volume);
         float trans[4][4];
         mat4_copy(doodad->translation, trans);
+        volume_move(doodad_clone, trans);
+
+        mat4_copy(mat4_identity, trans);
+        dynamically_offset(doodad, trans);
+        volume_move(doodad_clone, trans);
+
+        mat4_copy(mat4_identity, trans);
+        randomly_flip_rotate(filter, doodad, trans);
+        volume_move(doodad_clone, trans);
+        
+        mat4_copy(mat4_identity, trans);
         trans[3][0] += pos[0];
         trans[3][1] += pos[1];
         trans[3][2] += pos[2];
@@ -228,7 +268,7 @@ static void add_model(filter_doodadplacement_t *filter, const char *file_name, c
     };
     DL_APPEND(filter->models, new_model);
     filter->active_model = new_model;
-    set_origin_offset(new_model, new_model->translation);
+    set_initial_offset(new_model, new_model->translation);
 }
 static const char *make_label(const file_format_t *f, char *buf, int len)
 {
@@ -299,6 +339,28 @@ static int gui(filter_t *filter_)
     gui_input_int("# of doodads", &filter->num_doodads, 0, 9999);
     gui_input_int("Attempt limit", &filter->max_placement_attempts, 0, 999);
     gui_group_end();
+    if (gui_section_begin("Vary each placement", GUI_SECTION_COLLAPSABLE)) {
+        gui_checkbox(
+            "Rotate 90deg",
+            &filter->rotate90,
+            "If checked, rotations can be 90 degrees.\n"
+            "If unchecked, rotations might not be.");
+        gui_checkbox(
+            "Rotate 45deg",
+            &filter->rotate45,
+            "If checked, rotations can be 45 degrees (and 90).\n"
+            "If unchecked, rotations might not be.");
+        gui_checkbox(
+            "Rotate 22.5deg",
+            &filter->rotate22pt5,
+            "If checked, rotations can be 22.5 degrees (and the others).\n"
+            "If unchecked, rotations might not be.");
+        gui_checkbox(
+            "Randomly flip",
+            &filter->randomly_flip,
+            "If checked, sometimes it'll flip.\n"
+            "If unchecked, it won't flip.");
+    }; gui_section_end();
 
     gui_separator();
 
@@ -315,6 +377,10 @@ static void on_open(filter_t *filter_)
     filter_doodadplacement_t *filter = (void *)filter_;
     filter->num_doodads = 8;
     filter->max_placement_attempts = 20;
+    filter->rotate90 = true;
+    filter->rotate45 = true;
+    filter->rotate22pt5 = true;
+    filter->randomly_flip = true;
 }
 
 FILTER_REGISTER(doodadplacer, filter_doodadplacement_t,
