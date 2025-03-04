@@ -52,6 +52,10 @@ typedef struct
 
 static void process_voxel_data(volume_t *volume, genland_settings_t *settings, vcol *argb)
 {
+    if (settings->replace_current_layer) {
+        volume_clear(volume);
+    }
+
     int pos[3];
     // Loop over each (x, y) coordinate in the buffer grid
     for (int y = 0; y < VSID; y++)

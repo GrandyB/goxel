@@ -27,6 +27,9 @@ typedef struct {
     // Lighting
     float shadow_factor;
     float ambience_factor;
+
+    // Transform
+    bool replace_current_layer;
 } genland_settings_t;
 
 EXTERNC void generate_tomland_terrain(volume_t *volume, genland_settings_t *settings);
