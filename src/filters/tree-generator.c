@@ -45,46 +45,6 @@ typedef struct
     tree_model_t *active_model;
 } filter_treegenerator_t;
 
-// from https://github.com/infogulch/pyspades/blob/protocol075/feature_server/maps/random.txt
-// def tree(x,y):
-// # space the trees into a "x" pattern
-// x = ((x>>1)<<1) + y % 2
-// green_set = [mapmaker.make_color(98,193,69),
-//          mapmaker.make_color(96,229,55),
-//          mapmaker.make_color(94,242,48),
-//          mapmaker.make_color(93,209,57),
-//          mapmaker.make_color(92,219,57),
-//          mapmaker.make_color(88,210,66)]
-// brown = mapmaker.make_color(189,124,67)
-// trunk_h = random.randint(4,5)
-// if x > 1 and y > 1 and x < 510 and y < 510: 
-//     z = int(hmap.get(x,y)*63 - 3 - trunk_h)
-//     if z >= 0 and z + 3 + trunk_h < 62:
-//         green = random.choice(green_set)
-//         for n in [[x,y,z,z+3,z+3,green],
-//         [x+1,y,z,z+3,z+3,green],
-//         [x-1,y,z,z+3,z+3,green],
-//         [x,y+1,z,z+3,z+3,green],
-//         [x,y-1,z,z+3,z+3,green],
-//         [x,y,z+3,z+3+trunk_h,z+3+trunk_h-1,brown],
-//         [x+1,y+1,z+1,z+2,z+2,green],
-//         [x-1,y+1,z+1,z+2,z+2,green],
-//         [x+1,y-1,z+1,z+2,z+2,green],
-//         [x-1,y-1,z+1,z+2,z+2,green],
-//         [x+2,y,z+1,z+2,z+2,green],
-//         [x-2,y,z+1,z+2,z+2,green],
-//         [x,y-2,z+1,z+2,z+2,green],
-//         [x,y+2,z+1,z+2,z+2,green]]:
-//             vxl.set_column_fast(*n)
-
-// for x in xrange(0, bmap.width):
-// for y in xrange(0, bmap.height):
-//     if bmap.get_repeat(x, y) is hill_biome:
-//         left, top, right, bottom = bmap.rect_of_point(x,y)
-//         for ct in xrange(random.randint(1,17)):
-//             tree(random.randint(left,right),
-//              random.randint(top,bottom))
-
 static bool next_tree_pos(filter_treegenerator_t *filter, int *heights, int dimensions[3], int pos[3], int tree_height, int attempt) {
     int x = random_int(0, dimensions[0]-1);
     int y = random_int(0, dimensions[1]-1);
