@@ -1582,11 +1582,7 @@ void gui_request_panel_width(float width)
 
 bool _model_item(int idx, bool *selected, const char *name, int len)
 {
-    
     bool ret = false;
-
-    ImDrawList *draw_list = ImGui::GetWindowDrawList();
-    ImGuiStyle &style = ImGui::GetStyle();
 
     ImGui::PushID(idx);
     ImGui::PushStyleColor(ImGuiCol_Button, COLOR(WIDGET, INNER, *selected));
