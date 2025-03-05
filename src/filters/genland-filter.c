@@ -57,6 +57,9 @@ static void reset_to_default(filter_genland_t *filter) {
     // Lighting
     filter->settings->shadow_factor = 32;
     filter->settings->ambience_factor = 0.3;
+
+    // Transform
+    filter->settings->replace_current_layer = true;
 }
 
 static void on_open(filter_t *filter_)
@@ -104,6 +107,10 @@ static int gui(filter_t *filter_)
     gui_group_begin("Lighting");
     gui_input_float("Shadow", &filter->settings->shadow_factor, 1.00, 0, 255, "%.0f");
     gui_input_float("Ambient", &filter->settings->ambience_factor, 0.01, 0, 1, "%.2f");
+    gui_group_end();
+
+    gui_group_begin("Transform");
+    gui_checkbox("Replace layer", &filter->settings->replace_current_layer, NULL);
     gui_group_end();
 
     if (gui_button("Reset to defaults", -1, 0))
