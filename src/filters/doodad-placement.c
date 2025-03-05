@@ -22,6 +22,12 @@
 
 /*
  * Filter to place doodads on top of the image.
+ * 
+ * TODO:
+ *   - Choose whether to base on image or on a specific layer?
+ *   - Replace rotation checkboxes with a combo box
+ *   - Coverage %
+ *   - Min distance between placements?
  */
 
 static file_format_t *g_current = NULL;
@@ -42,6 +48,8 @@ typedef struct
     filter_t filter;
     int num_doodads;
     int max_placement_attempts;
+    bool place_on_0;
+    bool place_on_empty;
     bool rotate90;
     bool rotate45;
     bool rotate22pt5;
@@ -51,36 +59,52 @@ typedef struct
     doodad_model_t *active_model;
 } filter_doodadplacement_t;
 
-static bool next_doodad_pos(filter_doodadplacement_t *filter, int *heights, int dimensions[3], int pos[3], int model_height, int attempt)
+static bool next_doodad_pos(filter_doodadplacement_t *filter, int *heights, int image_dimensions[3], int doodad_dimensions[3], int attempt, int out[3])
 {
-    int x = random_int(0, dimensions[0] - 1);
-    int y = random_int(0, dimensions[1] - 1);
-    int z = heights[y * dimensions[0] + x];
-    // LOG_D("Attempt %i: %i/%i/%i", attempt, x, y, z);
+    //LOG_D("Image dimensions: %i by %i by %i", image_dimensions[0], image_dimensions[1], image_dimensions[2]);
+    int x = random_int(0, image_dimensions[0] - 1);
+    int y = random_int(0, image_dimensions[1] - 1);
+    int z = heights[y * image_dimensions[0] + x];
+
+    int w = ceil(doodad_dimensions[0] / 2.0f);
+    int d = ceil(doodad_dimensions[1] / 2.0f);
+    //int h = ceil(doodad_dimensions[2] / 2.0f);
+    //LOG_D("Attempt %i: %i/%i/%i, w: %i, d: %i, h: %i", attempt, x, y, z, w, d, h);
     if (attempt > filter->max_placement_attempts)
     {
         LOG_D("Attempted %i times to acquire suitable placement and failed, stopping", filter->max_placement_attempts);
         return false;
     }
-    else if (z + model_height >= dimensions[2] || z == -1 || z == 0)
+    
+    //LOG_D("x+w+1 (%i) >= %i?, x-w-1 (%i) <= 0?, y+d+1 (%i) >= %i?, y-d-1 (%i) <= 0", (x+w+1), image_dimensions[0], (x-w-1), (y+d+1), image_dimensions[1], (y-w-1));
+    if (z + doodad_dimensions[2] >= image_dimensions[2] || (!filter->place_on_empty && z == -1) || (!filter->place_on_0 && z == 0)
+        || x + w + 1 >= image_dimensions[0] || x - w - 1 <= 0
+        || y + d + 1 >= image_dimensions[1] || y - d - 1 <= 0)
     {
         attempt += 1;
-        return next_doodad_pos(filter, heights, dimensions, pos, model_height, attempt);
+        return next_doodad_pos(filter, heights, image_dimensions, doodad_dimensions, attempt, out);
     }
     else
     {
-        pos[0] = x;
-        pos[1] = y;
-        pos[2] = z + 1;
+        out[0] = x;
+        out[1] = y;
+        out[2] = z + 1;
     }
     return true;
+}
+
+static int count_doodads(filter_doodadplacement_t *filter) {
+    doodad_model_t *iter;
+    int count;
+    DL_COUNT(filter->models, iter, count);
+    return count;
 }
 
 static doodad_model_t *choose_random_doodad_model(filter_doodadplacement_t *filter)
 {
     doodad_model_t *iter;
     int i, idx, count;
-    DL_COUNT(filter->models, iter, count);
+    count = count_doodads(filter);
     // LOG_D("Count: %i", count);
 
     if (count == 0)
@@ -96,15 +120,6 @@ static doodad_model_t *choose_random_doodad_model(filter_doodadplacement_t *filt
         i++;
     }
     return iter;
-}
-
-static int get_doodad_height(doodad_model_t *model)
-{
-    float box[4][4];
-    int dimensions[3];
-    volume_get_box(model->volume, false, box);
-    box_get_dimensions(box, dimensions);
-    return dimensions[2];
 }
 
 static void randomly_flip_rotate(filter_doodadplacement_t *filter, doodad_model_t *doodad, float trans[4][4])
@@ -173,7 +188,7 @@ static void dynamically_offset(doodad_model_t *doodad, float trans[4][4])
             offset[0] += (int)floor(positions[0] / num_found_blocks);
             offset[1] += (int)floor(positions[1] / num_found_blocks);
             offset[2] += (int)floor(positions[2] / num_found_blocks);
-            LOG_I("Doodad offset acquired"); //: %f/%f/%f", offset[0], offset[1], offset[2]);
+            //LOG_I("Doodad offset acquired: %f/%f/%f", offset[0], offset[1], offset[2]);
             vec3_isub(trans[3], offset);
             return;
         }
@@ -212,32 +227,47 @@ static void place_doodads(filter_doodadplacement_t *filter)
             LOG_W("Unable to acquire a doodad from the list");
             return;
         }
-        int model_height = get_doodad_height(doodad);
-        // LOG_D("Random doodad: '%s', height: %i", doodad->file_name, model_height);
-
-        if (!next_doodad_pos(filter, heights, dimensions, pos, model_height, 0))
-            break;
-        pos[0] += start_pos[0];
-        pos[1] += start_pos[1];
-        pos[2] += start_pos[2];
-        // LOG_D("Adding doodad at %i/%i/%i", pos[0], pos[1], pos[2]);
         volume_t *doodad_clone = volume_copy(doodad->volume);
-        float trans[4][4];
+
+        //const uint8_t c1[4] = { 255, 255, 255, 255 };
+        //const uint8_t c2[4] = { 180, 180, 180, 255 };
+        //const uint8_t c3[4] = { 120, 120, 120, 255 };
+        //unint8_t c4[4] = { 70, 70, 70, 255 };
+        //volume_merge(goxel.image->active_layer->volume, doodad_clone, MODE_INTERSECT, NULL);
+
+        // Move doodad to its own 0
+        float trans[4][4] = MAT4_IDENTITY;
         mat4_copy(doodad->translation, trans);
         volume_move(doodad_clone, trans);
+        //volume_merge(goxel.image->active_layer->volume, doodad_clone, MODE_MAX, c2);
 
+        // Find center of lowest blocks and offset off that
         mat4_copy(mat4_identity, trans);
         dynamically_offset(doodad, trans);
         volume_move(doodad_clone, trans);
+        //volume_merge(goxel.image->active_layer->volume, doodad_clone, MODE_MAX, c2);
 
+        // Flip/rotate
         mat4_copy(mat4_identity, trans);
         randomly_flip_rotate(filter, doodad, trans);
         volume_move(doodad_clone, trans);
+        //volume_merge(goxel.image->active_layer->volume, doodad_clone, MODE_MAX, c3);
+
+        int doodad_dimensions[3];
+        float doodad_box[4][4];
+        volume_get_box(doodad_clone, true, doodad_box);
+        box_get_dimensions(doodad_box, doodad_dimensions);
+        // LOG_D("Random doodad: '%s', height: %i", doodad->file_name, model_height);
+
+        if (!next_doodad_pos(filter, heights, dimensions, doodad_dimensions, 0, pos))
+           break;
         
+
+        //LOG_D("Start pos: %i/%i/%i", start_pos[0], start_pos[1], start_pos[2]);
         mat4_copy(mat4_identity, trans);
-        trans[3][0] += pos[0];
-        trans[3][1] += pos[1];
-        trans[3][2] += pos[2];
+        trans[3][0] = start_pos[0] + pos[0];
+        trans[3][1] = start_pos[1] + pos[1];
+        trans[3][2] = start_pos[2] + pos[2];
         volume_move(doodad_clone, trans);
         volume_merge(goxel.image->active_layer->volume, doodad_clone, MODE_OVER, NULL);
         volume_delete(doodad_clone);
@@ -289,19 +319,38 @@ static int gui(filter_t *filter_)
 {
     filter_doodadplacement_t *filter = (void *)filter_;
 
-    gui_list(&(gui_list_t){
-        .items = (void **)&filter->models,
-        .current = (void **)&filter->active_model,
-        .render = render_model_list_item,
-    });
+    const char *help_text = "This filter takes in a list of doodads and randomly places them in the image.";
+    goxel_set_help_text(help_text);
 
-    if (gui_button("Remove selected", 0, 0) && filter->active_model)
+    if (gui_collapsing_header("Hint", false))
     {
-        volume_delete(filter->active_model->volume);
-        DL_DELETE(filter->models, filter->active_model);
-        filter->active_model = NULL;
+        const char *hint = "This filter takes in a list of doodads and randomly places them in the image.\n"
+            "It will grab the entire image and use the max heights it finds as potential placement spots (ignoring z=0 or empty if checkboxes are checked).\n"
+            "It will take into account the size of the doodad and prevent placement which would take blocks out of bounds.";
+        gui_text_wrapped(hint);
     }
 
+    gui_text("Doodad list:");
+
+    int doodad_count = count_doodads(filter);
+    if (doodad_count == 0) {
+        gui_text("[Empty]");
+    } else {
+        gui_list(&(gui_list_t){
+            .items = (void **)&filter->models,
+            .current = (void **)&filter->active_model,
+            .render = render_model_list_item,
+        });
+
+        if (gui_button("Remove selected", 0, 0) && filter->active_model)
+        {
+            volume_delete(filter->active_model->volume);
+            DL_DELETE(filter->models, filter->active_model);
+            filter->active_model = NULL;
+        }
+    }
+
+    gui_separator();
     // File importer
     char label[128];
     gui_text("Import as");
@@ -335,11 +384,22 @@ static int gui(filter_t *filter_)
 
     gui_separator();
 
-    gui_group_begin("##settings");
-    gui_input_int("# of doodads", &filter->num_doodads, 0, 9999);
-    gui_input_int("Attempt limit", &filter->max_placement_attempts, 0, 999);
-    gui_group_end();
-    if (gui_section_begin("Vary each placement", GUI_SECTION_COLLAPSABLE)) {
+    if(gui_section_begin("Settings", GUI_SECTION_COLLAPSABLE)) {
+        gui_input_int("# of doodads", &filter->num_doodads, 0, 9999);
+        gui_input_int("Attempt limit", &filter->max_placement_attempts, 0, 999);
+        gui_checkbox(
+            "Place on lowest",
+            &filter->place_on_0,
+            "If checked, the placement won't ignore the bottom layer of the map.\n"
+            "If unchecked, the placement will ignore the bottom layer of the map as a potential placement spot.");
+        gui_checkbox(
+            "Place on empty",
+            &filter->place_on_empty,
+            "If checked, the placement will allow placing where there are no blocks.\n"
+            "If unchecked, the placement will require there to be blocks.");
+    } gui_section_end();
+
+    if (gui_section_begin("Variation", GUI_SECTION_COLLAPSABLE)) {
         gui_checkbox(
             "Rotate 90deg",
             &filter->rotate90,
@@ -373,10 +433,19 @@ static int gui(filter_t *filter_)
 }
 
 static void on_open(filter_t *filter_)
-{
+{   
+    float box[4][4];
+    int dimensions[3];
+
+    mat4_copy(goxel.image->box, box);
+    box_get_dimensions(box, dimensions);
     filter_doodadplacement_t *filter = (void *)filter_;
-    filter->num_doodads = 8;
+    // Botched guestimating of how many can fit inside the dimensions
+    filter->num_doodads = 0.35 * sqrt(dimensions[0]*dimensions[1]);
     filter->max_placement_attempts = 20;
+    filter->place_on_0 = false;
+    filter->place_on_empty = false;
+
     filter->rotate90 = true;
     filter->rotate45 = true;
     filter->rotate22pt5 = true;
