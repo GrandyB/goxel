@@ -1316,6 +1316,10 @@ bool gui_checkbox(const char *label, bool *v, const char *hint)
     return ret;
 }
 
+void gui_tooltip_if_hovered(const char *info) {
+    if (info && ImGui::IsItemHovered()) gui_tooltip(info);
+}
+
 bool gui_checkbox_flag(const char *label, int *v, int flag, const char *hint)
 {
     bool ret, b;

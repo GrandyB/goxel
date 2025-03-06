@@ -131,8 +131,18 @@ typedef struct painter {
 
 
 /* Function: volume_get_box
- * Compute the bounding box of a mesh.  */
+ * Compute the bounding box of a volume.  */
 void volume_get_box(const volume_t *volume, bool exact, float box[4][4]);
+/*
+ * Function: volume_get_dimensions
+ * Given a volume, grab the x/y/z (width/depth/height) dimensions.
+ */
+void volume_get_dimensions(const volume_t *volume, int dimensions[3]);
+/*
+ * Function: volume_get_start_pos
+ * Given a volume, grab the x/y/z of the starting point.
+ */
+void volume_get_start_pos(const volume_t *volume, int start_pos[3]);
 
 /*
  * Function: box_get_dimensions

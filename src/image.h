@@ -89,6 +89,8 @@ bool material_name_exists(void *user, const char *name);
 bool layer_name_exists(void *user, const char *name);
 bool camera_name_exists(void *user, const char *name);
 
+void image_set_image_dimensions_and_center(image_t *img, int w, int h, int d);
+
 /*
  * Function: image_get_key
  * Return a value that is guarantied to change when the image change.

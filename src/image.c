@@ -577,9 +577,9 @@ void image_auto_resize_reset(image_t *img)
 
     float trans[4][4] = MAT4_IDENTITY;
     // distance from origin + local origin
-    trans[3][0] = -box[3][0] + box[0][0];
-    trans[3][1] = -box[3][1] + box[1][1];
-    trans[3][2] = -box[3][2] + box[2][2];
+    trans[3][0] = -box[3][0] + box[0][0]; // -originX + sizeX*0.5
+    trans[3][1] = -box[3][1] + box[1][1]; // -originY + sizeY*0.5
+    trans[3][2] = -box[3][2] + box[2][2]; // -originZ + sizeZ*0.5
     //debug_log_44_matrix("trans", trans);
 
     box[3][0] = box[0][0];
@@ -596,6 +596,33 @@ void image_auto_resize_reset(image_t *img)
         if (layer->visible) {
             volume_move(layer->volume, trans);
         }
+    }
+}
+
+void image_set_image_dimensions_and_center(image_t *img, int w, int h, int d) {
+    float box[4][4];
+    float trans[4][4] = MAT4_IDENTITY;
+    mat4_copy(img->box, box);
+
+    // Find difference between current origin and new origin
+    trans[3][0] = (-box[3][0] + box[0][0] - w/2); // x = 12, w = 512, new = -128, diff = -12-w/2
+    trans[3][1] = (-box[3][1] + box[1][1] - h/2);
+    trans[3][2] = (-box[3][2] + box[2][2] - d/2);
+
+    // Set new dimensions
+    box[0][0] = w/2;
+    box[1][1] = h/2;
+    box[2][2] = d/2;
+    box[3][0] = 0;
+    box[3][1] = 0;
+    box[3][2] = 0;
+    //debug_log_44_matrix("box", box);
+    mat4_copy(box, img->box);
+
+    // Move all layers by the difference
+    layer_t *layer;
+    DL_FOREACH(img->layers, layer) {
+        volume_move(layer->volume, trans);
     }
 }
 
