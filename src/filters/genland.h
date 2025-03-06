@@ -13,6 +13,7 @@ typedef struct {
     int seed;
     float amp_octave_mult;
     float river_width;
+    float river_phase;
     float variety;
     float offset;
     float noise_terrain;
@@ -29,6 +30,7 @@ typedef struct {
     float ambience_factor;
 
     // Transform
+    bool resize_image;
     bool replace_current_layer;
 } genland_settings_t;
 

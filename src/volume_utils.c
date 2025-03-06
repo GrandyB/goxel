@@ -519,6 +519,18 @@ void box_get_start_pos(float box[4][4], int start_pos[3]) {
     start_pos[2] = box[3][2] - box[2][2];   // z starting position
 }
 
+void volume_get_dimensions(const volume_t *volume, int dimensions[3]) {
+    float box[4][4];
+    volume_get_box(volume, true, box);
+    box_get_dimensions(box, dimensions);
+}
+
+void volume_get_start_pos(const volume_t *volume, int start_pos[3]) {
+    float box[4][4];
+    volume_get_box(volume, true, box);
+    box_get_start_pos(box, start_pos);
+}
+
 void allocate_heights(int dimensions[3], int **heights) {
     *heights = (int *)malloc(dimensions[0] * dimensions[1] * sizeof(int));
 

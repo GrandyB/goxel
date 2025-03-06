@@ -39,10 +39,10 @@ static void import_image_plane(void)
 static void import_hmap_cmap(void) {
     const char *hmap_path;
     const char *cmap_path;
-    const char *filters[] = {"*.png", "*.bmp", "*.jpg", "*.jpeg", NULL};
-    hmap_path = sys_open_file_dialog("Choose heightmap image", NULL, filters, "png, jpeg, bmp");
+    const char *filters[] = {"*.bmp", NULL};
+    hmap_path = sys_open_file_dialog("Choose heightmap image", NULL, filters, "bmp");
     if (!hmap_path) return;
-    cmap_path = sys_open_file_dialog("Choose colormap image", NULL, filters, "png, jpeg, bmp");
+    cmap_path = sys_open_file_dialog("Choose colormap image", NULL, filters, "bmp");
     if (!cmap_path) return;
     LOG_I("Importing\nhmap: '%s'\ncmap: '%s'\n", hmap_path, cmap_path);
     goxel_import_hmap_cmap(hmap_path, cmap_path);

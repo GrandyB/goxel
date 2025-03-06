@@ -55,6 +55,8 @@ static void process_voxel_data(volume_t *volume, genland_settings_t *settings, v
     if (settings->replace_current_layer) {
         volume_clear(volume);
     }
+    int start_pos[3];
+    box_get_start_pos(goxel.image->box, start_pos);
 
     int pos[3];
     // Loop over each (x, y) coordinate in the buffer grid
@@ -73,9 +75,9 @@ static void process_voxel_data(volume_t *volume, genland_settings_t *settings, v
                 // Fill the column from the bottom (z = 0) up to voxelTopZ with the same color.
                 for (int z = 0; z <= voxelTopZ; z++)
                 {
-                    pos[0] = x;
-                    pos[1] = y;
-                    pos[2] = z;
+                    pos[0] = x + start_pos[0];
+                    pos[1] = y + start_pos[1];
+                    pos[2] = z + start_pos[2];
                     uint8_t color[4] = {argb->r, argb->g, argb->b, 255};
                     volume_set_at(volume, NULL, pos, color);
                 }
@@ -273,13 +275,19 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
                 // Compute base height for the sample
                 baseSamples[octaveIndex] = (tempValue * - settings->variety) + settings->offset;
                 // Modulate height using sine to simulate river effect (.02 approximates river width)
-                tempValue = sin(pixelX * (PI / 256.0) + riverNoise * 4.0) * (0.5 + settings->river_width) + (0.5 - settings->river_width);
-                if (tempValue > 1)
-                    tempValue = 1;
-                correctedSamples[octaveIndex] = baseSamples[octaveIndex] * tempValue;
-                if (tempValue < 0)
-                    tempValue = 0;
-                baseSamples[octaveIndex] *= tempValue;
+                if (settings->river_width != 0) {
+                    tempValue = sin(pixelX * (PI / 256.0) + riverNoise * 4 + (((1 - settings->river_phase) * 2 * PI) + (1.5 * PI)))
+                    * (0.5 + settings->river_width) + (0.5 - settings->river_width);
+
+                    if (tempValue > 1)
+                        tempValue = 1;
+                    correctedSamples[octaveIndex] = baseSamples[octaveIndex] * tempValue;
+                    if (tempValue < 0)
+                        tempValue = 0;
+                    baseSamples[octaveIndex] *= tempValue;
+                } else {
+                    correctedSamples[octaveIndex] = baseSamples[octaveIndex];
+                }
                 // If the corrected sample is lower than the base, adjust to simulate water surface normal
                 if (correctedSamples[octaveIndex] < baseSamples[octaveIndex])
                     correctedSamples[octaveIndex] = -log(1.0 - correctedSamples[octaveIndex]);

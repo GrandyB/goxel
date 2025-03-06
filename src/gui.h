@@ -107,6 +107,7 @@ typedef struct gui_icon_info
 bool gui_icons_grid(int nb, const gui_icon_info_t *icons, int *current);
 
 bool gui_tab(const char *label, int icon, bool *v);
+void gui_tooltip_if_hovered(const char *info);
 bool gui_checkbox(const char *label, bool *v, const char *hint);
 bool gui_checkbox_flag(const char *label, int *v, int flag, const char *hint);
 bool gui_input_int(const char *label, int *v, int minv, int maxv);
