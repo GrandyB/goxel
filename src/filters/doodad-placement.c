@@ -50,6 +50,7 @@ typedef struct
     int max_placement_attempts;
     bool place_on_0;
     bool place_on_empty;
+    bool ignore_height_restrictions;
     bool rotate90;
     bool rotate45;
     bool rotate22pt5;
@@ -77,7 +78,9 @@ static bool next_doodad_pos(filter_doodadplacement_t *filter, int *heights, int 
     }
     
     //LOG_D("x+w+1 (%i) >= %i?, x-w-1 (%i) <= 0?, y+d+1 (%i) >= %i?, y-d-1 (%i) <= 0", (x+w+1), image_dimensions[0], (x-w-1), (y+d+1), image_dimensions[1], (y-w-1));
-    if (z + doodad_dimensions[2] >= image_dimensions[2] || (!filter->place_on_empty && z == -1) || (!filter->place_on_0 && z == 0)
+    if ((!filter->ignore_height_restrictions && z + doodad_dimensions[2] >= image_dimensions[2])
+        || (!filter->place_on_empty && z == -1)
+        || (!filter->place_on_0 && z == 0)
         || x + w + 1 >= image_dimensions[0] || x - w - 1 <= 0
         || y + d + 1 >= image_dimensions[1] || y - d - 1 <= 0)
     {
@@ -200,16 +203,15 @@ static void place_doodads(filter_doodadplacement_t *filter)
 {
     float box[4][4];
     int dimensions[3], start_pos[3], *heights;
-
+    
     mat4_copy(goxel.image->box, box);
     box_get_dimensions(box, dimensions);
-    box_get_start_pos(box, start_pos);
-
     if (dimensions[0] == 0 || dimensions[1] == 0)
     {
         LOG_W("Image has a 0 dimension, not running the script");
         return;
     }
+    box_get_start_pos(box, start_pos);
 
     //clock_t start = clock(); // Start timing
     allocate_heights(dimensions, &heights);
@@ -262,7 +264,6 @@ static void place_doodads(filter_doodadplacement_t *filter)
         if (!next_doodad_pos(filter, heights, dimensions, doodad_dimensions, 0, pos))
            break;
         
-
         //LOG_D("Start pos: %i/%i/%i", start_pos[0], start_pos[1], start_pos[2]);
         mat4_copy(mat4_identity, trans);
         trans[3][0] = start_pos[0] + pos[0];
@@ -397,6 +398,11 @@ static int gui(filter_t *filter_)
             &filter->place_on_empty,
             "If checked, the placement will allow placing where there are no blocks.\n"
             "If unchecked, the placement will require there to be blocks.");
+        gui_checkbox(
+            "Ignore height restrictions",
+            &filter->ignore_height_restrictions,
+            "If checked, the placement will not do height checks - it may place out of bounds vertically.\n"
+            "If unchecked, the placement will not place the doodad if it goes outside of the box vertically.");
     } gui_section_end();
 
     if (gui_section_begin("Variation", GUI_SECTION_COLLAPSABLE)) {

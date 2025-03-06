@@ -40,6 +40,7 @@ static const genland_settings_t default_genland_settings = {
     .amp_octave_mult = 0.4,
     .river_phase = 0.75,
     .river_width = 0.02,
+    .num_rivers = 1,
     .variety = 20.0,
     .offset = 28.0,
     .noise_terrain = 9.5,
@@ -108,7 +109,10 @@ static int gui(filter_t *filter_)
     gui_input_float("Octave mult", &filter->settings->amp_octave_mult, 0.01, 0, 1, "%.2f");
     gui_tooltip_with_default("How aggressively each octave of noise affects the final result, lower = less aggressive", "%.2f", default_genland_settings.amp_octave_mult);
 
-    gui_input_float("River width", &filter->settings->river_width, 0.01, 0, 1, "%.2f");
+    gui_input_int("# of rivers", &filter->settings->num_rivers, 0, 100);
+    gui_tooltip_with_default("How many rivers should we attempt to generate", "%i", default_genland_settings.num_rivers);
+
+    gui_input_float("River width", &filter->settings->river_width, 0.001, 0, 1, "%.3f");
     gui_tooltip_with_default("How wide the river(s) should generate", "%.2f", default_genland_settings.river_width);
 
     gui_input_float("River phase", &filter->settings->river_phase, 0.01, 0, 1, "%.2f");
