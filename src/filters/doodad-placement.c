@@ -48,6 +48,7 @@ typedef struct
     // Settings
     int num_doodads;
     int max_placement_attempts;
+    int z_offset;
 
     // Layers
     bool use_image_heights;
@@ -100,7 +101,7 @@ static bool next_doodad_pos(filter_doodadplacement_t *filter, int *heights, int 
     {
         out[0] = x;
         out[1] = y;
-        out[2] = z + 1;
+        out[2] = z + 1 + filter->z_offset;
     }
     return true;
 }
@@ -448,7 +449,13 @@ static int gui(filter_t *filter_)
 
     if(gui_collapsing_header("Settings", true)) {
         gui_input_int("# of doodads", &filter->num_doodads, 0, 9999);
+        gui_tooltip_if_hovered("How many to place - default value is a dumb guestimate based on image dimensions");
+
         gui_input_int("Attempt limit", &filter->max_placement_attempts, 0, 999);
+        gui_tooltip_if_hovered("How many times positions will be tried for placement (given the restrictions)");
+
+        gui_input_int("Offset", &filter->z_offset, -9999, 9999);
+        gui_tooltip_if_hovered("Offset doodads vertically by an amount");
     }
 
     if (gui_collapsing_header("Reference heights", false)) {
@@ -546,6 +553,7 @@ static void on_open(filter_t *filter_)
     // Botched guestimating of how many can fit inside the dimensions
     filter->num_doodads = 0.35 * sqrt(dimensions[0]*dimensions[1]);
     filter->max_placement_attempts = 20;
+    filter->z_offset = 0;
 
     filter->use_image_heights = true;
 
@@ -562,5 +570,5 @@ static void on_open(filter_t *filter_)
 FILTER_REGISTER(doodadplacer, filter_doodadplacement_t,
                 .name = "Generation - Doodad placement",
                 .on_open = on_open,
-                .panel_width = 300,
+                .panel_width = 350,
                 .gui_fn = gui, )
