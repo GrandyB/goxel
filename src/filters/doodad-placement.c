@@ -30,8 +30,6 @@
  *   - Min distance between placements?
  */
 
-static file_format_t *g_current = NULL;
-
 typedef struct doodad_model doodad_model_t;
 struct doodad_model
 {
@@ -43,14 +41,26 @@ struct doodad_model
     float           translation[4][4];
 };
 
+static file_format_t *cur_file_format;
 typedef struct
 {
     filter_t filter;
+    // Settings
     int num_doodads;
     int max_placement_attempts;
+    int z_offset;
+
+    // Layers
+    bool use_image_heights;
+    layer_t *height_layer;
+    bool restrict_to_layer_box;
+
+    // Restrictions
     bool place_on_0;
     bool place_on_empty;
     bool ignore_height_restrictions;
+
+    // Variation
     bool rotate90;
     bool rotate45;
     bool rotate22pt5;
@@ -91,7 +101,7 @@ static bool next_doodad_pos(filter_doodadplacement_t *filter, int *heights, int 
     {
         out[0] = x;
         out[1] = y;
-        out[2] = z + 1;
+        out[2] = z + 1 + filter->z_offset;
     }
     return true;
 }
@@ -203,7 +213,7 @@ static void place_doodads(filter_doodadplacement_t *filter)
 {
     float box[4][4];
     int dimensions[3], start_pos[3], *heights;
-    
+    const volume_t *vol_to_use_for_heights;
     mat4_copy(goxel.image->box, box);
     box_get_dimensions(box, dimensions);
     if (dimensions[0] == 0 || dimensions[1] == 0)
@@ -213,9 +223,32 @@ static void place_doodads(filter_doodadplacement_t *filter)
     }
     box_get_start_pos(box, start_pos);
 
+    if (filter->restrict_to_layer_box) {
+        int layer_dimensions[3], layer_start_pos[3];
+        float layer_box[4][4];
+        volume_get_box(filter->height_layer->volume, true, layer_box);
+        box_get_start_pos(layer_box, layer_start_pos);
+        // LOG_D("Height until top of image box: %i - d: %i/%i/%i, lsp: %i,%i,%i", ,
+        //     dimensions[0], dimensions[1], dimensions[2],
+        //     layer_start_pos[0], layer_start_pos[1], layer_start_pos[2]);
+        box_get_dimensions(layer_box, layer_dimensions);
+        // Replace the height of the layer as being the distance from the bottom of the layer's box, to the top of the image box
+        layer_dimensions[2] = dimensions[2]; //dimensions[2] - (layer_start_pos[2] - start_pos[2]);
+        layer_start_pos[2] = start_pos[2];
+
+        mat4_copy(layer_box, box);
+        vec3i_copy(layer_dimensions, dimensions);
+        vec3i_copy(layer_start_pos, start_pos);
+    }
+
+    if (filter->use_image_heights) {
+        vol_to_use_for_heights = goxel_get_layers_volume(goxel.image);
+    } else {
+        vol_to_use_for_heights = filter->height_layer->volume;
+    }
     //clock_t start = clock(); // Start timing
     allocate_heights(dimensions, &heights);
-    volume_get_heights_in_box(goxel_get_layers_volume(goxel.image), dimensions, start_pos, heights);
+    volume_get_heights_in_box(vol_to_use_for_heights, dimensions, start_pos, heights);
     //clock_t end = clock(); // End timing
     //double elapsed_time = (((double)(end - start)) / CLOCKS_PER_SEC) * 1000;
     //printf("Function took %.3fms\n", elapsed_time);
@@ -311,9 +344,9 @@ static void on_format(void *user, file_format_t *f)
 {
     char label[128];
     make_label(f, label, sizeof(label));
-    if (gui_combo_item(label, f == g_current))
+    if (gui_combo_item(label, f == cur_file_format))
     {
-        g_current = f;
+        cur_file_format = f;
     }
 }
 
@@ -328,7 +361,7 @@ void handle_multi_file_selection(const char *paths, filter_doodadplacement_t *fi
     while (token != NULL) {
         const char *file_name = strdup(get_file_name_from_path(token));
         volume_t *vol = volume_new();
-        goxel_import_file_to_volume(token, g_current->name, vol, on_file_import);
+        goxel_import_file_to_volume(token, cur_file_format->name, vol, on_file_import);
         add_model(filter, file_name, token, vol);
         token = strtok_r(NULL, "|", &saveptr);
     }
@@ -385,29 +418,27 @@ static int gui(filter_t *filter_)
     }
 
     gui_separator();
+
     // File importer
     char label[128];
     gui_text("Import doodad:");
-    if (!g_current)
-        g_current = file_formats_import_to_volume; // First one.
-
-    make_label(g_current, label, sizeof(label));
+    if (!cur_file_format)
+        cur_file_format = file_formats_import_to_volume; // First one.
+    make_label(cur_file_format, label, sizeof(label));
     if (gui_combo_begin("Import as", label))
     {
         file_format_iter("v", NULL, on_format);
         gui_combo_end();
     }
-
-    if (g_current->import_gui)
-        g_current->import_gui(g_current);
-
+    if (cur_file_format->import_gui)
+        cur_file_format->import_gui(cur_file_format);
     if (gui_button("Import", 1, 0))
     {
         const char *path;
 
-        if (!g_current)
+        if (!cur_file_format)
             return -1;
-        path = strdup(sys_open_multi_file_dialog("Import", NULL, g_current->exts, g_current->exts_desc));
+        path = strdup(sys_open_multi_file_dialog("Import", NULL, cur_file_format->exts, cur_file_format->exts_desc));
         if (!path)
             return -1;
         LOG_D("Path: '%s'", path);
@@ -416,9 +447,51 @@ static int gui(filter_t *filter_)
 
     gui_separator();
 
-    if(gui_section_begin("Settings", GUI_SECTION_COLLAPSABLE)) {
+    if(gui_collapsing_header("Settings", true)) {
         gui_input_int("# of doodads", &filter->num_doodads, 0, 9999);
+        gui_tooltip_if_hovered("How many to place - default value is a dumb guestimate based on image dimensions");
+
         gui_input_int("Attempt limit", &filter->max_placement_attempts, 0, 999);
+        gui_tooltip_if_hovered("How many times positions will be tried for placement (given the restrictions)");
+
+        gui_input_int("Offset", &filter->z_offset, -9999, 9999);
+        gui_tooltip_if_hovered("Offset doodads vertically by an amount");
+    }
+
+    if (gui_collapsing_header("Reference heights", false)) {
+        gui_checkbox(
+            "Use entire image",
+            &filter->use_image_heights,
+            "If checked, all visible layers will be used to work out potential heights to place doodads at.\n"
+            "If unchecked, only a specific/chosen layer will inform the placement heights.");
+        if (!filter->use_image_heights) {
+            if (!filter->height_layer)
+                filter->height_layer = goxel.image->layers; // First one.
+            gui_text("Height reference layer: ");
+            gui_same_line();
+            if (gui_combo_begin("Layer", filter->height_layer->name))
+            {
+                layer_t *cur;
+                DL_FOREACH_REVERSE(goxel.image->layers, cur) {
+                    if (gui_combo_item(cur->name, cur == filter->height_layer))
+                    {
+                        filter->height_layer = cur;
+                    }
+                }
+                gui_combo_end();
+            }
+            gui_checkbox(
+                "Only place within layer area",
+                &filter->restrict_to_layer_box,
+                "When placement begins, a 'box' is used to determine the x/y space that placement will be attempted within.\n"
+                "If unchecked, the placement area is the entire image box (but heights are still just those of the selected layer).\n"
+                "If checked, the x/y area is from bottom left to top right block and available height is the height of the image box\n"
+                "(so if the layer only has blocks in a small subset of the image, you may find less doodads are placed if this is unchecked).\n"
+            );
+        }
+    }
+
+    if(gui_collapsing_header("Restrictions", true)) {
         gui_checkbox(
             "Place on lowest",
             &filter->place_on_0,
@@ -434,9 +507,9 @@ static int gui(filter_t *filter_)
             &filter->ignore_height_restrictions,
             "If checked, the placement will not do height checks - it may place out of bounds vertically.\n"
             "If unchecked, the placement will not place the doodad if it goes outside of the box vertically.");
-    } gui_section_end();
+    }
 
-    if (gui_section_begin("Variation", GUI_SECTION_COLLAPSABLE)) {
+    if (gui_collapsing_header("Variation", true)) {
         gui_checkbox(
             "Rotate 90deg",
             &filter->rotate90,
@@ -457,7 +530,7 @@ static int gui(filter_t *filter_)
             &filter->randomly_flip,
             "If checked, sometimes it'll flip.\n"
             "If unchecked, it won't flip.");
-    }; gui_section_end();
+    }
 
     gui_separator();
 
@@ -480,8 +553,13 @@ static void on_open(filter_t *filter_)
     // Botched guestimating of how many can fit inside the dimensions
     filter->num_doodads = 0.35 * sqrt(dimensions[0]*dimensions[1]);
     filter->max_placement_attempts = 20;
+    filter->z_offset = 0;
+
+    filter->use_image_heights = true;
+
     filter->place_on_0 = false;
     filter->place_on_empty = false;
+    filter->ignore_height_restrictions = false;
 
     filter->rotate90 = true;
     filter->rotate45 = true;
@@ -492,4 +570,5 @@ static void on_open(filter_t *filter_)
 FILTER_REGISTER(doodadplacer, filter_doodadplacement_t,
                 .name = "Generation - Doodad placement",
                 .on_open = on_open,
+                .panel_width = 350,
                 .gui_fn = gui, )
