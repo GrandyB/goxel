@@ -117,6 +117,13 @@ DECL void vec3_copy(const float a[S 3], float out[S 3])
     out[2] = a[2];
 }
 
+DECL void vec3i_copy(const int a[S 3], int out[S 3])
+{
+    out[0] = a[0];
+    out[1] = a[1];
+    out[2] = a[2];
+}
+
 /*
  * Macro: vec4_copy
  * Copy a 4 sized array into an other one.
