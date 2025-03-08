@@ -343,10 +343,20 @@ static int gui(filter_t *filter_)
             .render = render_model_list_item,
         });
 
-        if (gui_button("Remove selected", 0, 0) && filter->active_model)
+        if (gui_button("Remove selected", 0, 0) && doodad_count > 0 && filter->active_model)
         {
             volume_delete(filter->active_model->volume);
             DL_DELETE(filter->models, filter->active_model);
+            filter->active_model = NULL;
+        }
+
+        if (gui_button("Remove all", 0, 0) && doodad_count > 0)
+        {
+            doodad_model_t *model;
+            DL_FOREACH(filter->models, model) {
+                volume_delete(model->volume);
+                DL_DELETE(filter->models, model);
+            }
             filter->active_model = NULL;
         }
     }
@@ -354,7 +364,7 @@ static int gui(filter_t *filter_)
     gui_separator();
     // File importer
     char label[128];
-    gui_text("Import as");
+    gui_text("Import doodad:");
     if (!g_current)
         g_current = file_formats_import_to_volume; // First one.
 
