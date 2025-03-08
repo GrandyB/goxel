@@ -140,6 +140,10 @@ const char *sys_open_file_dialog(const char *title,
                                  const char *default_path_and_file,
                                  const char * const *filters,
                                  const char *filters_desc);
+const char *sys_open_multi_file_dialog(const char *title,
+                                 const char *default_path_and_file,
+                                 const char * const *filters,
+                                 const char *filters_desc);
 
 const char *sys_open_folder_dialog(const char *title,
                                    const char *default_path);

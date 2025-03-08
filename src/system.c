@@ -251,6 +251,16 @@ const char *sys_open_file_dialog(const char *title,
     return tinyfd_openFileDialog(title, default_path_and_file, nb,
                                  filters, filters_desc, 0);
 }
+const char *sys_open_multi_file_dialog(const char *title,
+    const char *default_path_and_file,
+    const char * const *filters,
+    const char *filters_desc)
+{
+    int nb;
+    nb = filters_count(filters);
+    return tinyfd_openFileDialog(title, default_path_and_file, nb,
+                                 filters, filters_desc, 1);
+}
 
 const char *sys_open_folder_dialog(const char *title,
                                    const char *default_path)

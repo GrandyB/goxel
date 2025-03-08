@@ -316,6 +316,23 @@ static void on_format(void *user, file_format_t *f)
         g_current = f;
     }
 }
+
+void handle_multi_file_selection(const char *paths, filter_doodadplacement_t *filter) {
+    char *token, *saveptr;
+    char paths_copy[1024];  // Make a copy since strtok modifies the string
+
+    strncpy(paths_copy, paths, sizeof(paths_copy) - 1);
+    paths_copy[sizeof(paths_copy) - 1] = '\0';  // Ensure null termination
+
+    token = strtok_r(paths_copy, "|", &saveptr);
+    while (token != NULL) {
+        const char *file_name = strdup(get_file_name_from_path(token));
+        volume_t *vol = volume_new();
+        goxel_import_file_to_volume(token, g_current->name, vol, on_file_import);
+        add_model(filter, file_name, token, vol);
+        token = strtok_r(NULL, "|", &saveptr);
+    }
+}
 static int gui(filter_t *filter_)
 {
     filter_doodadplacement_t *filter = (void *)filter_;
@@ -343,10 +360,26 @@ static int gui(filter_t *filter_)
             .render = render_model_list_item,
         });
 
-        if (gui_button("Remove selected", 0, 0) && filter->active_model)
+        if (gui_button("Remove selected", 0, 0) && doodad_count > 0 && filter->active_model)
         {
             volume_delete(filter->active_model->volume);
+            doodad_model_t *prev = filter->active_model->prev;
+            doodad_model_t *next = filter->active_model->next;
             DL_DELETE(filter->models, filter->active_model);
+            if (doodad_count > 1 && next) {
+                filter->active_model = next;
+            } else {
+                filter->active_model = prev ? prev : NULL;
+            }
+        }
+
+        if (gui_button("Remove all", 0, 0) && doodad_count > 0)
+        {
+            doodad_model_t *model;
+            DL_FOREACH(filter->models, model) {
+                volume_delete(model->volume);
+                DL_DELETE(filter->models, model);
+            }
             filter->active_model = NULL;
         }
     }
@@ -354,7 +387,7 @@ static int gui(filter_t *filter_)
     gui_separator();
     // File importer
     char label[128];
-    gui_text("Import as");
+    gui_text("Import doodad:");
     if (!g_current)
         g_current = file_formats_import_to_volume; // First one.
 
@@ -374,13 +407,11 @@ static int gui(filter_t *filter_)
 
         if (!g_current)
             return -1;
-        path = strdup(sys_open_file_dialog("Import", NULL, g_current->exts, g_current->exts_desc));
+        path = strdup(sys_open_multi_file_dialog("Import", NULL, g_current->exts, g_current->exts_desc));
         if (!path)
             return -1;
-        const char *file_name = strdup(get_file_name_from_path(path));
-        volume_t *vol = volume_new();
-        goxel_import_file_to_volume(path, g_current->name, vol, on_file_import);
-        add_model(filter, file_name, path, vol);
+        LOG_D("Path: '%s'", path);
+        handle_multi_file_selection(path, filter);
     }
 
     gui_separator();
