@@ -253,7 +253,7 @@ static const material_t *get_material(const image_t *img, int idx)
     return NULL;
 }
 
-void save_to_file(const image_t *img, const char *path)
+void save_to_file(const image_t *img, const char *path, bool visible_only)
 {
     // XXX: remove all empty blocks before saving.
     LOG_I("Save to %s", path);
@@ -293,6 +293,7 @@ void save_to_file(const image_t *img, const char *path)
     // Add all the blocks data into the hash table.
     index = 0;
     DL_FOREACH(img->layers, layer) {
+        if (visible_only && !layer->visible) continue;
         iter = volume_get_iterator(layer->volume, VOLUME_ITER_TILES);
         while (volume_iter(&iter, bpos)) {
             volume_get_tile_data(layer->volume, &iter, bpos, &uid);
@@ -332,6 +333,7 @@ void save_to_file(const image_t *img, const char *path)
 
     // Write all the layers.
     DL_FOREACH(img->layers, layer) {
+        if (visible_only && !layer->visible) continue;
         chunk_write_start(&c, out, "LAYR");
         nb_blocks = 0;
         if (!layer->base_id && !layer->shape) {
@@ -738,7 +740,7 @@ static void a_save_as(void)
         free(goxel.image->path);
         goxel.image->path = strdup(path);
     }
-    save_to_file(goxel.image, goxel.image->path);
+    save_to_file(goxel.image, goxel.image->path, false);
     goxel.image->saved_key = image_get_key(goxel.image);
     sys_on_saved(path);
     goxel_add_recent_file(path);
@@ -759,7 +761,7 @@ static void a_save(void)
         free(goxel.image->path);
         goxel.image->path = strdup(path);
     }
-    save_to_file(goxel.image, goxel.image->path);
+    save_to_file(goxel.image, goxel.image->path, false);
     goxel.image->saved_key = image_get_key(goxel.image);
     sys_on_saved(path);
     goxel_add_recent_file(path);
@@ -780,7 +782,14 @@ static int gox_import(const file_format_t *format, image_t *image,
 static int gox_export(const file_format_t *format, const image_t *image,
                       const char *path)
 {
-    save_to_file(image, path);
+    save_to_file(image, path, false);
+    return 0;
+}
+
+static int gox_export_visible(const file_format_t *format, const image_t *image,
+    const char *path)
+{
+    save_to_file(image, path, true);
     return 0;
 }
 
@@ -790,4 +799,10 @@ FILE_FORMAT_REGISTER(gox,
     .exts_desc = "gox",
     .import_func = gox_import,
     .export_func = gox_export,
+)
+FILE_FORMAT_REGISTER(gox_visible,
+    .name = "gox (visible layers only)",
+    .exts = {"*.gox"},
+    .exts_desc = "gox",
+    .export_func = gox_export_visible,
 )
