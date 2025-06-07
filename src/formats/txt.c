@@ -70,11 +70,9 @@ static int import_as_txt(const file_format_t *format, image_t *image,
     return import_as_txt_to_volume(format, layer->volume, path);
 }
 
-static int export_as_txt(const file_format_t *format, const image_t *image,
-                         const char *path)
+static int export_volume_as_txt(const file_format_t *format, const volume_t *volume, const char *path)
 {
     FILE *out;
-    const volume_t *volume = goxel_get_layers_volume(image);
     int p[3];
     uint8_t v[4];
     volume_iterator_t iter;
@@ -99,6 +97,12 @@ static int export_as_txt(const file_format_t *format, const image_t *image,
     return 0;
 }
 
+static int export_as_txt(const file_format_t *format, const image_t *image,
+                         const char *path)
+{
+    return export_volume_as_txt(format, goxel_get_layers_volume(image), path);
+}
+
 FILE_FORMAT_REGISTER(txt,
     .name = "text",
     .exts = {"*.txt"},
@@ -106,4 +110,5 @@ FILE_FORMAT_REGISTER(txt,
     .import_func = import_as_txt,
     .import_volume_func = import_as_txt_to_volume,
     .export_func = export_as_txt,
+    .export_volume_func = export_volume_as_txt,
 )
