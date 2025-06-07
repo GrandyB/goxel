@@ -30,6 +30,7 @@ typedef struct
     filter_t filter;
     float strength;
     float multi_block_multiplier;
+    float multi_block_cap;
     bool do_smoothing;
 } filter_simple_shadows_t;
 
@@ -67,7 +68,8 @@ static int gui(filter_t *filter_)
 
     gui_group_begin(NULL);
     gui_input_float("Strength", &filter->strength, 0.01, 0, 1, "%.2f");
-    gui_input_float("Multi-block multiplier", &filter->multi_block_multiplier, 0.01, 0, 1, "%.2f");
+    gui_input_float("Multi-block multiplier\n(per block)", &filter->multi_block_multiplier, 0.01, 0, 1, "%.2f");
+    gui_input_float("Multi-block multiplier limit", &filter->multi_block_cap, 0.01, 0, 1, "%.2f");
 
     gui_tooltip_if_hovered("This makes columns with more blocks apply a darker shadow beneath it.\n"
                            "If this is 1, if there's 10 blocks above, only 'Strength' darkening is applied.\n"
@@ -160,6 +162,10 @@ static int gui(filter_t *filter_)
                     for (num_blocks = shadow_map[globalIndex]; num_blocks >= 0; num_blocks--)
                     {
                         mult *= filter->multi_block_multiplier;
+                        if (mult < filter->multi_block_cap) {
+                            mult = filter->multi_block_cap;
+                            break;
+                        }
                     }
                 }
                 // printf("Applying mult: %f\n", mult);
@@ -216,12 +222,14 @@ static int gui(filter_t *filter_)
 static void on_open(filter_t *filter_)
 {
     filter_simple_shadows_t *filter = (void *)filter_;
-    filter->multi_block_multiplier = 1;
-    filter->strength = 0.6;
+    filter->multi_block_multiplier = 0.9;
+    filter->multi_block_cap = 0.5;
+    filter->strength = 0.9;
     filter->do_smoothing = true;
 }
 
 FILTER_REGISTER(simple_shadows, filter_simple_shadows_t,
                 .name = "Generate - Shadows (Simple)",
                 .on_open = on_open,
-                .gui_fn = gui, )
+                .gui_fn = gui, 
+                .panel_width = 300, )
