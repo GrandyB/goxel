@@ -95,7 +95,7 @@ if target_os == 'posix':
     env.ParseConfig('pkg-config --libs glfw3')
 
 # Windows compilation support.
-if target_os == 'msys' or target_os == 'cygwin':
+if target_os == 'msys':
     env.Append(CXXFLAGS=['-Wno-attributes', '-Wno-unused-variable',
                          '-Wno-unused-function'])
     env.Append(CCFLAGS=['-Wno-error=address']) # To remove if possible.
