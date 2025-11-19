@@ -458,12 +458,12 @@ static int gui(filter_t *filter_)
         gui_tooltip_if_hovered("Offset doodads vertically by an amount");
     }
 
-    if (gui_collapsing_header("Reference heights", false)) {
+    if (gui_collapsing_header("Reference heights", true)) {
         gui_checkbox(
             "Use entire image",
             &filter->use_image_heights,
-            "If checked, all visible layers will be used to work out potential heights to place doodads at.\n"
-            "If unchecked, only a specific/chosen layer will inform the placement heights.");
+            "If checked, blocks in all visible layers will be considered for potential placements.\n"
+            "If unchecked, a specific layer will be considered and the rest are ignored.");
         if (!filter->use_image_heights) {
             if (!filter->height_layer)
                 filter->height_layer = goxel.image->layers; // First one.
@@ -491,22 +491,22 @@ static int gui(filter_t *filter_)
         }
     }
 
-    if(gui_collapsing_header("Restrictions", true)) {
-        gui_checkbox(
-            "Place on lowest",
-            &filter->place_on_0,
-            "If checked, the placement won't ignore the bottom layer of the map.\n"
-            "If unchecked, the placement will ignore the bottom layer of the map as a potential placement spot.");
+    if(gui_collapsing_header("Flags", true)) {
         gui_checkbox(
             "Place on empty",
             &filter->place_on_empty,
             "If checked, the placement will allow placing where there are no blocks.\n"
             "If unchecked, the placement will require there to be blocks.");
         gui_checkbox(
+            "Place on lowest",
+            &filter->place_on_0,
+            "If checked, the placement will be allowed to be on the first/bottom layer of the map.\n"
+            "If unchecked, the placement will ignore the first/bottom layer of the map as a potential placement spot.");
+        gui_checkbox(
             "Ignore height restrictions",
             &filter->ignore_height_restrictions,
             "If checked, the placement will not do height checks - it may place out of bounds vertically.\n"
-            "If unchecked, the placement will not place the doodad if it goes outside of the box vertically.");
+            "If unchecked, the placement will not place the doodad if it would extend out of the box vertically.");
     }
 
     if (gui_collapsing_header("Variation", true)) {
@@ -528,7 +528,7 @@ static int gui(filter_t *filter_)
         gui_checkbox(
             "Randomly flip",
             &filter->randomly_flip,
-            "If checked, sometimes it'll flip.\n"
+            "If checked, sometimes it'll flip the doodad.\n"
             "If unchecked, it won't flip.");
     }
 

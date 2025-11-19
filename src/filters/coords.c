@@ -28,11 +28,33 @@ typedef struct
 
 static int gui(filter_t *filter_)
 {
-    if (gui_button("Log to console", 0, 0)) {
-        LOG_I("(%.0f, %.0f, %.0f)", goxel.selection[3][0]-0.5, goxel.selection[3][1]-0.5, goxel.selection[3][2]-0.5);
-    }
-    if (gui_button("---------", 0, 0)) {
-        LOG_I("------------");
+    gui_text("This tool uses your current\nselection to print coordinates\nout to the console for later use.");
+    gui_separator();
+    if (box_is_null(goxel.selection)) {
+        if (goxel.tool->id != TOOL_SELECTION) {
+            if (gui_button("Switch to selection tool", 0, 0)) {
+                action_exec(action_get(ACTION_tool_set_selection, true));
+            }
+        } else {
+            gui_text("\nPlease create a 1x1x1 selection");
+        }
+    } else {
+        if (gui_button("Log to console", 0, 0)) {
+            float sx = goxel.selection[3][0] - 0.5f;
+            float sy = goxel.selection[3][1] - 0.5f;
+            float sz = goxel.selection[3][2] - 0.5f;
+
+            float ox = round(goxel.image->box[3][0] - goxel.image->box[0][0]);   // box origin x
+            float oy = round(goxel.image->box[3][1] - goxel.image->box[1][1]);   // box origin y
+            float oz = round(goxel.image->box[3][2] - goxel.image->box[2][2]);   // box origin z
+
+            //LOG_I("(%.0f, %.0f, %.0f)", goxel.selection[3][0]-0.5, goxel.selection[3][1]-0.5, goxel.selection[3][2]-0.5);
+            LOG_I("(%.0f, %.0f, %.0f)", sx - ox, sy - oy, sz - oz);
+        }
+        if (gui_button("Add separator", 0, 0)) {
+            LOG_I("------------");
+        }
+        gui_action_button(ACTION_reset_selection, "Reset selection", 1.0);
     }
     
     return 0;

@@ -67,8 +67,9 @@ static int gui(filter_t *filter_)
     }
 
     gui_group_begin(NULL);
+    gui_label_size_push(220.0f);
     gui_input_float("Strength", &filter->strength, 0.01, 0, 1, "%.2f");
-    gui_input_float("Multi-block multiplier\n(per block)", &filter->multi_block_multiplier, 0.01, 0, 1, "%.2f");
+    gui_input_float("Multi-block multiplier (per block)", &filter->multi_block_multiplier, 0.01, 0, 1, "%.2f");
     gui_input_float("Multi-block multiplier limit", &filter->multi_block_cap, 0.01, 0, 1, "%.2f");
 
     gui_tooltip_if_hovered("This makes columns with more blocks apply a darker shadow beneath it.\n"
@@ -77,6 +78,7 @@ static int gui(filter_t *filter_)
 
     gui_checkbox("Apply smoothing", &filter->do_smoothing, "If checked, apply 2x2 smoothing\n"
                                                            "If unchecked, do no smoothing");
+    gui_label_size_pop();
     gui_group_end();
 
     if (gui_button("Apply", -1, 0))
@@ -232,4 +234,4 @@ FILTER_REGISTER(simple_shadows, filter_simple_shadows_t,
                 .name = "Generate - Shadows (Simple)",
                 .on_open = on_open,
                 .gui_fn = gui, 
-                .panel_width = 300, )
+                .panel_width = 450, )
