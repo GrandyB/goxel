@@ -73,8 +73,11 @@ bool gui_pan_scroll_behavior(int dir);
 #pragma GCC diagnostic pop
 #endif
 
-// How much space we keep for the labels on the left.
-static const float LABEL_SIZE = 90;
+// How much space we keep for the labels on the left
+// Use gui_label_size_get to acquire, gui_label_size_push(value) to temp change from the default, and remember to gui_label_size_pop() afterwards
+static float g_label_size_stack[16];
+static int   g_label_size_top = 0;
+static float g_label_size_default = 90.0f;
 
 // Base height of items (note: maybe remove and use the font size instead?).
 static const float ITEM_HEIGHT = 18;
@@ -409,6 +412,9 @@ static void gui_init(void)
 
     ImGuiIO& io = ImGui::GetIO();
     if (!io.Fonts->TexID) load_fonts_texture();
+
+    g_label_size_stack[0] = g_label_size_default;
+    g_label_size_top = 1;
 }
 
 void gui_release(void)
@@ -816,6 +822,29 @@ gui_window_ret_t gui_window_end(void)
     return ret;
 }
 
+void gui_label_size_push(float v)
+{
+    if (g_label_size_top >= (int)(sizeof(g_label_size_stack) / sizeof(g_label_size_stack[0]))) {
+        LOG_E("gui_label_size_push: label size stack overflow");
+        return;
+    }
+    g_label_size_stack[g_label_size_top++] = v;
+}
+
+void gui_label_size_pop(void)
+{
+    if (g_label_size_top <= 1) {
+        LOG_E("gui_label_size_pop: attempted to pop base label size");
+        return;
+    }
+    if (g_label_size_top > 1)
+        g_label_size_top--;
+}
+float gui_label_size_get(void)
+{
+    return g_label_size_stack[g_label_size_top - 1];
+}
+
 bool gui_input_int(const char *label, int *v, int minv, int maxv)
 {
     float minvf = minv;
@@ -864,7 +893,7 @@ bool slider_float(const char *label, float *v, float minv, float maxv, const cha
 
     ImGui::PushID(label);
     ImGui::BeginGroup();
-    label_aligned(label, LABEL_SIZE);
+    label_aligned(label, gui_label_size_get());
     // Render an imgui DragFloat with transparent background.
     draw_list->ChannelsSplit(2);
     draw_list->ChannelsSetCurrent(1);
@@ -935,7 +964,7 @@ bool gui_input_float(const char *label, float *v, float step,
     ImGui::PushStyleColor(ImGuiCol_SliderGrab,
                     COLOR(NUMBER_INPUT, ITEM, false));
 
-    label_aligned(label, LABEL_SIZE);
+    label_aligned(label, gui_label_size_get());
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 2));
     ImGui::BeginGroup();
     ImGui::PushButtonRepeat(true);
@@ -1259,7 +1288,7 @@ bool gui_color_small_conditional_label(const char *label, uint8_t color[4], bool
     
     ImGui::PushID(label);
     if (show_label) {
-        label_aligned(label, LABEL_SIZE);
+        label_aligned(label, gui_label_size_get());
     }
     ret = ImGui::ColorEdit4("", colorf, ImGuiColorEditFlags_NoInputs);
     ImGui::PopID();
@@ -1306,7 +1335,7 @@ bool gui_color_opacity(uint8_t color[4]) {
 bool gui_checkbox(const char *label, bool *v, const char *hint)
 {
     bool ret;
-    label_aligned("", LABEL_SIZE);
+    label_aligned("", gui_label_size_get());
     ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR(CHECKBOX, INNER, false));
     ImGui::PushStyleColor(ImGuiCol_CheckMark, COLOR(CHECKBOX, ITEM, false));
     ret = ImGui::Checkbox(label, v);

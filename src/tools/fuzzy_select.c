@@ -21,10 +21,55 @@
 typedef struct {
     tool_t tool;
     int threshold;
+    bool global;
     struct {
         gesture3d_t click;
     } gestures;
 } tool_fuzzy_select_t;
+
+
+static bool within_threshold(tool_fuzzy_select_t *tool, uint8_t v0[4], uint8_t v1[4]) {
+    if (!v0[3] || !v1[3]) return false;
+
+    int diff = max3(abs(v0[0] - v1[0]), abs(v0[1] - v1[1]), abs(v0[2] - v1[2]));
+    return diff <= tool->threshold;
+}
+
+static void volume_global_select(volume_t *volume, const int curs_pos[3], tool_fuzzy_select_t *tool, volume_t *selection) {
+    
+    uint8_t color_at_curs[4];
+    uint8_t current_color[4];
+    int pos[3];
+    volume_iterator_t iter;
+    volume_accessor_t volume_accessor, selection_accessor;
+    volume_clear(selection);
+
+    volume_accessor = volume_get_accessor(volume);
+    selection_accessor = volume_get_accessor(selection);
+
+    // Always include the voxel under cursor
+    volume_get_at(volume, &volume_accessor, curs_pos, color_at_curs);
+    if (color_at_curs[3] == 0) {
+        //LOG_D("No color under cursor");
+        return;
+    } else {
+        //LOG_D("Color under cursor: %i / %i / %i / %i", color_at_curs[0], color_at_curs[1], color_at_curs[2], color_at_curs[3]);
+    }
+    volume_set_at(selection, &selection_accessor, curs_pos, (uint8_t[]){255, 255, 255, 255});
+
+    // Iterate through the entire volume
+    iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(volume, &volume_accessor, pos, current_color);
+        if (current_color[3] != 0) {
+            //LOG_D("Pos %i / %i / %i", pos[0], pos[1], pos[2]);
+        } else {
+            continue;
+        }
+        bool set = within_threshold(tool, color_at_curs, current_color);
+        volume_set_at(selection, &selection_accessor, pos, (uint8_t[]){255, 255, 255, set ? 255 : 0});
+    }
+}
 
 static int select_cond(void *user, const volume_t *volume,
                        const int base_pos[3],
@@ -33,14 +78,11 @@ static int select_cond(void *user, const volume_t *volume,
 {
     tool_fuzzy_select_t *tool = (void*)user;
     uint8_t v0[4], v1[4];
-    int d;
 
     volume_get_at(volume, volume_accessor, base_pos, v0);
     volume_get_at(volume, volume_accessor, new_pos, v1);
-    if (!v0[3] || !v1[3]) return 0;
 
-    d = max3(abs(v0[0] - v1[0]), abs(v0[1] - v1[1]), abs(v0[2] - v1[2]));
-    return d <= tool->threshold ? 255 : 0;
+    return within_threshold(tool, v0, v1) ? 255 : 0;
 }
 
 static int on_click(gesture3d_t *gest, void *user)
@@ -55,7 +97,11 @@ static int on_click(gesture3d_t *gest, void *user)
     pi[1] = floor(curs->pos[1]);
     pi[2] = floor(curs->pos[2]);
     sel = volume_new();
-    volume_select(volume, pi, select_cond, tool, sel);
+    if (!tool->global) {
+        volume_select(volume, pi, select_cond, tool, sel);
+    } else {
+        volume_global_select(volume, pi, tool, sel);
+    }
     if (goxel.mask == NULL) goxel.mask = volume_new();
     volume_merge(goxel.mask, sel, goxel.mask_mode ?: MODE_REPLACE, NULL);
     volume_delete(sel);
@@ -101,6 +147,7 @@ static int gui(tool_t *tool_)
     if (gui_checkbox("Use color", &use_color, "Stop at different color")) {
         tool->threshold = use_color ? 0 : 255;
     }
+    gui_checkbox("Entire layer", &tool->global, "If unchecked, fuzzy will only select connected voxels; if checked, it will select any across the current layer");
     if (use_color) {
         gui_input_int("Threshold", &tool->threshold, 1, 254);
     }
@@ -120,6 +167,8 @@ static int gui(tool_t *tool_)
 
     volume_t *volume = goxel.image->active_layer->volume;
 
+    tool_gui_color();
+    gui_section_end();
     gui_group_begin(NULL);
     if (gui_button("Delete blocks", 1, 0)) {
         image_history_push(goxel.image);
@@ -127,7 +176,14 @@ static int gui(tool_t *tool_)
     }
     if (gui_button("Fill", 1, 0)) {
         image_history_push(goxel.image);
-        volume_merge(volume, goxel.mask, MODE_OVER, goxel.painter.color);
+        volume_t *vol = volume_copy(goxel.mask);
+        float box[4][4] = MAT4_IDENTITY;
+        volume_get_box(goxel.mask, true, box);
+        int existing_mode = goxel.painter.mode;
+        goxel.painter.mode = MODE_PAINT;
+        volume_op(vol, &goxel.painter, box);
+        volume_merge(volume, vol, MODE_OVER, NULL);
+        goxel.painter.mode = existing_mode;
     }
     if (gui_button("Cut as new layer", 1, 0)) {
         image_history_push(goxel.image);

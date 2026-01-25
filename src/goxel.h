@@ -74,7 +74,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_2l"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_2m"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -547,6 +547,9 @@ typedef struct goxel
         float  pos[2];
         float  camera_ofs[3];
         float  camera_mat[4][4];
+        // Pivot point for rotation around hovered voxel
+        float  pivot_point[3];
+        bool   has_pivot_point;
     } move_origin;
 
     palette_t  *palettes;   // The list of all the palettes
@@ -593,7 +596,6 @@ extern goxel_t goxel;
 void goxel_init(void);
 void goxel_release(void);
 void goxel_reset(void);
-void goxel_reset_512(void);
 
 // Probably better to merge those two.
 int goxel_iter(const inputs_t *inputs);

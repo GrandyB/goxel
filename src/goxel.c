@@ -392,7 +392,7 @@ void goxel_reset(void)
         .smoothness = 0,
         .noise_enabled = 0,
         .noise_coverage = 100,
-        .noise_intensity = 20,
+        .noise_intensity = 5,
         .noise_saturation = 5,
         .color = {255, 255, 255, 255},
     };
@@ -641,6 +641,42 @@ static int on_rotate(const gesture_t *gest, void *user)
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
         vec2_copy(gest->pos, goxel.move_origin.pos);
+        
+        // Try to detect a voxel under the mouse cursor for distance-based rotation
+        float voxel_pos[3], voxel_normal[3];
+        bool found_voxel = goxel_unproject_on_volume(
+            gest->viewport, gest->pos, goxel_get_layers_volume(goxel.image), 
+            voxel_pos, voxel_normal);
+
+        if (found_voxel) {
+            // Found a voxel - calculate pivot point at center of view at same distance
+            float camera_pos[3], camera_to_voxel[3];
+            float viewport_center[2];
+            float ray_origin[3], ray_dir[3];
+
+            // Get camera position
+            vec3_copy(camera->mat[3], camera_pos);
+
+            // Calculate distance from camera to voxel
+            vec3_sub(voxel_pos, camera_pos, camera_to_voxel);
+            float distance = vec3_norm(camera_to_voxel);
+
+            // Get viewport center coordinates
+            viewport_center[0] = gest->viewport[0] + gest->viewport[2] / 2.0f;
+            viewport_center[1] = gest->viewport[1] + gest->viewport[3] / 2.0f;
+
+            // Get ray from center of viewport
+            camera_get_ray(camera, viewport_center, gest->viewport, ray_origin, ray_dir);
+
+            // Calculate pivot point at the same distance along the center ray
+            vec3_mul(ray_dir, distance, ray_dir);
+            vec3_add(ray_origin, ray_dir, goxel.move_origin.pivot_point);
+
+            goxel.move_origin.has_pivot_point = true;
+        } else {
+            // No voxel found - use default rotation
+            goxel.move_origin.has_pivot_point = false;
+        }
     }
 
     x1 = goxel.move_origin.pos[0] / gest->viewport[2];
@@ -651,7 +687,13 @@ static int on_rotate(const gesture_t *gest, void *user)
     x_rot = (y2 - y1) * 2 * M_PI;
 
     mat4_copy(goxel.move_origin.camera_mat, camera->mat);
-    camera_turntable(camera, z_rot, x_rot);
+        
+    // Use pivot-based rotation if we have a voxel under the cursor
+    if (goxel.move_origin.has_pivot_point) {
+        camera_turntable_around_point(camera, z_rot, x_rot, goxel.move_origin.pivot_point);
+    } else {
+        camera_turntable(camera, z_rot, x_rot);
+    }
     return 0;
 }
 
@@ -1477,6 +1519,7 @@ ACTION_REGISTER(ACTION_reset_selection,
 static void a_fill_selection(void)
 {
     layer_t *layer = goxel.image->active_layer;
+    image_history_push(goxel.image);
 
     if (!volume_is_empty(goxel.mask)) {
         volume_merge(layer->volume, goxel.mask, MODE_OVER, goxel.painter.color);

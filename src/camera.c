@@ -198,6 +198,32 @@ void camera_turntable(camera_t *camera, float rz, float rx)
     mat4_itranslate(camera->mat, 0, 0, camera->dist);
 }
 
+void camera_turntable_around_point(
+        camera_t *camera, float rz, float rx, const float pivot[3])
+{
+    float mat[4][4] = MAT4_IDENTITY;
+    float camera_to_pivot[3];
+
+    // Calculate vector from camera to pivot point
+    vec3_sub(pivot, camera->mat[3], camera_to_pivot);
+    float new_dist = vec3_norm(camera_to_pivot);
+
+    // Apply horizontal rotation around the pivot point
+    mat4_itranslate(mat, pivot[0], pivot[1], pivot[2]);
+    mat4_irotate(mat, rz, 0, 0, 1);
+    mat4_itranslate(mat, -pivot[0], -pivot[1], -pivot[2]);
+    mat4_imul(mat, camera->mat);
+    mat4_copy(mat, camera->mat);
+
+    // Apply vertical rotation around the pivot point
+    mat4_itranslate(camera->mat, 0, 0, -new_dist);
+    mat4_irotate(camera->mat, rx, 1, 0, 0);
+    mat4_itranslate(camera->mat, 0, 0, new_dist);
+
+    // Update camera distance to match the new distance to pivot
+    camera->dist = new_dist;
+}
+
 /* First person move
  * rz: up is +ve, down is -ve.
  * ry: forward is +ve, backwards is -ve.

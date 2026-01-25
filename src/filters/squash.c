@@ -35,7 +35,7 @@ static int gui(filter_t *filter_)
     int x, y, z, pos[3], new_pos[3], dimensions[3], start_pos[3];
     uint8_t cur_block_color[4];
 
-    const char *help_text = "This filter condenses layer vertically by a %";
+    const char *help_text = "This filter condenses the current layer vertically by a percentage.";
     goxel_set_help_text(help_text);
 
     if(gui_collapsing_header("Hint", false)) {

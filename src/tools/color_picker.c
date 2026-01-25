@@ -48,6 +48,7 @@ int tool_color_picker_iter(tool_t *tool, const painter_t *painter,
 static int gui(tool_t *tool)
 {
     tool_gui_color();
+    gui_section_end();
     return 0;
 }
 

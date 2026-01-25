@@ -113,15 +113,43 @@ static int iter(tool_t *tool_, const painter_t *painter,
     return tool->tool.state;
 }
 
+static layer_t *cut_as_new_layer(image_t *img, layer_t *layer,
+                                 const volume_t *mask)
+{
+    layer_t *new_layer;
+
+    new_layer = image_duplicate_layer(img, layer);
+    volume_merge(new_layer->volume, mask, MODE_INTERSECT, NULL);
+    volume_merge(layer->volume, mask, MODE_SUB, NULL);
+    return new_layer;
+}
+
 static int gui(tool_t *tool_)
 {
     tool_gui_mask_mode();
 
     gui_group_begin(NULL);
-    gui_action_button(ACTION_reset_selection, "Reset", 1.0);
-    gui_action_button(ACTION_layer_clear, "Clear", 1.0);
-    gui_action_button(ACTION_fill_selection_box, "Fill", 1.0);
-    gui_action_button(ACTION_cut_as_new_layer, "Cut as new layer", 1.0);
+    volume_t *volume = goxel.image->active_layer->volume;
+    if (!volume_is_empty(goxel.mask)) {
+        gui_group_begin(NULL);
+        if (gui_button("Reset", 1, 0)) {
+            goxel.mask = volume_new();
+        }
+        gui_group_end();
+    }
+    if (gui_button("Delete blocks", 1, 0)) {
+        image_history_push(goxel.image);
+        volume_merge(volume, goxel.mask, MODE_SUB, NULL);
+    }
+    if (gui_button("Fill", 1, 0)) {
+        image_history_push(goxel.image);
+        volume_merge(volume, goxel.mask, MODE_OVER, goxel.painter.color);
+    }
+    if (gui_button("Cut as new layer", 1, 0)) {
+        image_history_push(goxel.image);
+        cut_as_new_layer(goxel.image, goxel.image->active_layer,
+                         goxel.mask);
+    }
     gui_group_end();
 
     return 0;

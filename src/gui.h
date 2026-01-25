@@ -105,7 +105,9 @@ typedef struct gui_icon_info
 } gui_icon_info_t;
 
 bool gui_icons_grid(int nb, const gui_icon_info_t *icons, int *current);
-
+float gui_label_size_get(void);
+void gui_label_size_push(float v);
+void gui_label_size_pop(void);
 bool gui_tab(const char *label, int icon, bool *v);
 void gui_tooltip_if_hovered(const char *info);
 bool gui_checkbox(const char *label, bool *v, const char *hint);

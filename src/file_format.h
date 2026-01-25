@@ -31,6 +31,8 @@ struct file_format
     void            (*export_gui)(file_format_t *format);
     int             (*export_func)(const file_format_t *format,
                                    const image_t *img, const char *path);
+    int             (*export_volume_func)(const file_format_t *format, const volume_t *volume,
+                                   const char *path);
     int             (*import_func)(const file_format_t *format, image_t *img,
                                    const char *path);
     void            (*import_gui)(file_format_t *format);
@@ -53,6 +55,7 @@ const file_format_t *file_format_by_name(const char *name);
 // The global list of registered file formats.
 extern file_format_t *file_formats;
 extern file_format_t *file_formats_import_to_volume;
+extern file_format_t *file_formats_export_to_volume;
 
 #define FILE_FORMAT_REGISTER(id_, ...) \
     static file_format_t GOX_format_##id_ = {__VA_ARGS__}; \

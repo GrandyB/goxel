@@ -22,7 +22,8 @@
 
 #define BOOL_STR(b) ((b) ? "true" : "false")
 
-static file_format_t *g_current = NULL;
+static file_format_t *ff_import_current = NULL;
+static file_format_t *ff_export_current = NULL;
 
 typedef struct {
     tool_t tool;
@@ -277,19 +278,28 @@ static int iter(tool_t *tool, const painter_t *painter,
     return tool->state;
 }
 
-static const char *make_label(const file_format_t *f, char *buf, int len)
+static const char *make_label(const file_format_t *f, char *buf, int len, char *id)
 {
     const char *ext = f->exts[0] + 1;
-    snprintf(buf, len, "%s (%s)", f->name, ext);
+    snprintf(buf, len, "%s (%s)##%s", f->name, ext, id);
     return buf;
 }
 
-static void on_format(void *user, file_format_t *f)
+static void on_import_format(void *user, file_format_t *f)
 {
     char label[128];
-    make_label(f, label, sizeof(label));
-    if (gui_combo_item(label, f == g_current)) {
-        g_current = f;
+    make_label(f, label, sizeof(label), "import");
+    if (gui_combo_item(label, f == ff_import_current)) {
+        ff_import_current = f;
+    }
+}
+
+static void on_export_format(void *user, file_format_t *f)
+{
+    char label[128];
+    make_label(f, label, sizeof(label), "export");
+    if (gui_combo_item(label, f == ff_export_current)) {
+        ff_export_current = f;
     }
 }
 
@@ -318,7 +328,7 @@ static void on_file_import(const char *path, const char *file_name, const file_f
     past = calloc(1, sizeof(*past));
     *past = (past_import_t) {
         .path = path,
-        .file_name = file_name,
+        .file_name = strdup(file_name),
         .format = format,
     };
 
@@ -332,6 +342,7 @@ static void on_file_import(const char *path, const char *file_name, const file_f
         DL_DELETE(past_files, f);
     }
 
+    LOG_D("On file import: %s / %s / %s", past->path, past->file_name, past->format->name);
     DL_APPEND(past_files, past);
 }
 
@@ -351,6 +362,7 @@ static void placer_acquire_selection() {
 
     // Use the mask (from fuzzy select) if there
     if (!volume_is_empty(goxel.mask)) {
+        LOG_D("Acquired selection from fuzzy mask");
         volume_merge(copy, goxel.mask, MODE_INTERSECT, NULL);
     } else {
         // Otherwise, use the selection box
@@ -398,29 +410,49 @@ static int gui(tool_t *tool)
         gui_section_end();
     }
 
-    // Browse files
-    char label[128];
-    gui_text("Import as");
-    if (!g_current) g_current = file_formats_import_to_volume; // First one.
+    if(gui_section_begin("Import as", true)) {
+        char label[128];
+        if (!ff_import_current) ff_import_current = file_formats_import_to_volume; // First one.
 
-    make_label(g_current, label, sizeof(label));
-    if (gui_combo_begin("Import as", label)) {
-        file_format_iter("v", NULL, on_format);
-        gui_combo_end();
-    }
+        make_label(ff_import_current, label, sizeof(label), "placerimport");
+        if (gui_combo_begin("Import as##plcaerimport", label)) {
+            file_format_iter("v", NULL, on_import_format);
+            gui_combo_end();
+        }
 
-    if (g_current->import_gui)
-        g_current->import_gui(g_current);
+        if (ff_import_current->import_gui)
+            ff_import_current->import_gui(ff_import_current);
 
-    if (gui_button("Import", 1, 0)) {
-        reset(placer);
-        goxel_import_file_to_volume(NULL, g_current->name, placer->imported_volume, on_file_import);
-        post_import(placer);
-    }
-    
-    if (gui_button("Reset", 1, 0)) {
-        reset(placer);
-    }
+        if (gui_button("Import", 1, 0)) {
+            reset(placer);
+            goxel_import_file_to_volume(NULL, ff_import_current->name, placer->imported_volume, on_file_import);
+            post_import(placer);
+        }
+        
+        if (gui_button("Reset", 1, 0)) {
+            reset(placer);
+        }
+    } gui_section_end();
+
+    if (gui_section_begin("Export as", GUI_SECTION_COLLAPSABLE_CLOSED)) {
+        char label[128];
+        if (!ff_export_current) ff_export_current = file_formats_export_to_volume; // First one.
+
+        make_label(ff_export_current, label, sizeof(label), "export");
+        if (gui_combo_begin("Export as##placerexport", label)) {
+            file_format_iter("t", NULL, on_export_format);
+            gui_combo_end();
+        }
+
+        if (ff_export_current->export_gui)
+            ff_export_current->export_gui(ff_export_current);
+        
+        if (gui_button("Export placer content", -1, 0)) {
+            const char* path = sys_get_save_path("", ff_export_current->exts, ff_export_current->exts_desc);
+            ff_export_current->export_volume_func(ff_export_current, placer->imported_volume, path);
+            on_file_import(path, get_file_name_from_path(path), ff_export_current);
+        }
+    } gui_section_end();
 
     tool_gui_snap();
     
