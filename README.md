@@ -70,6 +70,7 @@ Changes in this fork
             - Cut the current selection into the placer
         - Brush can set width/height/depth separately
         - Move tool can do 'destructive rotation'
+        - Fuzzy select can select layer-wide and fill with noise
     - Layers
         - Layers panel permanently on right and scrolls internally
         - Merge layer down
@@ -86,7 +87,7 @@ Changes in this fork
             - Speed
             - FOV
             - Manual X/Y/Z
-        - Rotational camera (default) FOV setting (and its base value is higher than it was before)
+        - Rotational camera (default) FOV setting (and its base value is higher than it was before); it also pivots around the block under the cursor
     - Image
         - "Crop to visible & reset origin", uses only visible layers, crops to the size of those layers, resets the origin
     - Import/Export
