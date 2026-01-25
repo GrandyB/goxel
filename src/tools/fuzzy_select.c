@@ -177,7 +177,14 @@ static int gui(tool_t *tool_)
     }
     if (gui_button("Fill", 1, 0)) {
         image_history_push(goxel.image);
-        volume_merge(volume, goxel.mask, MODE_OVER, goxel.painter.color);
+        volume_t *vol = volume_copy(goxel.mask);
+        float box[4][4] = MAT4_IDENTITY;
+        volume_get_box(goxel.mask, true, box);
+        int existing_mode = goxel.painter.mode;
+        goxel.painter.mode = MODE_PAINT;
+        volume_op(vol, &goxel.painter, box);
+        volume_merge(volume, vol, MODE_OVER, NULL);
+        goxel.painter.mode = existing_mode;
     }
     if (gui_button("Cut as new layer", 1, 0)) {
         image_history_push(goxel.image);
