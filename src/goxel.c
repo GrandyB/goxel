@@ -1519,6 +1519,7 @@ ACTION_REGISTER(ACTION_reset_selection,
 static void a_fill_selection(void)
 {
     layer_t *layer = goxel.image->active_layer;
+    image_history_push(goxel.image);
 
     if (!volume_is_empty(goxel.mask)) {
         volume_merge(layer->volume, goxel.mask, MODE_OVER, goxel.painter.color);

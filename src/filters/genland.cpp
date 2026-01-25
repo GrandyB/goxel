@@ -48,7 +48,7 @@ typedef struct
 
 // Anything less than 512/9 seems to crash
 #define VSID 512
-#define VSHL 9
+#define VSHL 9 // used in lighting calc
 
 static void process_voxel_data(volume_t *volume, genland_settings_t *settings, vcol *argb)
 {
