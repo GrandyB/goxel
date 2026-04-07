@@ -104,6 +104,7 @@ enum
     ACTION_reset_512,
     ACTION_img_auto_resize_reset,
     ACTION_delete_hidden_layers,
+    ACTION_tool_set_fill,
 
     ACTION_COUNT
 };

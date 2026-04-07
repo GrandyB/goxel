@@ -26,7 +26,7 @@ enum {
     TOOL_NONE = 0,
     TOOL_BRUSH,
     TOOL_SHAPE,
-    TOOL_LINE,
+    //TOOL_LINE,
     TOOL_LASER,
     TOOL_SET_PLANE,
     TOOL_MOVE,
@@ -37,6 +37,7 @@ enum {
     TOOL_FUZZY_SELECT,
     TOOL_RECT_SELECT,
     TOOL_PLACER,
+    TOOL_FILL,
 
     TOOL_COUNT
 };

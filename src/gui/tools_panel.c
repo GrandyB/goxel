@@ -36,8 +36,8 @@ void gui_tools_panel(void)
         {TOOL_FUZZY_SELECT, ACTION_tool_set_fuzzy_select, ICON_TOOL_FUZZY_SELECT},
         {TOOL_RECT_SELECT,  ACTION_tool_set_rect_select,  ICON_TOOL_RECT_SELECTION},
         {TOOL_EXTRUDE,      ACTION_tool_set_extrude,      ICON_TOOL_EXTRUDE},
-        {TOOL_LINE,         ACTION_tool_set_line,         ICON_TOOL_LINE},
         {TOOL_PLACER,       ACTION_tool_set_placer,       ICON_TOOL_LASER},
+        {TOOL_FILL,         ACTION_tool_set_fill,         ICON_TOOL_LINE},
     };
 
     const int nb = ARRAY_SIZE(values);
