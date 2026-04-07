@@ -167,9 +167,10 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
 {
     queue_t queue;
     visited_voxel_t *visited = NULL;
-    volume_iterator_t iter;
+    volume_iterator_t iter, new_vol_iter;
     uint8_t voxel[4];
     int box_dimensions[3], box_start_pos[3];
+    volume_t *new_vol = volume_new();
 
     const int start[3] = {
         (int)floorf(start_pos[0]),
@@ -193,6 +194,7 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
     queue_init(&queue);
 
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
+    new_vol_iter = volume_get_iterator(new_vol, VOLUME_ITER_VOXELS);
     volume_get_at(volume, &iter, start, voxel);
 
     if (!rgba_is_empty(voxel)) {
@@ -228,7 +230,7 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
         }
 
         //LOG_D("fill: (%i,%i,%i)", pos[0], pos[1], pos[2]);
-        volume_set_at(volume, &iter, pos, fill_color);
+        volume_set_at(new_vol, &new_vol_iter, pos, fill_color);
 
         for (int d = 0; d < 4; d++) {
             int next[3] = {
@@ -270,6 +272,15 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
             }
         }
     }
+
+    float box[4][4] = MAT4_IDENTITY;
+    volume_get_box(new_vol, true, box);
+    int existing_mode = goxel.painter.mode;
+    goxel.painter.mode = MODE_PAINT;
+    volume_op(new_vol, &goxel.painter, box);
+    volume_merge(volume, new_vol, MODE_OVER, NULL);
+    goxel.painter.mode = existing_mode;
+    volume_delete(new_vol);
 
     LOG_D("flood_fill: complete");
 
