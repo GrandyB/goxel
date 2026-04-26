@@ -225,6 +225,8 @@ void gui_app(void)
     filter_layout_state.next_y = y;
     filters_iter_all(&filter_layout_state, gui_filter_window);
 
+    placer_gui_history_floating();
+
     goxel.pathtrace = goxel.pathtracer.status &&
         (goxel.gui.current_panel == PANEL_RENDER ||
          PANELS[PANEL_RENDER].detached);

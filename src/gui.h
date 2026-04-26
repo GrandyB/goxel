@@ -57,6 +57,23 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
 
 gui_window_ret_t gui_window_end(void);
 
+/* Standard ImGui window: title bar (collapsible), move, resize. Position and
+ * size use FirstUseEver so they persist in imgui.ini after the first open. */
+void gui_floating_panel_begin(const char *title, float init_w, float init_h);
+void gui_floating_panel_end(void);
+
+void gui_set_cursor_pos(float x, float y);
+float gui_window_content_region_min_x(void);
+float gui_window_content_region_max_x(void);
+float gui_get_cursor_pos_x(void);
+float gui_get_cursor_pos_y(void);
+float gui_get_item_rect_size_y(void);
+float gui_style_item_spacing_x(void);
+float gui_style_item_spacing_y(void);
+void gui_same_line_spaced(float spacing);
+/* Compact button for segmented toolbars; selected uses header-like colors. */
+bool gui_toolbar_segment(const char *label, bool selected);
+
 bool gui_want_capture_mouse(void);
 
 void gui_release(void);
@@ -154,11 +171,14 @@ void gui_image_gl_subrect(
 /* Width of one cell in gui_row_begin(n); 0 if not in a row. */
 float gui_row_cell_width(void);
 /* Placer history: square s×s tile, GL preview, bottom label, full-area load,
- * top-right x. cell_w: from gui_row_cell_width() after gui_row_begin(2); 0=auto. */
+ * top-right x. cell_w: tile edge length in px (>0); 0 falls back to row/auto. */
 bool gui_placer_past_entry(
         uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
         const char *file_name, const char *path_tooltip, bool *out_remove,
-        float cell_w);
+        float cell_w, float label_font_scale);
+/* One history row: clickable file name (load) + remove. Use gui_push_id first. */
+bool gui_placer_past_details_row(
+        const char *file_name, const char *path_tooltip, bool *out_remove);
 void gui_spacing(int w);
 void gui_same_line(void);
 

@@ -24,8 +24,12 @@
 #ifndef PLACER_PAST_PREVIEW_SIZE
 #   define PLACER_PAST_PREVIEW_SIZE 128
 #endif
-
 #define BOOL_STR(b) ((b) ? "true" : "false")
+
+/* 0=S, 1=M, 2=L thumbnails; 3=Details (one row per entry: name + x). */
+enum { PLACER_HIST_VIEW_S = 0, PLACER_HIST_VIEW_M = 1, PLACER_HIST_VIEW_L = 2,
+       PLACER_HIST_VIEW_DETAILS = 3 };
+static int placer_history_preview_preset = PLACER_HIST_VIEW_M;
 
 static file_format_t *ff_import_current = NULL;
 static file_format_t *ff_export_current = NULL;
@@ -497,6 +501,160 @@ static void post_import(tool_placer_t *placer) {
     center_origin(placer);
 }
 
+static float placer_history_entry_size(void)
+{
+    static const float fracs[] = { 0.052f, 0.104f, 0.175f };
+    static const float mins[] = { 44.f, 88.f, 128.f };
+    static const float maxs[] = { 68.f, 132.f, 240.f };
+    int p = placer_history_preview_preset;
+
+    if (p < 0) p = 0;
+    if (p > 2) p = 2;
+    float s = (float)goxel.screen_size[0] * fracs[p];
+    if (s < mins[p]) s = mins[p];
+    if (s > maxs[p]) s = maxs[p];
+    return s;
+}
+
+static float placer_history_label_scale(void)
+{
+    static const float scales[] = { 0.62f, 1.f, 1.38f };
+    int p = placer_history_preview_preset;
+
+    if (p < 0) p = 0;
+    if (p > 2) p = 2;
+    return scales[p];
+}
+
+static void placer_gui_history_preset_bar(void)
+{
+    gui_text("View:");
+    gui_same_line_spaced(8.f);
+    if (gui_toolbar_segment("S##pl_hist_s",
+                placer_history_preview_preset == PLACER_HIST_VIEW_S))
+        placer_history_preview_preset = PLACER_HIST_VIEW_S;
+    gui_same_line_spaced(4.f);
+    if (gui_toolbar_segment("M##pl_hist_m",
+                placer_history_preview_preset == PLACER_HIST_VIEW_M))
+        placer_history_preview_preset = PLACER_HIST_VIEW_M;
+    gui_same_line_spaced(4.f);
+    if (gui_toolbar_segment("L##pl_hist_l",
+                placer_history_preview_preset == PLACER_HIST_VIEW_L))
+        placer_history_preview_preset = PLACER_HIST_VIEW_L;
+    gui_same_line_spaced(4.f);
+    if (gui_toolbar_segment("Details##pl_hist_d",
+                placer_history_preview_preset == PLACER_HIST_VIEW_DETAILS))
+        placer_history_preview_preset = PLACER_HIST_VIEW_DETAILS;
+}
+
+static void placer_gui_history_body(tool_placer_t *placer)
+{
+    past_import_t *i, *remove_me;
+    char idbuf[32];
+    float min_x, max_x, x, y, row_h, sp_x, sp_y;
+    float history_cell;
+    float label_scale;
+
+    placer_gui_history_preset_bar();
+    gui_separator();
+
+    if (!past_files) {
+        gui_text_wrapped("No import history yet. Use Import in the Placer tool.");
+        return;
+    }
+
+    remove_me = NULL;
+
+    if (placer_history_preview_preset == PLACER_HIST_VIEW_DETAILS) {
+        DL_FOREACH_REVERSE(past_files, i) {
+            bool do_remove;
+            bool do_load;
+
+            snprintf(idbuf, sizeof(idbuf), "%p", (void *)i);
+            gui_push_id(idbuf);
+            do_remove = false;
+            do_load = gui_placer_past_details_row(
+                    i->file_name, i->path, &do_remove);
+            if (do_load) {
+                reset(placer);
+                i->format->import_volume_func(i->format, placer->imported_volume,
+                                              i->path);
+                post_import(placer);
+            }
+            if (do_remove)
+                remove_me = i;
+            gui_pop_id();
+        }
+        if (remove_me) placer_past_remove(remove_me);
+        return;
+    }
+
+    history_cell = placer_history_entry_size();
+    label_scale = placer_history_label_scale();
+    min_x = gui_window_content_region_min_x();
+    max_x = gui_window_content_region_max_x();
+    x = min_x;
+    y = gui_get_cursor_pos_y();
+    row_h = 0.f;
+    sp_x = gui_style_item_spacing_x();
+    sp_y = gui_style_item_spacing_y();
+
+    DL_FOREACH_REVERSE(past_files, i) {
+        bool do_remove, do_load;
+
+        if (x > min_x + 0.5f && x + history_cell > max_x) {
+            x = min_x;
+            y += row_h + sp_y;
+            row_h = 0.f;
+        }
+        gui_set_cursor_pos(x, y);
+        placer_ensure_past_preview(i);
+        snprintf(idbuf, sizeof(idbuf), "%p", (void *)i);
+        gui_push_id(idbuf);
+        do_remove = false;
+        if (i->preview) {
+            do_load = gui_placer_past_entry(
+                    i->preview->tex, i->preview->tex_w, i->preview->tex_h,
+                    i->preview->w, i->preview->h, i->file_name, i->path,
+                    &do_remove, history_cell, label_scale);
+        } else {
+            do_load = gui_placer_past_entry(
+                    0, 0, 0, 0, 0, i->file_name, i->path, &do_remove,
+                    history_cell, label_scale);
+        }
+        if (do_load) {
+            reset(placer);
+            i->format->import_volume_func(i->format, placer->imported_volume,
+                                          i->path);
+            post_import(placer);
+        }
+        if (do_remove)
+            remove_me = i;
+        gui_pop_id();
+        {
+            float ih = gui_get_item_rect_size_y();
+            if (ih > row_h) row_h = ih;
+        }
+        x += history_cell + sp_x;
+    }
+    if (row_h > 0.f)
+        gui_set_cursor_pos(min_x, y + row_h + sp_y);
+    if (remove_me) placer_past_remove(remove_me);
+}
+
+void placer_gui_history_floating(void)
+{
+    tool_placer_t *placer;
+
+    if (!goxel.tool || goxel.tool->id != TOOL_PLACER)
+        return;
+    placer = (tool_placer_t *)goxel.tool;
+
+    gui_floating_panel_begin("Placer history##placer_history_win", 340.f, 420.f);
+    placer_gui_history_body(placer);
+    gui_floating_panel_end();
+}
+
 static void placer_acquire_selection() {
     tool_placer_t *placer = (tool_placer_t*) goxel.tool;
     reset(placer);
@@ -714,59 +872,6 @@ static int gui(tool_t *tool)
         }
         gui_section_end();
     }
-
-    /* ##suffix: separate ImGui id when history is empty vs not, so the first
-     * time there are past files SetNextItemOpen(..., Once) applies expanded. */
-    if (gui_section_begin(past_files ? "History##placer_past"
-                                    : "History##placer_past_empty",
-            past_files ? (int)GUI_SECTION_COLLAPSABLE
-                       : (int)(GUI_SECTION_COLLAPSABLE |
-                               GUI_SECTION_COLLAPSABLE_CLOSED))) {
-        past_import_t *i, *remove_me;
-        char idbuf[32];
-
-        remove_me = NULL;
-        {
-            int row_idx = 0;
-            float history_cell = 0.f;
-            DL_FOREACH_REVERSE(past_files, i) {
-                bool do_remove, do_load;
-                if ((row_idx & 1) == 0) {
-                    gui_row_begin(2);
-                    history_cell = gui_row_cell_width();
-                }
-                placer_ensure_past_preview(i);
-                snprintf(idbuf, sizeof(idbuf), "%p", (void *)i);
-                gui_push_id(idbuf);
-                do_remove = false;
-                if (i->preview) {
-                    do_load = gui_placer_past_entry(
-                            i->preview->tex, i->preview->tex_w, i->preview->tex_h,
-                            i->preview->w, i->preview->h, i->file_name, i->path,
-                            &do_remove, history_cell);
-                } else {
-                    do_load = gui_placer_past_entry(
-                            0, 0, 0, 0, 0, i->file_name, i->path, &do_remove,
-                            history_cell);
-                }
-                if (do_load) {
-                    reset(placer);
-                    i->format->import_volume_func(i->format, placer->imported_volume,
-                                                  i->path);
-                    post_import(placer);
-                }
-                if (do_remove)
-                    remove_me = i;
-                gui_pop_id();
-                row_idx++;
-                if ((row_idx & 1) == 0)
-                    gui_row_end();
-            }
-            if (row_idx & 1)
-                gui_row_end();
-        }
-        if (remove_me) placer_past_remove(remove_me);
-    } gui_section_end();
 
     if (reset_rotation || (placer->imported_volume && changed)) {
         if (reset_rotation) mat4_set_identity(placer->rot);

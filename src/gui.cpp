@@ -823,6 +823,87 @@ gui_window_ret_t gui_window_end(void)
     return ret;
 }
 
+void gui_floating_panel_begin(const char *title, float init_w, float init_h)
+{
+    ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImVec2 pos = ImVec2(vp->WorkPos.x + 52.f, vp->WorkPos.y + 96.f);
+
+    ImGui::SetNextWindowPos(pos, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(init_w, init_h), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(220.f, 140.f), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::Begin(title, NULL, ImGuiWindowFlags_None);
+}
+
+void gui_floating_panel_end(void)
+{
+    ImGui::End();
+}
+
+void gui_set_cursor_pos(float x, float y)
+{
+    ImGui::SetCursorPos(ImVec2(x, y));
+}
+
+float gui_window_content_region_min_x(void)
+{
+    return ImGui::GetWindowContentRegionMin().x;
+}
+
+float gui_window_content_region_max_x(void)
+{
+    return ImGui::GetWindowContentRegionMax().x;
+}
+
+float gui_get_cursor_pos_x(void)
+{
+    return ImGui::GetCursorPos().x;
+}
+
+float gui_get_cursor_pos_y(void)
+{
+    return ImGui::GetCursorPos().y;
+}
+
+float gui_get_item_rect_size_y(void)
+{
+    return ImGui::GetItemRectSize().y;
+}
+
+float gui_style_item_spacing_x(void)
+{
+    return ImGui::GetStyle().ItemSpacing.x;
+}
+
+float gui_style_item_spacing_y(void)
+{
+    return ImGui::GetStyle().ItemSpacing.y;
+}
+
+void gui_same_line_spaced(float spacing)
+{
+    ImGui::SameLine(0, spacing);
+}
+
+bool gui_toolbar_segment(const char *label, bool selected)
+{
+    bool ret;
+
+    if (selected) {
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+    }
+    ret = ImGui::SmallButton(label);
+    if (selected)
+        ImGui::PopStyleColor(3);
+    if (ret)
+        on_click();
+    return ret;
+}
+
 void gui_label_size_push(float v)
 {
     if (g_label_size_top >= (int)(sizeof(g_label_size_stack) / sizeof(g_label_size_stack[0]))) {
@@ -1243,10 +1324,20 @@ static const char *utf8_prev(const char *start, const char *p)
     return start;
 }
 
+static float placer_past_text_span_px(ImFont *font, float font_px,
+        const char *text_begin, const char *text_end)
+{
+    if (font && font_px > 0.f)
+        return font->CalcTextSizeA(
+                font_px, FLT_MAX, -1.0f, text_begin, text_end, NULL).x;
+    return ImGui::CalcTextSize(text_begin, text_end, true).x;
+}
+
 /* File name: up to 2 lines, break by UTF-8 codepoint; add ellipsis on line2 if
  * the remainder is too long. Buffers nul-terminated, truncated if needed. */
 static void placer_past_name_two_lines(
-        const char *name, float max_w, char *l1, int l1n, char *l2, int l2n)
+        const char *name, float max_w, char *l1, int l1n, char *l2, int l2n,
+        ImFont *font, float font_px)
 {
     l1[0] = 0;
     l2[0] = 0;
@@ -1263,7 +1354,7 @@ static void placer_past_name_two_lines(
         int n = ImTextCharFromUtf8(&c, p, e);
         if (n < 1)
             break;
-        if (ImGui::CalcTextSize(name, p + n, true).x > max_w)
+        if (placer_past_text_span_px(font, font_px, name, p + n) > max_w)
             break;
         l1e = p + n;
         p += n;
@@ -1287,7 +1378,8 @@ static void placer_past_name_two_lines(
     // Line 2: remainder, or prefix + "…" if it does not fit
     const char *s2 = l1e;
     static const char ell[] = "\xE2\x80\xA6";
-    const float ell_w = ImGui::CalcTextSize(ell, NULL, true).x;
+    const char *ell_end = ell + strlen(ell);
+    const float ell_w = placer_past_text_span_px(font, font_px, ell, ell_end);
     p = s2;
     const char *l2e = s2;
     while (p < e) {
@@ -1295,7 +1387,7 @@ static void placer_past_name_two_lines(
         int n = ImTextCharFromUtf8(&c, p, e);
         if (n < 1)
             break;
-        if (ImGui::CalcTextSize(s2, p + n, true).x > max_w)
+        if (placer_past_text_span_px(font, font_px, s2, p + n) > max_w)
             break;
         l2e = p + n;
         p += n;
@@ -1311,7 +1403,8 @@ static void placer_past_name_two_lines(
     }
     if (l2e < e) {
         while (l2e > s2) {
-            if (ImGui::CalcTextSize(s2, l2e, true).x + ell_w <= max_w) {
+            if (placer_past_text_span_px(font, font_px, s2, l2e) + ell_w
+                    <= max_w) {
                 (void)snprintf(
                         l2, (size_t)l2n, "%.*s%s", (int)(l2e - s2), s2, ell);
                 return;
@@ -1333,10 +1426,14 @@ static void placer_past_name_two_lines(
 bool gui_placer_past_entry(
         uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
         const char *file_name, const char *path_tooltip, bool *out_remove,
-        float cell_w)
+        float cell_w, float label_font_scale)
 {
     bool load = false;
     bool remove_btn = false;
+    float scale = label_font_scale > 0.f ? label_font_scale : 1.f;
+    ImFont *font = ImGui::GetFont();
+    float label_font_px = ImGui::GetFontSize() * scale;
+    float line_h = ImGui::GetTextLineHeight() * scale;
 
     if (out_remove)
         *out_remove = false;
@@ -1402,8 +1499,8 @@ bool gui_placer_past_entry(
 
     char b1[256], b2[256];
     placer_past_name_two_lines(
-            file_name, s - 2.f * xpad, b1, (int)sizeof(b1), b2, (int)sizeof(b2));
-    const float line_h = ImGui::GetTextLineHeight();
+            file_name, s - 2.f * xpad, b1, (int)sizeof(b1), b2, (int)sizeof(b2),
+            font, label_font_px);
     const float bar_h = (b2[0] != 0) ? (2.f * line_h + ypad * 2.f)
                                      : (line_h + ypad * 2.f);
     ImDrawList *dl = ImGui::GetWindowDrawList();
@@ -1414,8 +1511,6 @@ bool gui_placer_past_entry(
         const ImU32 tcol = IM_COL32(255, 255, 255, 255);
         const ImU32 sh = IM_COL32(0, 0, 0, 220);
         const float ty = rmax.y - bar_h + ypad * 0.5f;
-        ImFont *f = ImGui::GetFont();
-        float fs = ImGui::GetFontSize();
         ImVec2 t1 = ImVec2(rmin.x + xpad, ty);
         static const int s_off[8][2] = {
             {-1, -1},
@@ -1429,8 +1524,8 @@ bool gui_placer_past_entry(
         };
         for (int o = 0; o < 8; o++) {
             dl->AddText(
-                    f,
-                    fs,
+                    font,
+                    label_font_px,
                     ImVec2(
                             t1.x + (float)s_off[o][0],
                             t1.y + (float)s_off[o][1]),
@@ -1438,13 +1533,13 @@ bool gui_placer_past_entry(
                     b1,
                     NULL);
         }
-        dl->AddText(f, fs, t1, tcol, b1, NULL);
+        dl->AddText(font, label_font_px, t1, tcol, b1, NULL);
         if (b2[0]) {
             ImVec2 t2 = ImVec2(rmin.x + xpad, ty + line_h);
             for (int o = 0; o < 8; o++) {
                 dl->AddText(
-                        f,
-                        fs,
+                        font,
+                        label_font_px,
                         ImVec2(
                                 t2.x + (float)s_off[o][0],
                                 t2.y + (float)s_off[o][1]),
@@ -1452,7 +1547,7 @@ bool gui_placer_past_entry(
                         b2,
                         NULL);
             }
-            dl->AddText(f, fs, t2, tcol, b2, NULL);
+            dl->AddText(font, label_font_px, t2, tcol, b2, NULL);
         }
     }
 
@@ -1466,9 +1561,53 @@ bool gui_placer_past_entry(
             gui_tooltip(path_tooltip);
     }
 
-    if (gui->is_row)
-        ImGui::SameLine();
+    return load;
+}
 
+bool gui_placer_past_details_row(
+        const char *file_name, const char *path_tooltip, bool *out_remove)
+{
+    bool load = false;
+    bool rm = false;
+
+    if (out_remove)
+        *out_remove = false;
+    if (!gui)
+        return false;
+
+    ImGuiStyle &st = ImGui::GetStyle();
+    const float xbtn = ImGui::GetFrameHeight() * 1.05f;
+    float avail = ImGui::GetContentRegionAvail().x;
+    float w_name = avail - xbtn - st.ItemSpacing.x;
+    if (w_name < 40.f)
+        w_name = 40.f;
+
+    ImGui::PushStyleColor(ImGuiCol_Button, COLOR(BUTTON, INNER, false));
+    if (ImGui::Button(file_name && file_name[0] ? file_name : "—",
+                    ImVec2(w_name, 0)))
+        load = true;
+    ImGui::PopStyleColor();
+    if (!gui->scrolling && path_tooltip && ImGui::IsItemHovered())
+        gui_tooltip(path_tooltip);
+
+    ImGui::SameLine(0, st.ItemSpacing.x);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 0));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 0.9f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.15f, 0.15f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.1f, 0.1f, 1.f));
+    rm = ImGui::SmallButton("x##pl_hist_rm");
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(1);
+    if (!gui->scrolling && ImGui::IsItemHovered())
+        gui_tooltip("Remove model from placer history");
+
+    if (rm) {
+        load = false;
+        if (out_remove)
+            *out_remove = true;
+    }
+    if (load || rm)
+        on_click();
     return load;
 }
 

@@ -676,6 +676,8 @@ void placer_past_files_clear(void);
 // Returns a malloc'd buffer; *out_len is byte length. Caller must free; empty list is still valid.
 char *placer_past_files_serialize_gox(size_t *out_len);
 void placer_past_files_load_gox(const char *data, size_t len);
+/* Floating import history window (only while Placer tool is active). */
+void placer_gui_history_floating(void);
 
 // Iter info of a gox file, without actually reading it.
 // For the moment only returns the image preview if available.
