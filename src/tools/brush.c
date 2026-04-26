@@ -73,6 +73,8 @@ static void get_box3(const float p0[3], const float p1[3], const float n[3],
     if (p1 == NULL) {
         bbox_from_extents(box, p0, r_x, r_y, r_z);
         box_swap_axis(box, 2, 0, 1, box);
+        if (goxel.brush_origin_at_base)
+            box[3][2] += r_z;
         mat4_copy(box, out);
         return;
     }
@@ -280,6 +282,8 @@ static int iter(tool_t *tool, const painter_t *painter,
 static int gui(tool_t *tool)
 {
     tool_gui_radius();
+    gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
+                 "Lowest Z of the shape is at the cursor (Z-up), not the center");
     tool_gui_smoothness();
     tool_gui_color();
     gui_section_end();

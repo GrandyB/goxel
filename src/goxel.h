@@ -537,6 +537,8 @@ typedef struct goxel
     float      radius_x;
     float      radius_y;
     float      radius_z;
+    /* Brush: shape lowest Z sits on cursor instead of center (Z-up). */
+    bool       brush_origin_at_base;
     bool       pathtrace; // Render pathtraced mode.
 
     // Some state for the tool iter functions.
