@@ -659,10 +659,6 @@ static void gui_iter(const inputs_t *inputs)
     render_view_cube();
     render_popups(0);
 
-    // Handle the shortcuts.  XXX: this should be done with actions.
-    if (ImGui::IsKeyPressed((ImGuiKey)KEY_DELETE, false))
-        action_exec2(ACTION_layer_clear);
-
     if (!io.WantCaptureKeyboard) {
         actions_iter(check_action_shortcut, NULL);
     }

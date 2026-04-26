@@ -847,7 +847,6 @@ ACTION_REGISTER(ACTION_layer_clear,
     .cfunc = image_clear_layer,
     .icon = ICON_DELETE,
     .flags = ACTION_TOUCH_IMAGE,
-    .default_shortcut = "Delete",
 )
 
 static void a_image_add_layer(void)
