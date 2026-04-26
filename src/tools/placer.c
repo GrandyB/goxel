@@ -673,7 +673,13 @@ static int gui(tool_t *tool)
         gui_section_end();
     }
 
-    if (gui_section_begin("History", GUI_SECTION_COLLAPSABLE_CLOSED)) {
+    /* ##suffix: separate ImGui id when history is empty vs not, so the first
+     * time there are past files SetNextItemOpen(..., Once) applies expanded. */
+    if (gui_section_begin(past_files ? "History##placer_past"
+                                    : "History##placer_past_empty",
+            past_files ? (int)GUI_SECTION_COLLAPSABLE
+                       : (int)(GUI_SECTION_COLLAPSABLE |
+                               GUI_SECTION_COLLAPSABLE_CLOSED))) {
         const past_import_t *i;
         DL_FOREACH_REVERSE(past_files, i) {
             if(gui_button(i->file_name, 0, 0)) {
