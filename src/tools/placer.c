@@ -20,7 +20,9 @@
 #include "file_format.h"
 #include "utils/volume_preview.h"
 #include "utlist.h"
+#include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #ifdef _WIN32
@@ -56,6 +58,12 @@ enum {
     PLACER_RAND_FLIP_XY,
 };
 
+enum {
+    PLACER_CR_NONE = 0,
+    PLACER_CR_RANDOM,
+    PLACER_CR_SPECIFIC,
+};
+
 static file_format_t *ff_import_current = NULL;
 static file_format_t *ff_export_current = NULL;
 
@@ -84,6 +92,7 @@ typedef struct {
         bool       pressed;
         int        mode;
         uint64_t   volume_key;
+        uint32_t   cr_stamp_seq;
     } last_op;
 
     struct {
@@ -93,6 +102,15 @@ typedef struct {
 
     int random_z_mode;
     int random_flip_xy_mode;
+
+    int color_replace_mode;
+    uint8_t color_replace_source[4];
+    uint8_t color_replace_specific[4];
+    float color_replace_saturation;
+    float color_replace_brightness;
+    float color_replace_rand_h;
+    uint32_t color_replace_stamp_seq;
+    bool color_replace_defaults_done;
 
 } tool_placer_t;
 
@@ -198,6 +216,16 @@ static const char *placer_rand_flip_xy_label(int mode)
     return mode == PLACER_RAND_FLIP_XY ? "Flip X/Y" : "None";
 }
 
+static const char *placer_color_replace_mode_label(int mode)
+{
+    switch (mode) {
+    case PLACER_CR_RANDOM:  return "Replace with random";
+    case PLACER_CR_SPECIFIC: return "Replace with specific";
+    case PLACER_CR_NONE:
+    default:                return "None";
+    }
+}
+
 static void placer_randomize_z_rotation(tool_placer_t *placer)
 {
     float degs[3];
@@ -265,6 +293,7 @@ static bool check_can_skip(tool_placer_t *placer, const cursor_t *curs)
     const bool pressed = curs->flags & CURSOR_PRESSED;
     if (    pressed == placer->last_op.pressed &&
             placer->last_op.volume_key == volume_get_key(volume) &&
+            placer->last_op.cr_stamp_seq == placer->color_replace_stamp_seq &&
             vec3_equal(curs->pos, placer->last_op.pos)) {
         return true;
     }
@@ -272,6 +301,95 @@ static bool check_can_skip(tool_placer_t *placer, const cursor_t *curs)
     placer->last_op.volume_key = volume_get_key(volume);
     vec3_copy(curs->pos, placer->last_op.pos);
     return false;
+}
+
+static void placer_color_replace_apply_defaults(tool_placer_t *placer)
+{
+    if (placer->color_replace_defaults_done)
+        return;
+    placer->color_replace_defaults_done = true;
+    placer->color_replace_source[0] = 0;
+    placer->color_replace_source[1] = 0;
+    placer->color_replace_source[2] = 0;
+    placer->color_replace_source[3] = 255;
+    placer->color_replace_specific[0] = 255;
+    placer->color_replace_specific[1] = 255;
+    placer->color_replace_specific[2] = 255;
+    placer->color_replace_specific[3] = 255;
+    placer->color_replace_saturation = 0.5f;
+    placer->color_replace_brightness = 0.5f;
+    placer->color_replace_rand_h = 0.f;
+}
+
+static void placer_color_replace_reseed(tool_placer_t *placer)
+{
+    if (placer->color_replace_mode != PLACER_CR_RANDOM)
+        return;
+    placer->color_replace_rand_h =
+            (random_int(0, 16777215) + 0.5f) / 16777216.f;
+    placer->color_replace_stamp_seq++;
+}
+
+static void hsv_to_rgb_u8(float h, float s, float v, uint8_t rgb[3])
+{
+    float r, g, b;
+    int i;
+    float f, p, q, t;
+
+    h = fmodf(h, 1.f);
+    if (h < 0.f)
+        h += 1.f;
+    s = clamp(s, 0.f, 1.f);
+    v = clamp(v, 0.f, 1.f);
+    i = (int)(h * 6.f);
+    f = h * 6.f - (float)i;
+    p = v * (1.f - s);
+    q = v * (1.f - f * s);
+    t = v * (1.f - (1.f - f) * s);
+    switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    default: r = v; g = p; b = q; break;
+    }
+    rgb[0] = (uint8_t)clamp(r * 255.f, 0.f, 255.f);
+    rgb[1] = (uint8_t)clamp(g * 255.f, 0.f, 255.f);
+    rgb[2] = (uint8_t)clamp(b * 255.f, 0.f, 255.f);
+}
+
+static void placer_stamp_apply_color_replace(tool_placer_t *placer,
+                                             volume_t *stamp)
+{
+    volume_iterator_t iter;
+    int pos[3];
+    uint8_t vox[4];
+    uint8_t repl_rgb[3];
+
+    if (placer->color_replace_mode == PLACER_CR_NONE)
+        return;
+
+    if (placer->color_replace_mode == PLACER_CR_SPECIFIC) {
+        repl_rgb[0] = placer->color_replace_specific[0];
+        repl_rgb[1] = placer->color_replace_specific[1];
+        repl_rgb[2] = placer->color_replace_specific[2];
+    } else {
+        hsv_to_rgb_u8(placer->color_replace_rand_h,
+                        placer->color_replace_saturation,
+                        placer->color_replace_brightness, repl_rgb);
+    }
+
+    iter = volume_get_iterator(stamp, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(stamp, &iter, pos, vox);
+        if (memcmp(vox, placer->color_replace_source, 4) != 0)
+            continue;
+        vox[0] = repl_rgb[0];
+        vox[1] = repl_rgb[1];
+        vox[2] = repl_rgb[2];
+        volume_set_at(stamp, &iter, pos, vox);
+    }
 }
 
 /**
@@ -311,6 +429,8 @@ static int on_drag(gesture3d_t *gest, void *user)
         if (did_place && placer->imported_volume) {
             placer_randomize_z_rotation(placer);
             placer_randomize_flip_xy(placer);
+            if (placer->color_replace_mode == PLACER_CR_RANDOM)
+                placer_color_replace_reseed(placer);
         }
     }
     return 0;
@@ -332,11 +452,21 @@ static int on_hover(gesture3d_t *gest, void *user)
         return 0;
     
     if (placer->imported_volume && curs->snaped) {
+        volume_t *stamp;
+
         move_to(placer, curs->pos);
 
-        volume_merge(volume, placer->imported_volume, MODE_OVER, NULL);
+        if (placer->color_replace_mode != PLACER_CR_NONE) {
+            stamp = volume_copy(placer->imported_volume);
+            placer_stamp_apply_color_replace(placer, stamp);
+            volume_merge(volume, stamp, MODE_OVER, NULL);
+            volume_delete(stamp);
+        } else {
+            volume_merge(volume, placer->imported_volume, MODE_OVER, NULL);
+        }
         if (!goxel.tool_volume) goxel.tool_volume = volume_new();
         volume_set(goxel.tool_volume, volume);
+        placer->last_op.cr_stamp_seq = placer->color_replace_stamp_seq;
     }
 
     placer->last_op.volume_key = volume_get_key(volume);
@@ -350,6 +480,8 @@ static int iter(tool_t *tool, const painter_t *painter,
 {
     goxel_set_help_text("Click to brush - there are hotkeys for changing modes etc! TIP: Holding shift will toggle line mode.");
     tool_placer_t *placer = (tool_placer_t*)tool;
+
+    placer_color_replace_apply_defaults(placer);
     cursor_t *curs = &goxel.cursor;
     // XXX: for the moment we force rounded positions for the placer tool
     // to make things easier.
@@ -922,6 +1054,9 @@ float zero(float num) {
 static int gui(tool_t *tool)
 {
     tool_placer_t *placer = (tool_placer_t*)tool;
+    int prev_cr_mode;
+
+    placer_color_replace_apply_defaults(placer);
     float rotation[4][4] = MAT4_IDENTITY;
     float rot_degs[3];
     bool reset_rotation = false;
@@ -946,6 +1081,55 @@ static int gui(tool_t *tool)
         }
         gui_section_end();
     }
+
+    prev_cr_mode = placer->color_replace_mode;
+    if (gui_section_begin("Colour replace", true)) {
+        if (gui_combo_begin("##placer_cr_mode",
+                    placer_color_replace_mode_label(placer->color_replace_mode))) {
+            if (gui_combo_item("None",
+                        placer->color_replace_mode == PLACER_CR_NONE))
+                placer->color_replace_mode = PLACER_CR_NONE;
+            if (gui_combo_item("Replace with random",
+                        placer->color_replace_mode == PLACER_CR_RANDOM))
+                placer->color_replace_mode = PLACER_CR_RANDOM;
+            if (gui_combo_item("Replace with specific",
+                        placer->color_replace_mode == PLACER_CR_SPECIFIC))
+                placer->color_replace_mode = PLACER_CR_SPECIFIC;
+            gui_combo_end();
+        }
+        if (placer->color_replace_mode != prev_cr_mode) {
+            if (placer->color_replace_mode == PLACER_CR_RANDOM)
+                placer_color_replace_reseed(placer);
+            else
+                placer->color_replace_stamp_seq++;
+        }
+
+        if (placer->color_replace_mode == PLACER_CR_RANDOM ||
+            placer->color_replace_mode == PLACER_CR_SPECIFIC) {
+            if (gui_color_small("Source", placer->color_replace_source))
+                placer->color_replace_stamp_seq++;
+        }
+
+        if (placer->color_replace_mode == PLACER_CR_RANDOM) {
+            if (slider_float("Saturation", &placer->color_replace_saturation,
+                        0.f, 1.f, "%.2f"))
+                placer->color_replace_stamp_seq++;
+            if (slider_float("Brightness", &placer->color_replace_brightness,
+                        0.f, 1.f, "%.2f"))
+                placer->color_replace_stamp_seq++;
+        }
+
+        if (placer->color_replace_mode == PLACER_CR_SPECIFIC) {
+            if (gui_color_small("Replacement", placer->color_replace_specific))
+                placer->color_replace_stamp_seq++;
+        }
+
+        if (placer->color_replace_mode == PLACER_CR_RANDOM) {
+            if (gui_button("Re-seed", -1, 0))
+                placer_color_replace_reseed(placer);
+        }
+    }
+    gui_section_end();
 
     if(gui_section_begin("Import as", true)) {
         char label[128];
