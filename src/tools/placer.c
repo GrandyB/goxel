@@ -427,6 +427,14 @@ void placer_past_files_load_gox(const char *data, size_t len) {
     free(tofree);
 }
 
+static void placer_past_remove(past_import_t *e) {
+    if (!e) return;
+    free((void *)e->path);
+    free((void *)e->file_name);
+    DL_DELETE(past_files, e);
+    free(e);
+}
+
 static void on_file_import(const char *path, const char *file_name, const file_format_t *format) {
     past_import_t *past;
     past = calloc(1, sizeof(*past));
@@ -680,14 +688,29 @@ static int gui(tool_t *tool)
             past_files ? (int)GUI_SECTION_COLLAPSABLE
                        : (int)(GUI_SECTION_COLLAPSABLE |
                                GUI_SECTION_COLLAPSABLE_CLOSED))) {
-        const past_import_t *i;
+        past_import_t *i, *remove_me;
+        char idbuf[32];
+
+        remove_me = NULL;
         DL_FOREACH_REVERSE(past_files, i) {
-            if(gui_button(i->file_name, 0, 0)) {
+            gui_row_begin(0);
+            snprintf(idbuf, sizeof(idbuf), "%p", (void *)i);
+            gui_push_id(idbuf);
+            if (gui_button(i->file_name, 0.88f, 0)) {
                 reset(placer);
-                i->format->import_volume_func(i->format, placer->imported_volume, i->path);
+                i->format->import_volume_func(i->format, placer->imported_volume,
+                                              i->path);
                 post_import(placer);
             }
+            gui_tooltip_if_hovered(i->path);
+            gui_same_line();
+            
+            if (gui_button("x", 0, 0)) remove_me = i;
+            gui_tooltip_if_hovered("Remove model from placer history");
+            gui_pop_id();
+            gui_row_end();
         }
+        if (remove_me) placer_past_remove(remove_me);
     } gui_section_end();
 
     if (reset_rotation || (placer->imported_volume && changed)) {
