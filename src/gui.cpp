@@ -406,7 +406,8 @@ static void gui_init(void)
     }
 
     if (!g_tex_icons) {
-        g_tex_icons = texture_new_image("asset://data/images/icons.png", 0);
+        g_tex_icons = texture_new_image("asset://data/images/icons.png",
+                                        TF_NEAREST);
         GL(glBindTexture(GL_TEXTURE_2D, g_tex_icons->tex));
     }
 

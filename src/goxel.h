@@ -406,7 +406,10 @@ enum {
     X(ICON_TOOL_LASER,              4, 0, THEME_GROUP_ICON),
     X(ICON_TOOL_MOVE,               5, 0, THEME_GROUP_ICON),
     X(ICON_TOOL_EXTRUDE,            6, 0, THEME_GROUP_ICON),
+    X(ICON_TOOL_LINE,               7, 1, THEME_GROUP_ICON),
     X(ICON_TOOL_FUZZY_SELECT,       7, 0, THEME_GROUP_ICON),
+    X(ICON_TOOL_PLACER,             6, 6, THEME_GROUP_ICON),
+    X(ICON_TOOL_FILL,               7, 6, THEME_GROUP_ICON),
 
     X(ICON_MODE_ADD,                0, 1, THEME_GROUP_ICON),
     X(ICON_MODE_SUB,                1, 1, THEME_GROUP_ICON),
@@ -415,7 +418,6 @@ enum {
     X(ICON_SHAPE_SPHERE,            4, 1, THEME_GROUP_ICON),
     X(ICON_SHAPE_CYLINDER,          5, 1, THEME_GROUP_ICON),
     X(ICON_TOOL_RECT_SELECTION,     6, 1, THEME_GROUP_ICON),
-    X(ICON_TOOL_LINE,               7, 1, THEME_GROUP_ICON),
 
     X(ICON_ADD,                     0, 2, 0),
     X(ICON_REMOVE,                  1, 2, 0),

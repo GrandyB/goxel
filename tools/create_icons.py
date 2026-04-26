@@ -20,19 +20,32 @@
 # ************************************************************************
 # Create the icon atlas image from all the icons svg files
 
-import cairosvg
+# import cairosvg
 import itertools
-import PIL.Image
-from shutil import copyfile
+import logging
 import os
-import subprocess
 import re
+import subprocess
+from shutil import copyfile
+
+import PIL.Image
+
+_debug = bool(os.environ.get("DEBUG", "").strip())
+logging.basicConfig(
+    level=logging.DEBUG if _debug else logging.INFO,
+    format="%(levelname)s %(message)s",
+)
+_log = logging.getLogger(__name__)
+_log.info("create_icons: cwd=%s debug=%s", os.getcwd(), _debug)
 
 # Convert the svg into one big png file.
-cairosvg.svg2png(url='./svg/icons.svg', write_to='/tmp/icons.png',
-                 output_width=370, output_height=352)
+# cairosvg.svg2png(url='./svg/icons.svg', write_to='/tmp/icons.png',
+#                  output_width=370, output_height=352)
 
-src_img = PIL.Image.open('/tmp/icons.png')
+src_path = './tmp/icons.png'
+_log.info("loading %s", os.path.abspath(src_path))
+src_img = PIL.Image.open(src_path)
+_log.info("source atlas size %s mode=%s", src_img.size, src_img.mode)
 ret_img = PIL.Image.new('RGBA', (512, 512))
 
 for x, y in itertools.product(range(8), range(8)):
@@ -42,14 +55,27 @@ for x, y in itertools.product(range(8), range(8)):
         tmp = PIL.Image.new('RGBA', (44, 44), (255, 255, 255, 255))
         tmp.putalpha(img.split()[3])
         img = tmp
+    _log.debug("tile x=%d y=%d -> paste (64*x+10, 64*y+10)", x, y)
     ret_img.paste(img, (64 * x + 10, 64 * y + 10))
 
-ret_img.save('data/images/icons.png')
+atlas_out = './data/images/icons.png'
+_log.info("saving icon atlas %s", os.path.abspath(atlas_out))
+ret_img.save(atlas_out)
 
 # Also create the application icons (in data/icons)
-if not os.path.exists('data/icons'): os.makedirs('data/icons')
-base = PIL.Image.open('icon.png').convert('RGBA')
+icons_dir = './data/icons'
+if not os.path.exists(icons_dir):
+    _log.info("mkdir %s", os.path.abspath(icons_dir))
+    os.makedirs(icons_dir)
+icon_src = 'icon.png'
+_log.info("loading %s", os.path.abspath(icon_src))
+base = PIL.Image.open(icon_src).convert('RGBA')
+_log.info("base icon size %s", base.size)
 
 for size in [16, 24, 32, 48, 64, 128, 256]:
+    out = os.path.join(icons_dir, 'icon%d.png' % size)
+    _log.info("write %s", os.path.abspath(out))
     img = base.resize((size, size), PIL.Image.BILINEAR)
-    img.save('data/icons/icon%d.png' % size)
+    img.save(out)
+
+_log.info("done")

@@ -79,6 +79,10 @@ def list_files(group):
 
 def encode_str(data):
     data = data.decode()
+    # Convert to LF so we never write raw \r into the .c file (CR inside a
+    # string or before \n" confuses the C lexer on some toolchains).
+    if "\r" in data:
+        data = data.replace("\r\n", "\n").replace("\r", "\n")
     ret = '    "'
     for c in data:
         if c == '\n':
@@ -101,17 +105,26 @@ def encode_bin(data):
     ret += "}"
     return ret;
 
+def posix_data_path(f):
+    """Path with forward slashes for C string (avoid \\t, \\d, etc. in literals)."""
+    s = f.replace(os.sep, "/")
+    if os.altsep:
+        s = s.replace(os.altsep, "/")
+    return s
+
+
 def create_file(f):
     data = open(f, 'rb').read()
     size = len(data)
-    name = f.replace('/', '_').replace('.', '_').replace('-', '_')
+    c_path = posix_data_path(f)
+    name = c_path.replace('/', '_').replace('.', '_').replace('-', '_')
     ext = f.split(".")[-1]
     if TYPES[ext]['text']:
         size += 1 # So that we NULL terminate the string.
         data = encode_str(data)
     else:
         data = encode_bin(data)
-    return File(f, name, data, size)
+    return File(c_path, name, data, size)
 
 
 for group in GROUPS:
@@ -120,7 +133,7 @@ for group in GROUPS:
         files.append(create_file(f))
     if not files:
         continue
-    out = open("src/assets/%s.inl" % group, "w")
+    out = open("src/assets/%s.inl" % group, "w", encoding="utf-8", newline="\n")
     print(HEADER, file=out)
     for f in files:
         print(TEMPLATE.format(**f._asdict()), file=out)
