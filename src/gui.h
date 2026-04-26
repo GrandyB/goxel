@@ -73,6 +73,10 @@ float gui_style_item_spacing_y(void);
 void gui_same_line_spaced(float spacing);
 /* Compact button for segmented toolbars; selected uses header-like colors. */
 bool gui_toolbar_segment(const char *label, bool selected);
+float gui_calc_text_width(const char *text);
+float gui_toolbar_segment_width(const char *label);
+float gui_content_avail_x(void);
+void gui_new_line(void);
 
 bool gui_want_capture_mouse(void);
 

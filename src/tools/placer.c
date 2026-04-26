@@ -20,6 +20,14 @@
 #include "file_format.h"
 #include "utils/volume_preview.h"
 #include "utlist.h"
+#include <stdlib.h>
+#include <time.h>
+
+#ifdef _WIN32
+#   define past_strcasecmp _stricmp
+#else
+#   define past_strcasecmp strcasecmp
+#endif
 
 #ifndef PLACER_PAST_PREVIEW_SIZE
 #   define PLACER_PAST_PREVIEW_SIZE 128
@@ -30,6 +38,10 @@
 enum { PLACER_HIST_VIEW_S = 0, PLACER_HIST_VIEW_M = 1, PLACER_HIST_VIEW_L = 2,
        PLACER_HIST_VIEW_DETAILS = 3 };
 static int placer_history_preview_preset = PLACER_HIST_VIEW_M;
+
+enum { PLACER_HIST_SORT_TIME = 0, PLACER_HIST_SORT_NAME = 1 };
+static int placer_history_sort_key = PLACER_HIST_SORT_TIME;
+static bool placer_history_sort_asc = false;
 
 static file_format_t *ff_import_current = NULL;
 static file_format_t *ff_export_current = NULL;
@@ -332,6 +344,7 @@ struct past_import {
     texture_t *preview;
     /* true: in-memory preview attempted (import) or disk lazy load finished */
     bool preview_ready;
+    int64_t imported_at; /* unix seconds when added (not shown in tile UI) */
 };
 past_import_t *past_files = NULL;
 
@@ -352,11 +365,11 @@ char *placer_past_files_serialize_gox(size_t *out_len) {
     size_t tot, hlen, rem;
     char *buf, *w;
 
-    static const char hdr[] = "goxel-placer-history 1\n";
+    static const char hdr[] = "goxel-placer-history 2\n";
     hlen = sizeof(hdr) - 1;
     tot = hlen;
     DL_FOREACH_REVERSE(past_files, i) {
-        tot += strlen(i->format->name) + 1 + strlen(i->path) + 1;
+        tot += strlen(i->format->name) + 1 + strlen(i->path) + 1 + 24 + 1;
     }
     buf = malloc(tot + 1);
     if (!buf) {
@@ -369,7 +382,8 @@ char *placer_past_files_serialize_gox(size_t *out_len) {
     rem = tot + 1 - hlen;
     DL_FOREACH_REVERSE(past_files, i) {
         int n;
-        n = snprintf(w, rem, "%s\t%s\n", i->format->name, i->path);
+        n = snprintf(w, rem, "%s\t%s\t%lld\n", i->format->name, i->path,
+                (long long)i->imported_at);
         if (n < 0 || (size_t)n >= rem) {
             free(buf);
             if (out_len) *out_len = 0;
@@ -386,6 +400,7 @@ char *placer_past_files_serialize_gox(size_t *out_len) {
 void placer_past_files_load_gox(const char *data, size_t len) {
     char *copy, *p, *line, *tofree, *tab;
     const file_format_t *ff;
+    int plac_ver;
 
     if (!data || !len) return;
     placer_past_files_clear();
@@ -395,7 +410,15 @@ void placer_past_files_load_gox(const char *data, size_t len) {
     copy[len] = '\0';
     p = copy;
     line = strsep(&p, "\n");
-    if (!line || strncmp(line, "goxel-placer-history 1", 22) != 0) {
+    if (!line) {
+        free(tofree);
+        return;
+    }
+    if (strncmp(line, "goxel-placer-history 2", 22) == 0)
+        plac_ver = 2;
+    else if (strncmp(line, "goxel-placer-history 1", 22) == 0)
+        plac_ver = 1;
+    else {
         free(tofree);
         return;
     }
@@ -413,29 +436,43 @@ void placer_past_files_load_gox(const char *data, size_t len) {
             continue;
         }
         {
-            const char *path = tab + 1;
-            char *name = strdup(get_file_name_from_path(path));
-            past_import_t *past, *f, *tmp;
+            char *path_start = tab + 1;
+            int64_t imported_at = 0;
 
-            if (!name) {
-                free(tofree);
-                return;
+            if (plac_ver >= 2) {
+                char *tab2 = strchr(path_start, '\t');
+
+                if (tab2) {
+                    *tab2 = '\0';
+                    imported_at = (int64_t)strtoll(tab2 + 1, NULL, 10);
+                }
             }
-            past = calloc(1, sizeof(*past));
-            *past = (past_import_t) {
-                .path = strdup(path),
-                .file_name = name,
-                .format = ff,
-            };
-            DL_FOREACH_SAFE(past_files, f, tmp) {
-                if (strcmp(f->file_name, name) != 0) continue;
-                free((void *)f->path);
-                free((void *)f->file_name);
-                texture_delete(f->preview);
-                DL_DELETE(past_files, f);
-                free(f);
+            {
+                const char *path = path_start;
+                char *name = strdup(get_file_name_from_path(path));
+                past_import_t *past, *f, *tmp;
+
+                if (!name) {
+                    free(tofree);
+                    return;
+                }
+                past = calloc(1, sizeof(*past));
+                *past = (past_import_t) {
+                    .path = strdup(path),
+                    .file_name = name,
+                    .format = ff,
+                    .imported_at = imported_at,
+                };
+                DL_FOREACH_SAFE(past_files, f, tmp) {
+                    if (strcmp(f->file_name, name) != 0) continue;
+                    free((void *)f->path);
+                    free((void *)f->file_name);
+                    texture_delete(f->preview);
+                    DL_DELETE(past_files, f);
+                    free(f);
+                }
+                DL_APPEND(past_files, past);
             }
-            DL_APPEND(past_files, past);
         }
     }
     free(tofree);
@@ -473,6 +510,7 @@ static void on_file_import(const char *path, const char *file_name, const file_f
         .path = path,
         .file_name = strdup(file_name),
         .format = format,
+        .imported_at = (int64_t)time(NULL),
     };
 
     past_import_t *f, *tmp;
@@ -499,6 +537,46 @@ static void on_file_import(const char *path, const char *file_name, const file_f
 static void post_import(tool_placer_t *placer) {
     placer->imported_volume_orig = volume_copy(placer->imported_volume);
     center_origin(placer);
+}
+
+static int past_cmp_for_qsort(const void *a, const void *b)
+{
+    past_import_t *x = *(past_import_t * const *)a;
+    past_import_t *y = *(past_import_t * const *)b;
+
+    if (placer_history_sort_key == PLACER_HIST_SORT_NAME) {
+        int c = past_strcasecmp(x->file_name, y->file_name);
+        if (c != 0)
+            return c;
+    }
+    if (x->imported_at < y->imported_at)
+        return -1;
+    if (x->imported_at > y->imported_at)
+        return 1;
+    if (placer_history_sort_key == PLACER_HIST_SORT_TIME) {
+        int c = past_strcasecmp(x->file_name, y->file_name);
+        if (c != 0)
+            return c;
+    }
+    return 0;
+}
+
+static past_import_t **placer_history_sorted_order(int *out_n)
+{
+    int n = 0;
+    past_import_t *e;
+    past_import_t **arr;
+    DL_FOREACH(past_files, e) n++;
+    *out_n = n;
+    if (!n)
+        return NULL;
+    arr = malloc((size_t)n * sizeof(*arr));
+    if (!arr)
+        return NULL;
+    n = 0;
+    DL_FOREACH(past_files, e) arr[n++] = e;
+    qsort(arr, (size_t)*out_n, sizeof(*arr), past_cmp_for_qsort);
+    return arr;
 }
 
 static float placer_history_entry_size(void)
@@ -528,7 +606,10 @@ static float placer_history_label_scale(void)
 
 static void placer_gui_history_preset_bar(void)
 {
-    gui_text("View:");
+    float need_sort;
+    char tlab[48], nlab[48];
+
+    gui_text("Size:");
     gui_same_line_spaced(8.f);
     if (gui_toolbar_segment("S##pl_hist_s",
                 placer_history_preview_preset == PLACER_HIST_VIEW_S))
@@ -545,11 +626,53 @@ static void placer_gui_history_preset_bar(void)
     if (gui_toolbar_segment("Details##pl_hist_d",
                 placer_history_preview_preset == PLACER_HIST_VIEW_DETAILS))
         placer_history_preview_preset = PLACER_HIST_VIEW_DETAILS;
+
+    need_sort = gui_calc_text_width("Sort:") + 8.f
+            + gui_toolbar_segment_width("Time v##pl_sort_t") + 4.f
+            + gui_toolbar_segment_width("Name v##pl_sort_n") + 4.f;
+    if (gui_content_avail_x() < need_sort)
+        gui_new_line();
+    else
+        gui_same_line_spaced(16.f);
+
+    gui_text("Sort:");
+    gui_same_line_spaced(8.f);
+    if (placer_history_sort_key == PLACER_HIST_SORT_TIME)
+        snprintf(tlab, sizeof(tlab), "Time %s##pl_sort_t",
+                placer_history_sort_asc ? "^" : "v");
+    else
+        snprintf(tlab, sizeof(tlab), "Time##pl_sort_t");
+    if (gui_toolbar_segment(tlab, placer_history_sort_key
+                == PLACER_HIST_SORT_TIME)) {
+        if (placer_history_sort_key == PLACER_HIST_SORT_TIME)
+            placer_history_sort_asc = !placer_history_sort_asc;
+        else {
+            placer_history_sort_key = PLACER_HIST_SORT_TIME;
+            placer_history_sort_asc = false;
+        }
+    }
+    gui_same_line_spaced(4.f);
+    if (placer_history_sort_key == PLACER_HIST_SORT_NAME)
+        snprintf(nlab, sizeof(nlab), "Name %s##pl_sort_n",
+                placer_history_sort_asc ? "^" : "v");
+    else
+        snprintf(nlab, sizeof(nlab), "Name##pl_sort_n");
+    if (gui_toolbar_segment(nlab, placer_history_sort_key
+                == PLACER_HIST_SORT_NAME)) {
+        if (placer_history_sort_key == PLACER_HIST_SORT_NAME)
+            placer_history_sort_asc = !placer_history_sort_asc;
+        else {
+            placer_history_sort_key = PLACER_HIST_SORT_NAME;
+            placer_history_sort_asc = true;
+        }
+    }
 }
 
 static void placer_gui_history_body(tool_placer_t *placer)
 {
     past_import_t *i, *remove_me;
+    past_import_t **order = NULL;
+    int n, k;
     char idbuf[32];
     float min_x, max_x, x, y, row_h, sp_x, sp_y;
     float history_cell;
@@ -563,13 +686,20 @@ static void placer_gui_history_body(tool_placer_t *placer)
         return;
     }
 
+    order = placer_history_sorted_order(&n);
+    if (!order) {
+        gui_text_wrapped("Could not arrange import history.");
+        return;
+    }
+
     remove_me = NULL;
 
     if (placer_history_preview_preset == PLACER_HIST_VIEW_DETAILS) {
-        DL_FOREACH_REVERSE(past_files, i) {
+        for (k = 0; k < n; k++) {
             bool do_remove;
             bool do_load;
 
+            i = order[placer_history_sort_asc ? k : (n - 1 - k)];
             snprintf(idbuf, sizeof(idbuf), "%p", (void *)i);
             gui_push_id(idbuf);
             do_remove = false;
@@ -585,6 +715,7 @@ static void placer_gui_history_body(tool_placer_t *placer)
                 remove_me = i;
             gui_pop_id();
         }
+        free(order);
         if (remove_me) placer_past_remove(remove_me);
         return;
     }
@@ -599,9 +730,10 @@ static void placer_gui_history_body(tool_placer_t *placer)
     sp_x = gui_style_item_spacing_x();
     sp_y = gui_style_item_spacing_y();
 
-    DL_FOREACH_REVERSE(past_files, i) {
+    for (k = 0; k < n; k++) {
         bool do_remove, do_load;
 
+        i = order[placer_history_sort_asc ? k : (n - 1 - k)];
         if (x > min_x + 0.5f && x + history_cell > max_x) {
             x = min_x;
             y += row_h + sp_y;
@@ -639,6 +771,7 @@ static void placer_gui_history_body(tool_placer_t *placer)
     }
     if (row_h > 0.f)
         gui_set_cursor_pos(min_x, y + row_h + sp_y);
+    free(order);
     if (remove_me) placer_past_remove(remove_me);
 }
 

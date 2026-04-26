@@ -904,6 +904,30 @@ bool gui_toolbar_segment(const char *label, bool selected)
     return ret;
 }
 
+float gui_calc_text_width(const char *text)
+{
+    if (!text)
+        return 0.f;
+    return ImGui::CalcTextSize(text, NULL, true).x;
+}
+
+float gui_toolbar_segment_width(const char *label)
+{
+    const ImGuiStyle &st = ImGui::GetStyle();
+    ImVec2 ts = ImGui::CalcTextSize(label, NULL, true);
+    return ts.x + st.FramePadding.x * 2.f;
+}
+
+float gui_content_avail_x(void)
+{
+    return ImGui::GetContentRegionAvail().x;
+}
+
+void gui_new_line(void)
+{
+    ImGui::NewLine();
+}
+
 void gui_label_size_push(float v)
 {
     if (g_label_size_top >= (int)(sizeof(g_label_size_stack) / sizeof(g_label_size_stack[0]))) {

@@ -78,8 +78,9 @@
  *          intensity: float
  *
  *   PLAC: placer import history (text):
- *      UTF-8 lines: first line is "goxel-placer-history 1",
- *      then for each past import, one line "format_name<TAB>path" (newest first).
+ *      UTF-8 lines: first line is "goxel-placer-history 2" (or "1" for legacy),
+ *      then for each past import, one line "format_name<TAB>path[<TAB>unix_ts]"
+ *      (newest first; unix_ts is optional in v2, omitted in v1).
  */
 
 // We create a hash table of all the blocks, so that blocks with the same
