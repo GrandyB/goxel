@@ -22,9 +22,8 @@
 #include "utlist.h"
 
 #ifndef PLACER_PAST_PREVIEW_SIZE
-#   define PLACER_PAST_PREVIEW_SIZE 64
+#   define PLACER_PAST_PREVIEW_SIZE 128
 #endif
-#define PLACER_PAST_THUMB_DISPLAY 32.f
 
 #define BOOL_STR(b) ((b) ? "true" : "false")
 
@@ -727,33 +726,44 @@ static int gui(tool_t *tool)
         char idbuf[32];
 
         remove_me = NULL;
-        DL_FOREACH_REVERSE(past_files, i) {
-            placer_ensure_past_preview(i);
-            gui_row_begin(0);
-            snprintf(idbuf, sizeof(idbuf), "%p", (void *)i);
-            gui_push_id(idbuf);
-            if (i->preview) {
-                gui_image_gl_subrect(
-                        i->preview->tex, i->preview->tex_w, i->preview->tex_h,
-                        i->preview->w, i->preview->h, PLACER_PAST_THUMB_DISPLAY,
-                        PLACER_PAST_THUMB_DISPLAY);
-            } else {
-                gui_dummy((int)PLACER_PAST_THUMB_DISPLAY, (int)PLACER_PAST_THUMB_DISPLAY);
+        {
+            int row_idx = 0;
+            float history_cell = 0.f;
+            DL_FOREACH_REVERSE(past_files, i) {
+                bool do_remove, do_load;
+                if ((row_idx & 1) == 0) {
+                    gui_row_begin(2);
+                    history_cell = gui_row_cell_width();
+                }
+                placer_ensure_past_preview(i);
+                snprintf(idbuf, sizeof(idbuf), "%p", (void *)i);
+                gui_push_id(idbuf);
+                do_remove = false;
+                if (i->preview) {
+                    do_load = gui_placer_past_entry(
+                            i->preview->tex, i->preview->tex_w, i->preview->tex_h,
+                            i->preview->w, i->preview->h, i->file_name, i->path,
+                            &do_remove, history_cell);
+                } else {
+                    do_load = gui_placer_past_entry(
+                            0, 0, 0, 0, 0, i->file_name, i->path, &do_remove,
+                            history_cell);
+                }
+                if (do_load) {
+                    reset(placer);
+                    i->format->import_volume_func(i->format, placer->imported_volume,
+                                                  i->path);
+                    post_import(placer);
+                }
+                if (do_remove)
+                    remove_me = i;
+                gui_pop_id();
+                row_idx++;
+                if ((row_idx & 1) == 0)
+                    gui_row_end();
             }
-            gui_same_line();
-            if (gui_button(i->file_name, 0.88f, 0)) {
-                reset(placer);
-                i->format->import_volume_func(i->format, placer->imported_volume,
-                                              i->path);
-                post_import(placer);
-            }
-            gui_tooltip_if_hovered(i->path);
-            gui_same_line();
-            
-            if (gui_button("x", 0, 0)) remove_me = i;
-            gui_tooltip_if_hovered("Remove model from placer history");
-            gui_pop_id();
-            gui_row_end();
+            if (row_idx & 1)
+                gui_row_end();
         }
         if (remove_me) placer_past_remove(remove_me);
     } gui_section_end();

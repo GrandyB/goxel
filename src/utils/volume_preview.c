@@ -8,6 +8,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Like camera_fit_box but the editor uses dist ∝ 8*extent (very zoomed out);
+ * for UI thumbnails the subject should nearly fill the view. */
+static void volume_preview_camera_fit(camera_t *cam, const float box[4][4])
+{
+    float size[3], dist;
+    if (box_is_null(box)) {
+        cam->dist = 128;
+        return;
+    }
+    box_get_size(box, size);
+    dist = max3(size[0], size[1], size[2]) * 3.f;
+    if (dist < 3.f) dist = 3.f;
+    mat4_mul_vec3(box, VEC(0, 0, 0), cam->mat[3]);
+    mat4_itranslate(cam->mat, 0, 0, dist);
+    cam->dist = dist;
+}
+
 /* Off-screen: FBO 2*out_w × 2*out_h, downsample to out_w×out_h (see goxel_render_to_buf). */
 static int volume_preview_rasterize(
         const volume_t *vol, int out_w, int out_h, int bpp, uint8_t *out)
@@ -29,8 +46,12 @@ static int volume_preview_rasterize(
         return -1;
 
     bbox_from_aabb(box, bbox);
+    /* camera_new() bakes a turntable turn; a second call stacks awkwardly. */
     cam = camera_new(NULL);
-    camera_fit_box(cam, box);
+    mat4_set_identity(cam->mat);
+    cam->dist = 96;
+    mat4_itranslate(cam->mat, 0, 0, cam->dist);
+    volume_preview_camera_fit(cam, box);
     camera_turntable(cam, (float)M_PI / 4, (float)M_PI / 4);
     cam->aspect = 1.f;
     camera_update_for_volume(cam, vol);

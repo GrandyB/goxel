@@ -1224,6 +1224,254 @@ void gui_image_gl_subrect(
                  uv0, uv1);
 }
 
+float gui_row_cell_width(void)
+{
+    if (!gui)
+        return 0.f;
+    if (gui->item_size > 0.f)
+        return gui->item_size;
+    return ImGui::GetContentRegionAvail().x;
+}
+
+static const char *utf8_prev(const char *start, const char *p)
+{
+    while (p > start) {
+        p--;
+        if (((unsigned char)*p & 0xC0) != 0x80)
+            return p;
+    }
+    return start;
+}
+
+/* File name: up to 2 lines, break by UTF-8 codepoint; add ellipsis on line2 if
+ * the remainder is too long. Buffers nul-terminated, truncated if needed. */
+static void placer_past_name_two_lines(
+        const char *name, float max_w, char *l1, int l1n, char *l2, int l2n)
+{
+    l1[0] = 0;
+    l2[0] = 0;
+    if (!name || l1n < 2 || l2n < 2)
+        return;
+    const char *e = name + strlen(name);
+    if (e <= name)
+        return;
+    // Line 1: longest prefix with width <= max_w
+    const char *p = name;
+    const char *l1e = name;
+    while (p < e) {
+        unsigned c;
+        int n = ImTextCharFromUtf8(&c, p, e);
+        if (n < 1)
+            break;
+        if (ImGui::CalcTextSize(name, p + n, true).x > max_w)
+            break;
+        l1e = p + n;
+        p += n;
+    }
+    if (l1e == name) {
+        unsigned c;
+        int n = ImTextCharFromUtf8(&c, p, e);
+        if (n < 1)
+            return;
+        l1e = p + n;
+    }
+    {
+        int n1 = (int)(l1e - name);
+        if (n1 >= l1n)
+            n1 = l1n - 1;
+        memcpy(l1, name, (size_t)n1);
+        l1[n1] = 0;
+    }
+    if (l1e >= e)
+        return;
+    // Line 2: remainder, or prefix + "…" if it does not fit
+    const char *s2 = l1e;
+    static const char ell[] = "\xE2\x80\xA6";
+    const float ell_w = ImGui::CalcTextSize(ell, NULL, true).x;
+    p = s2;
+    const char *l2e = s2;
+    while (p < e) {
+        unsigned c;
+        int n = ImTextCharFromUtf8(&c, p, e);
+        if (n < 1)
+            break;
+        if (ImGui::CalcTextSize(s2, p + n, true).x > max_w)
+            break;
+        l2e = p + n;
+        p += n;
+    }
+    if (l2e == s2 && s2 < e) {
+        unsigned c;
+        int n = ImTextCharFromUtf8(&c, s2, e);
+        if (n < 1) {
+            l2[0] = 0;
+            return;
+        }
+        l2e = s2 + n;
+    }
+    if (l2e < e) {
+        while (l2e > s2) {
+            if (ImGui::CalcTextSize(s2, l2e, true).x + ell_w <= max_w) {
+                (void)snprintf(
+                        l2, (size_t)l2n, "%.*s%s", (int)(l2e - s2), s2, ell);
+                return;
+            }
+            l2e = utf8_prev(s2, l2e);
+        }
+        (void)snprintf(l2, (size_t)l2n, "%s", ell);
+        return;
+    }
+    {
+        int n2 = (int)(l2e - s2);
+        if (n2 >= l2n)
+            n2 = l2n - 1;
+        memcpy(l2, s2, (size_t)n2);
+        l2[n2] = 0;
+    }
+}
+
+bool gui_placer_past_entry(
+        uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
+        const char *file_name, const char *path_tooltip, bool *out_remove,
+        float cell_w)
+{
+    bool load = false;
+    bool remove_btn = false;
+
+    if (out_remove)
+        *out_remove = false;
+    if (!gui)
+        return false;
+
+    float s = cell_w;
+    if (s <= 0.f)
+        s = gui->item_size;
+    if (s <= 0.f)
+        s = ImGui::GetContentRegionAvail().x;
+    if (s < 1.f)
+        s = 1.f;
+
+    const float xpad = 3.f;
+    const float ypad = 2.f;
+    const ImVec2 p0 = ImGui::GetCursorPos();
+
+    ImVec2 uv0(0, 0);
+    ImVec2 uv1(1, 1);
+    if (tex_w > 0 && tex_h > 0) {
+        uv1.x = (float)img_w / (float)tex_w;
+        uv1.y = (float)img_h / (float)tex_h;
+    }
+
+    ImGui::BeginGroup();
+
+    if (gl_tex) {
+        ImGui::Image(
+                (ImTextureID)(intptr_t)gl_tex, ImVec2(s, s), uv0, uv1);
+    } else {
+        ImGui::Dummy(ImVec2(s, s));
+        ImVec2 a = ImGui::GetItemRectMin();
+        ImVec2 b = ImGui::GetItemRectMax();
+        ImGui::GetWindowDrawList()->AddRectFilled(
+                a, b, IM_COL32(32, 32, 32, 255));
+    }
+
+    ImGui::SetCursorPos(p0);
+    /* Let the remove button receive clicks on top of the full-cell hit box. */
+    ImGui::SetNextItemAllowOverlap();
+    load = ImGui::InvisibleButton("##pl_load", ImVec2(s, s));
+    ImVec2 rmin = ImGui::GetItemRectMin();
+    ImVec2 rmax = ImGui::GetItemRectMax();
+
+    const float xbtn = ImGui::GetFrameHeight() * 0.7f;
+    ImGui::SetCursorPos(
+            ImVec2(p0.x + s - xbtn - xpad, p0.y + ypad * 0.5f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 0));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 0.9f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.15f, 0.15f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.1f, 0.1f, 1.f));
+    remove_btn = ImGui::SmallButton("x##remove");
+    ImVec2 x_rmin = ImGui::GetItemRectMin();
+    ImVec2 x_rmax = ImGui::GetItemRectMax();
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(1);
+    if (remove_btn) {
+        load = false;
+        if (out_remove)
+            *out_remove = true;
+    }
+
+    char b1[256], b2[256];
+    placer_past_name_two_lines(
+            file_name, s - 2.f * xpad, b1, (int)sizeof(b1), b2, (int)sizeof(b2));
+    const float line_h = ImGui::GetTextLineHeight();
+    const float bar_h = (b2[0] != 0) ? (2.f * line_h + ypad * 2.f)
+                                     : (line_h + ypad * 2.f);
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    const ImU32 bar_col = IM_COL32(0, 0, 0, 150);
+    dl->AddRectFilled(
+            ImVec2(rmin.x, rmax.y - bar_h), rmax, bar_col);
+    {
+        const ImU32 tcol = IM_COL32(255, 255, 255, 255);
+        const ImU32 sh = IM_COL32(0, 0, 0, 220);
+        const float ty = rmax.y - bar_h + ypad * 0.5f;
+        ImFont *f = ImGui::GetFont();
+        float fs = ImGui::GetFontSize();
+        ImVec2 t1 = ImVec2(rmin.x + xpad, ty);
+        static const int s_off[8][2] = {
+            {-1, -1},
+            {0, -1},
+            {1, -1},
+            {-1, 0},
+            {1, 0},
+            {-1, 1},
+            {0, 1},
+            {1, 1},
+        };
+        for (int o = 0; o < 8; o++) {
+            dl->AddText(
+                    f,
+                    fs,
+                    ImVec2(
+                            t1.x + (float)s_off[o][0],
+                            t1.y + (float)s_off[o][1]),
+                    sh,
+                    b1,
+                    NULL);
+        }
+        dl->AddText(f, fs, t1, tcol, b1, NULL);
+        if (b2[0]) {
+            ImVec2 t2 = ImVec2(rmin.x + xpad, ty + line_h);
+            for (int o = 0; o < 8; o++) {
+                dl->AddText(
+                        f,
+                        fs,
+                        ImVec2(
+                                t2.x + (float)s_off[o][0],
+                                t2.y + (float)s_off[o][1]),
+                        sh,
+                        b2,
+                        NULL);
+            }
+            dl->AddText(f, fs, t2, tcol, b2, NULL);
+        }
+    }
+
+    ImGui::EndGroup();
+
+    if (!gui->scrolling) {
+        if (path_tooltip && ImGui::IsMouseHoveringRect(x_rmin, x_rmax, false))
+            gui_tooltip("Remove model from placer history");
+        else if (path_tooltip
+                && ImGui::IsMouseHoveringRect(rmin, rmax, false))
+            gui_tooltip(path_tooltip);
+    }
+
+    if (gui->is_row)
+        ImGui::SameLine();
+
+    return load;
+}
+
 void gui_same_line(void)
 {
     ImGui::SameLine();

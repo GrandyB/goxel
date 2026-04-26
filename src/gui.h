@@ -151,6 +151,14 @@ void gui_dummy(int w, int h);
 void gui_image_gl_subrect(
         uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
         float display_w, float display_h);
+/* Width of one cell in gui_row_begin(n); 0 if not in a row. */
+float gui_row_cell_width(void);
+/* Placer history: square s×s tile, GL preview, bottom label, full-area load,
+ * top-right x. cell_w: from gui_row_cell_width() after gui_row_begin(2); 0=auto. */
+bool gui_placer_past_entry(
+        uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
+        const char *file_name, const char *path_tooltip, bool *out_remove,
+        float cell_w);
 void gui_spacing(int w);
 void gui_same_line(void);
 
