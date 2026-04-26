@@ -76,6 +76,10 @@
  *          pitch: radian
  *          yaw: radian
  *          intensity: float
+ *
+ *   PLAC: placer import history (text):
+ *      UTF-8 lines: first line is "goxel-placer-history 1",
+ *      then for each past import, one line "format_name<TAB>path" (newest first).
  */
 
 // We create a hash table of all the blocks, so that blocks with the same
@@ -425,6 +429,16 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
                            sizeof(goxel.rend.settings.shadow));
     chunk_write_finish(&c, out);
 
+    {
+        char *plac_data;
+        size_t plac_len;
+        plac_data = placer_past_files_serialize_gox(&plac_len);
+        if (plac_data) {
+            chunk_write_all(out, "PLAC", plac_data, (int)plac_len);
+            free(plac_data);
+        }
+    }
+
     HASH_ITER(hh, blocks_table, data, data_tmp) {
         HASH_DEL(blocks_table, data);
         free(data);
@@ -551,6 +565,8 @@ int load_from_file(const char *path, bool replace)
         goxel.image->active_camera = NULL;
 
         memset(&goxel.image->box, 0, sizeof(goxel.image->box));
+
+        placer_past_files_clear();
     }
 
     while (chunk_read_start(&c, in)) {
@@ -658,6 +674,17 @@ int load_from_file(const char *path, bool replace)
                 DICT_CPY("fixed", goxel.rend.light.fixed);
                 DICT_CPY("ambient", goxel.rend.settings.ambient);
                 DICT_CPY("shadow", goxel.rend.settings.shadow);
+            }
+        } else if (strncmp(c.type, "PLAC", 4) == 0) {
+            char *plac_buf = malloc(c.length + 1);
+            if (plac_buf) {
+                chunk_read(&c, in, plac_buf, c.length, __LINE__);
+                plac_buf[c.length] = '\0';
+                if (replace)
+                    placer_past_files_load_gox(plac_buf, (size_t)c.length);
+                free(plac_buf);
+            } else {
+                chunk_read(&c, in, NULL, c.length, __LINE__);
             }
         } else {
             // Ignore other blocks.

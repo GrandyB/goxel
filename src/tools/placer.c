@@ -323,6 +323,110 @@ struct past_import {
 };
 past_import_t *past_files = NULL;
 
+void placer_past_files_clear(void) {
+    past_import_t *f, *tmp;
+    DL_FOREACH_SAFE(past_files, f, tmp) {
+        free((void *)f->path);
+        free((void *)f->file_name);
+        DL_DELETE(past_files, f);
+        free(f);
+    }
+    past_files = NULL;
+}
+
+char *placer_past_files_serialize_gox(size_t *out_len) {
+    const past_import_t *i;
+    size_t tot, hlen, rem;
+    char *buf, *w;
+
+    static const char hdr[] = "goxel-placer-history 1\n";
+    hlen = sizeof(hdr) - 1;
+    tot = hlen;
+    DL_FOREACH_REVERSE(past_files, i) {
+        tot += strlen(i->format->name) + 1 + strlen(i->path) + 1;
+    }
+    buf = malloc(tot + 1);
+    if (!buf) {
+        if (out_len) *out_len = 0;
+        return NULL;
+    }
+    w = buf;
+    memcpy(w, hdr, hlen);
+    w += hlen;
+    rem = tot + 1 - hlen;
+    DL_FOREACH_REVERSE(past_files, i) {
+        int n;
+        n = snprintf(w, rem, "%s\t%s\n", i->format->name, i->path);
+        if (n < 0 || (size_t)n >= rem) {
+            free(buf);
+            if (out_len) *out_len = 0;
+            return NULL;
+        }
+        w += n;
+        rem -= (size_t)n;
+    }
+    *w = '\0';
+    if (out_len) *out_len = (size_t)(w - buf);
+    return buf;
+}
+
+void placer_past_files_load_gox(const char *data, size_t len) {
+    char *copy, *p, *line, *tofree, *tab;
+    const file_format_t *ff;
+
+    if (!data || !len) return;
+    placer_past_files_clear();
+    tofree = copy = malloc(len + 1);
+    if (!copy) return;
+    memcpy(copy, data, len);
+    copy[len] = '\0';
+    p = copy;
+    line = strsep(&p, "\n");
+    if (!line || strncmp(line, "goxel-placer-history 1", 22) != 0) {
+        free(tofree);
+        return;
+    }
+    while (p && (line = strsep(&p, "\n"))) {
+        if (!*line) continue;
+        tab = strchr(line, '\t');
+        if (!tab) {
+            LOG_W("PLAC: line missing tab, skip");
+            continue;
+        }
+        *tab = '\0';
+        ff = file_format_by_name(line);
+        if (!ff) {
+            LOG_W("PLAC: unknown format '%s', skip", line);
+            continue;
+        }
+        {
+            const char *path = tab + 1;
+            char *name = strdup(get_file_name_from_path(path));
+            past_import_t *past, *f, *tmp;
+
+            if (!name) {
+                free(tofree);
+                return;
+            }
+            past = calloc(1, sizeof(*past));
+            *past = (past_import_t) {
+                .path = strdup(path),
+                .file_name = name,
+                .format = ff,
+            };
+            DL_FOREACH_SAFE(past_files, f, tmp) {
+                if (strcmp(f->file_name, name) != 0) continue;
+                free((void *)f->path);
+                free((void *)f->file_name);
+                DL_DELETE(past_files, f);
+                free(f);
+            }
+            DL_APPEND(past_files, past);
+        }
+    }
+    free(tofree);
+}
+
 static void on_file_import(const char *path, const char *file_name, const file_format_t *format) {
     past_import_t *past;
     past = calloc(1, sizeof(*past));
@@ -334,12 +438,12 @@ static void on_file_import(const char *path, const char *file_name, const file_f
 
     past_import_t *f, *tmp;
     DL_FOREACH_SAFE(past_files, f, tmp) {
-        // If there is an entry for this name, remove it
-        if (strcmp(f->file_name, file_name) != 0) {
-            continue;
-        }
+        if (strcmp(f->file_name, file_name) != 0) continue;
         LOG_D("Delete %s", f->file_name);
+        free((void *)f->path);
+        free((void *)f->file_name);
         DL_DELETE(past_files, f);
+        free(f);
     }
 
     LOG_D("On file import: %s / %s / %s", past->path, past->file_name, past->format->name);

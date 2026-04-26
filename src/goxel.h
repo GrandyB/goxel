@@ -353,6 +353,9 @@ bool str_replace_ext(const char *str, const char *new_ext,
  */
 char* get_file_name_from_path(const char *path);
 
+/* Split string on delimiter bytes (implementation in utils.c; not in all C libs). */
+char *strsep(char **stringp, const char *delim);
+
 /* Safely generate a random integer between bounds. */
 int random_int(int min, int max);
 /* Debug log a [4][4] float matrix. Looking at YOU, view matrices. */
@@ -667,6 +670,12 @@ void goxel_open_file(const char *path);
 
 void save_to_file(const image_t *img, const char *path, bool visible_only);
 int load_from_file(const char *path, bool replace);
+
+// Placer tool: recent import paths persisted in .gox (PLAC chunk).
+void placer_past_files_clear(void);
+// Returns a malloc'd buffer; *out_len is byte length. Caller must free; empty list is still valid.
+char *placer_past_files_serialize_gox(size_t *out_len);
+void placer_past_files_load_gox(const char *data, size_t len);
 
 // Iter info of a gox file, without actually reading it.
 // For the moment only returns the image preview if available.

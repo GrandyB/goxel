@@ -372,6 +372,7 @@ void goxel_reset(void)
 {
     image_delete(goxel.image);
     goxel.image = image_new();
+    placer_past_files_clear();
     settings_load();
 
     // Put plane horizontal at the origin.
