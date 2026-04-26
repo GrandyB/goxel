@@ -43,6 +43,19 @@ enum { PLACER_HIST_SORT_TIME = 0, PLACER_HIST_SORT_NAME = 1 };
 static int placer_history_sort_key = PLACER_HIST_SORT_TIME;
 static bool placer_history_sort_asc = false;
 
+/* Post-placement Z rotation randomisation (euler Z in degrees, stepped). */
+enum {
+    PLACER_RAND_Z_NONE = 0,
+    PLACER_RAND_Z_90,
+    PLACER_RAND_Z_45,
+    PLACER_RAND_Z_225,
+};
+
+enum {
+    PLACER_RAND_FLIP_NONE = 0,
+    PLACER_RAND_FLIP_XY,
+};
+
 static file_format_t *ff_import_current = NULL;
 static file_format_t *ff_export_current = NULL;
 
@@ -77,6 +90,9 @@ typedef struct {
         gesture3d_t drag;
         gesture3d_t hover;
     } gestures;
+
+    int random_z_mode;
+    int random_flip_xy_mode;
 
 } tool_placer_t;
 
@@ -166,6 +182,83 @@ static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
         vec3_copy(or[3], placer->origin);
 }
 
+static const char *placer_rand_z_label(int mode)
+{
+    switch (mode) {
+    case PLACER_RAND_Z_90:  return "Rotate only 90 degrees";
+    case PLACER_RAND_Z_45:  return "Rotate 45 degrees";
+    case PLACER_RAND_Z_225: return "Rotate 22.5 degrees";
+    case PLACER_RAND_Z_NONE:
+    default:                return "None";
+    }
+}
+
+static const char *placer_rand_flip_xy_label(int mode)
+{
+    return mode == PLACER_RAND_FLIP_XY ? "Flip X/Y" : "None";
+}
+
+static void placer_randomize_z_rotation(tool_placer_t *placer)
+{
+    float degs[3];
+    float delta[4][4] = MAT4_IDENTITY;
+    float step_deg, rz_new, diff;
+    int k_max, k;
+
+    if (placer->random_z_mode == PLACER_RAND_Z_NONE)
+        return;
+    if (!placer->imported_volume_orig)
+        return;
+
+    switch (placer->random_z_mode) {
+    case PLACER_RAND_Z_90:  step_deg = 90.f;   break;
+    case PLACER_RAND_Z_45:  step_deg = 45.f;   break;
+    case PLACER_RAND_Z_225: step_deg = 22.5f;  break;
+    default: return;
+    }
+
+    k_max = (int)(180.f / step_deg + 0.5f);
+    k = random_int(-k_max, k_max);
+    rz_new = k * step_deg;
+
+    mat4_to_eul_degxyz(placer->rot, degs);
+    diff = rz_new - degs[2];
+    while (diff > 180.f) diff -= 360.f;
+    while (diff < -180.f) diff += 360.f;
+
+    mat4_irotate(delta, diff * (float)(M_PI / 180.0), 0, 0, 1);
+    apply_rotation(placer, delta);
+}
+
+static void placer_randomize_flip_xy(tool_placer_t *placer)
+{
+    float delta[4][4] = MAT4_IDENTITY;
+    int r;
+
+    if (placer->random_flip_xy_mode != PLACER_RAND_FLIP_XY)
+        return;
+    if (!placer->imported_volume_orig)
+        return;
+
+    r = random_int(0, 3);
+    switch (r) {
+    case 0:
+        return;
+    case 1:
+        mat4_iscale(delta, -1, 1, 1);
+        break;
+    case 2:
+        mat4_iscale(delta, 1, -1, 1);
+        break;
+    case 3:
+        mat4_iscale(delta, -1, -1, 1);
+        break;
+    default:
+        return;
+    }
+    apply_rotation(placer, delta);
+}
+
 static bool check_can_skip(tool_placer_t *placer, const cursor_t *curs)
 {
     volume_t *volume = goxel.tool_volume;
@@ -206,12 +299,19 @@ static void center_origin(tool_placer_t *placer)
 static int on_drag(gesture3d_t *gest, void *user)
 {
     if (gest->state == GESTURE_END) {
+        tool_placer_t *placer = USER_GET(user, 0);
+        const bool did_place = goxel.image->active_layer->volume && goxel.tool_volume;
+
         image_history_push(goxel.image);
-        if (goxel.image->active_layer->volume && goxel.tool_volume) {
+        if (did_place) {
             volume_set(goxel.image->active_layer->volume, goxel.tool_volume);
         }
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
+        if (did_place && placer->imported_volume) {
+            placer_randomize_z_rotation(placer);
+            placer_randomize_flip_xy(placer);
+        }
     }
     return 0;
 }
@@ -945,6 +1045,25 @@ static int gui(tool_t *tool)
                 changed = true;
             }
             gui_row_end();
+
+            gui_text("Random");
+            gui_same_line_spaced(8.f);
+            if (gui_combo_begin("##placer_rand_z",
+                                placer_rand_z_label(placer->random_z_mode))) {
+                if (gui_combo_item(placer_rand_z_label(PLACER_RAND_Z_NONE),
+                                   placer->random_z_mode == PLACER_RAND_Z_NONE))
+                    placer->random_z_mode = PLACER_RAND_Z_NONE;
+                if (gui_combo_item(placer_rand_z_label(PLACER_RAND_Z_90),
+                                   placer->random_z_mode == PLACER_RAND_Z_90))
+                    placer->random_z_mode = PLACER_RAND_Z_90;
+                if (gui_combo_item(placer_rand_z_label(PLACER_RAND_Z_45),
+                                   placer->random_z_mode == PLACER_RAND_Z_45))
+                    placer->random_z_mode = PLACER_RAND_Z_45;
+                if (gui_combo_item(placer_rand_z_label(PLACER_RAND_Z_225),
+                                   placer->random_z_mode == PLACER_RAND_Z_225))
+                    placer->random_z_mode = PLACER_RAND_Z_225;
+                gui_combo_end();
+            }
             gui_group_end();
         }
         gui_section_end();
@@ -964,6 +1083,19 @@ static int gui(tool_t *tool)
                 changed = true;
             }
             gui_row_end();
+
+            gui_text("Random");
+            gui_same_line_spaced(8.f);
+            if (gui_combo_begin("##placer_rand_flip_xy",
+                                placer_rand_flip_xy_label(placer->random_flip_xy_mode))) {
+                if (gui_combo_item(placer_rand_flip_xy_label(PLACER_RAND_FLIP_NONE),
+                                   placer->random_flip_xy_mode == PLACER_RAND_FLIP_NONE))
+                    placer->random_flip_xy_mode = PLACER_RAND_FLIP_NONE;
+                if (gui_combo_item(placer_rand_flip_xy_label(PLACER_RAND_FLIP_XY),
+                                   placer->random_flip_xy_mode == PLACER_RAND_FLIP_XY))
+                    placer->random_flip_xy_mode = PLACER_RAND_FLIP_XY;
+                gui_combo_end();
+            }
         }
         gui_section_end();
 
