@@ -638,45 +638,54 @@ static int on_rotate(const gesture_t *gest, void *user)
 {
     float x1, y1, x2, y2, x_rot, z_rot;
     camera_t *camera = get_camera();
+    const bool fpv = camera->fpv;
+
+    if (gest->state == GESTURE_END && fpv)
+        goxel.fpv_look_drag = false;
 
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
         vec2_copy(gest->pos, goxel.move_origin.pos);
-        
-        // Try to detect a voxel under the mouse cursor for distance-based rotation
-        float voxel_pos[3], voxel_normal[3];
-        bool found_voxel = goxel_unproject_on_volume(
-            gest->viewport, gest->pos, goxel_get_layers_volume(goxel.image), 
-            voxel_pos, voxel_normal);
-
-        if (found_voxel) {
-            // Found a voxel - calculate pivot point at center of view at same distance
-            float camera_pos[3], camera_to_voxel[3];
-            float viewport_center[2];
-            float ray_origin[3], ray_dir[3];
-
-            // Get camera position
-            vec3_copy(camera->mat[3], camera_pos);
-
-            // Calculate distance from camera to voxel
-            vec3_sub(voxel_pos, camera_pos, camera_to_voxel);
-            float distance = vec3_norm(camera_to_voxel);
-
-            // Get viewport center coordinates
-            viewport_center[0] = gest->viewport[0] + gest->viewport[2] / 2.0f;
-            viewport_center[1] = gest->viewport[1] + gest->viewport[3] / 2.0f;
-
-            // Get ray from center of viewport
-            camera_get_ray(camera, viewport_center, gest->viewport, ray_origin, ray_dir);
-
-            // Calculate pivot point at the same distance along the center ray
-            vec3_mul(ray_dir, distance, ray_dir);
-            vec3_add(ray_origin, ray_dir, goxel.move_origin.pivot_point);
-
-            goxel.move_origin.has_pivot_point = true;
+        if (fpv) {
+            goxel.move_origin.has_pivot_point = false; /* in-place mouselook */
+            vec3_set(goxel.move_origin.camera_ofs, 0, 0, 0);
+            goxel.fpv_look_drag = true;
         } else {
-            // No voxel found - use default rotation
-            goxel.move_origin.has_pivot_point = false;
+            // Try to detect a voxel under the mouse cursor for distance-based rotation
+            float voxel_pos[3], voxel_normal[3];
+            bool found_voxel = goxel_unproject_on_volume(
+                gest->viewport, gest->pos, goxel_get_layers_volume(goxel.image), 
+                voxel_pos, voxel_normal);
+
+            if (found_voxel) {
+                // Found a voxel - calculate pivot point at center of view at same distance
+                float camera_pos[3], camera_to_voxel[3];
+                float viewport_center[2];
+                float ray_origin[3], ray_dir[3];
+
+                // Get camera position
+                vec3_copy(camera->mat[3], camera_pos);
+
+                // Calculate distance from camera to voxel
+                vec3_sub(voxel_pos, camera_pos, camera_to_voxel);
+                float distance = vec3_norm(camera_to_voxel);
+
+                // Get viewport center coordinates
+                viewport_center[0] = gest->viewport[0] + gest->viewport[2] / 2.0f;
+                viewport_center[1] = gest->viewport[1] + gest->viewport[3] / 2.0f;
+
+                // Get ray from center of viewport
+                camera_get_ray(camera, viewport_center, gest->viewport, ray_origin, ray_dir);
+
+                // Calculate pivot point at the same distance along the center ray
+                vec3_mul(ray_dir, distance, ray_dir);
+                vec3_add(ray_origin, ray_dir, goxel.move_origin.pivot_point);
+
+                goxel.move_origin.has_pivot_point = true;
+            } else {
+                // No voxel found - use default rotation
+                goxel.move_origin.has_pivot_point = false;
+            }
         }
     }
 
@@ -688,12 +697,16 @@ static int on_rotate(const gesture_t *gest, void *user)
     x_rot = (y2 - y1) * 2 * M_PI;
 
     mat4_copy(goxel.move_origin.camera_mat, camera->mat);
-        
-    // Use pivot-based rotation if we have a voxel under the cursor
-    if (goxel.move_origin.has_pivot_point) {
+
+    if (!fpv && goxel.move_origin.has_pivot_point) {
         camera_turntable_around_point(camera, z_rot, x_rot, goxel.move_origin.pivot_point);
     } else {
         camera_turntable(camera, z_rot, x_rot);
+    }
+    if (fpv) {
+        /* Arrow-key world offset (move_origin.camera_ofs) only, not
+         * mat[3]-origin (that re-applied mouselook drift and slid the eye). */
+        vec3_add(camera->mat[3], goxel.move_origin.camera_ofs, camera->mat[3]);
     }
     return 0;
 }
@@ -788,6 +801,11 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     if (!capture_keys) return;
 
     double t = deltaTime * 100;
+    /* Initialized for -Wuninitialized: only read when acc_fpv_key (same for both ifs). */
+    float fpv_eye0[3] = {0.f, 0.f, 0.f};
+    const bool acc_fpv_key = camera->fpv && goxel.fpv_look_drag;
+    if (acc_fpv_key)
+        vec3_copy(camera->mat[3], fpv_eye0);
     //LOG_D("time: %f -- frame time: %f -- delta: %f -- t: %f", time, frameTime, deltaTime, t);
     if (inputs->keys[KEY_LEFT]) {
         if(camera->fpv) {
@@ -830,6 +848,11 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         } else {
             camera_turntable(camera, 0, -0.05);
         }
+    }
+    if (acc_fpv_key) {
+        float d[3];
+        vec3_sub(camera->mat[3], fpv_eye0, d);
+        vec3_add(goxel.move_origin.camera_ofs, d, goxel.move_origin.camera_ofs);
     }
 
     // C: recenter the view:
