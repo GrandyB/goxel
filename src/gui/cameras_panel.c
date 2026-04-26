@@ -25,6 +25,17 @@ static bool render_camera_item(void *item, int idx, bool is_current)
                           sizeof(cam->name));
 }
 
+/* Button group: see color_blend_button / tool_gui_drag_mode. */
+static bool camera_mode_button(camera_t *cam, const char *label, camera_mode_t m)
+{
+    bool v = cam->mode == m;
+    if (gui_selectable(label, &v, NULL, -1)) {
+        camera_set_mode(cam, m);
+        return true;
+    }
+    return false;
+}
+
 void gui_cameras_panel(void)
 {
     camera_t *cam;
@@ -46,12 +57,17 @@ void gui_cameras_panel(void)
     if (!goxel.image->cameras) image_add_camera(goxel.image, NULL);
 
     cam = goxel.image->active_camera;
-        gui_group_begin(NULL);
-    if(gui_checkbox("First Person", &cam->fpv, NULL)) {
-        post_toggle_fpv(cam);
-    };
+    gui_group_begin(NULL);
+    gui_text("Mode");
+    gui_group_begin(NULL);
+    gui_row_begin(3);
+    camera_mode_button(cam, "Orbit", CAMERA_MODE_ORBIT);
+    camera_mode_button(cam, "Fly", CAMERA_MODE_FPV);
+    camera_mode_button(cam, "Player", CAMERA_MODE_PLAYER);
+    gui_row_end();
+    gui_group_end();
 
-    if (cam->fpv) {
+    if (camera_is_firstperson(cam)) {
         // Change camera speed
         gui_input_float("Speed", &cam->speed, 0.5, 0, 30.0, NULL);
 
@@ -61,28 +77,34 @@ void gui_cameras_panel(void)
         mat4_copy(cam->mat, xyz);
 
         x = xyz[3][0];
-        if(gui_input_float("X", &x, 1, 0, 0, "%.0f")) {
+        if (gui_input_float("X", &x, 1, 0, 0, "%.0f")) {
             xyz[3][0] = x;
             mat4_copy(xyz, cam->mat);
         };
         y = xyz[3][1];
-        if(gui_input_float("Y", &y, 1, 0, 0, "%.0f")) {
+        if (gui_input_float("Y", &y, 1, 0, 0, "%.0f")) {
             LOG_D("Changing y: %f", y);
             xyz[3][1] = y;
             mat4_copy(xyz, cam->mat);
         };
         z = xyz[3][2];
-        if(gui_input_float("Z", &z, 1, 0, 0, "%.0f")) {
+        if (gui_input_float("Z", &z, 1, 0, 0, "%.0f")) {
             LOG_D("Changing z: %f", z);
             xyz[3][2] = z;
             mat4_copy(xyz, cam->mat);
         };
     }
+    if (cam->mode == CAMERA_MODE_PLAYER) {
+        gui_input_float("Standing height", &cam->standing_height, 0.1f, 0.5f, 6.f,
+                        NULL);
+        gui_input_float("Crouch height", &cam->crouch_height, 0.1f, 0.5f, 4.f, NULL);
+    }
     gui_group_end();
     // Change camera fov
-    gui_input_float("FOV", (cam->fpv) ? &cam->fovy_fpv : &cam->fovy, 1.0, 10.0, 150.0, NULL);
+    gui_input_float("FOV", camera_is_firstperson(cam) ? &cam->fovy_fpv : &cam->fovy,
+                    1.0, 10.0, 150.0, NULL);
 
-    if (!cam->fpv) {
+    if (cam->mode == CAMERA_MODE_ORBIT) {
         gui_input_float("dist", &cam->dist, 10.0, 0, 0, NULL);
 
         /*

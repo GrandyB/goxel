@@ -27,6 +27,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Exactly one of these is active at a time. */
+typedef enum {
+    CAMERA_MODE_ORBIT  = 0, /* Turntable + wheel: dist > 0. */
+    CAMERA_MODE_FPV    = 1, /* First person, fly (arrows, no physics). */
+    CAMERA_MODE_PLAYER = 2, /* First person, gravity, WASD, jump, crouch, collision. */
+} camera_mode_t;
+
 /* Type: camera_t
  * Camera structure.
  *
@@ -53,11 +60,16 @@ struct camera
     float  aspect;
     float  mat[4][4]; // camera x/y/z position is stored at [3][0]/[3][1]/[3][2]
 
-    float  fovy_fpv; // FOV to use during fpv.
-    bool   fpv;   // Set to true for first person view.
-    float  speed; // Camera move speed.
+    float  fovy_fpv; // FOV to use in first person (FPV and Player).
+    camera_mode_t mode;
+    float  speed; // Move speed (FPV arrow strafe, Player walk).
     bool   prev_ortho;   // Remember if camera was previously in ortho mode.
-    float  prev_dist; // Remember previous distance (set to 0 during fpv).
+    float  prev_dist; // Stashed dist when in first person (FPV or Player).
+
+    /* PLAYER mode: eye Z offset above feet, collision and jump / gravity. */
+    float  standing_height;
+    float  crouch_height;
+    float  player_vel[3];
 
     // Auto computed from other values:
     float view_mat[4][4];    // Model to view transformation.
@@ -140,10 +152,11 @@ void camera_turntable_around_point(camera_t *camera, float rz, float rx, const f
  */
 void camera_move(camera_t *camera, float rx, float ry, float rz);
 
-/*
- * Perform some property caching and edits post switching fpv on/off.
-*/
-void post_toggle_fpv(camera_t *camera);
+bool camera_is_firstperson(const camera_t *camera);
+bool camera_is_player(const camera_t *camera);
+
+/* Switches mode and updates dist / ortho / player velocity (clears on exit PLAYER). */
+void camera_set_mode(camera_t *camera, camera_mode_t mode);
 
 /* Like camera_update, but near/far are computed from vol's tiles only (not the
  * main scene or image box). Used for off-screen single-volume renders. */

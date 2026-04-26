@@ -25,10 +25,198 @@
 
 #include <errno.h>
 #include <stdarg.h>
+#include <math.h>
 
 // The global goxel instance.
 goxel_t goxel = {};
 double g_time = 0.0;
+
+/* ---- Player camera (CAMERA_MODE_PLAYER) --------------------------------- */
+#define GXL_P_GRAVITY       45.f
+#define GXL_P_JUMP_H        1.1f
+#define GXL_P_HW            0.3f
+static bool gxl_player_space_was = false;
+/* Last crouch/stand height per camera so toggling eye_h moves the eye, not
+ * the floor contact (avoids on_ground = false and gravity the frame we
+ * uncrouch; see gxl_apply_player_pose_height). */
+static camera_t *gxl_pose_cam = NULL;
+static float gxl_pose_prev_eye_h = -1.f;
+
+static bool gxl_voxel_solid(const volume_t *vol, int x, int y, int z)
+{
+    uint8_t c[4];
+    int p[3] = {x, y, z};
+    volume_iterator_t it = {0};
+    volume_get_at(vol, &it, p, c);
+    return c[3] != 0;
+}
+
+/* One column: highest solid, feet rest at z+1. Start row must include the
+ * voxel the feet occupy; floor(feet_z)-1 can skip a floor at z==floor(feet_z)
+ * (e.g. feet_z=4.99 -> wrong z0=3, misses solid at 4). Use ceil(feet_z)-1. */
+static float gxl_ground_column_feet(const volume_t *vol, int ix, int iy,
+                                    float feet_z)
+{
+    int z;
+    int z0 = (int)ceilf(feet_z - 1e-3f) - 1;
+    for (z = z0; z >= z0 - 1024; z--) {
+        if (gxl_voxel_solid(vol, ix, iy, z))
+            return (float)(z + 1);
+    }
+    return -1e6f;
+}
+
+/* Support height = max over foot footprint (player can stand on a thin slab). */
+static float gxl_ground_feet_z(const volume_t *vol, float cx, float cy,
+                               float feet_z)
+{
+    int x, y;
+    int x0 = (int)floorf(cx - GXL_P_HW);
+    int x1 = (int)floorf(cx + GXL_P_HW);
+    int y0 = (int)floorf(cy - GXL_P_HW);
+    int y1 = (int)floorf(cy + GXL_P_HW);
+    float best = -1e6f;
+    float g;
+    for (x = x0; x <= x1; x++)
+    for (y = y0; y <= y1; y++) {
+        g = gxl_ground_column_feet(vol, x, y, feet_z);
+        if (g > best)
+            best = g;
+    }
+    return best;
+}
+
+/* True if player capsule (horizontal extent + vertical [feet, eye]) hits solid. */
+static bool gxl_player_body_blocked(const volume_t *vol, float cx, float cy,
+                                    float eye_z, float eye_h)
+{
+    int x, y, z;
+    float feet = eye_z - eye_h;
+    int x0 = (int)floorf(cx - GXL_P_HW);
+    int x1 = (int)floorf(cx + GXL_P_HW);
+    int y0 = (int)floorf(cy - GXL_P_HW);
+    int y1 = (int)floorf(cy + GXL_P_HW);
+    int z0 = (int)floorf(feet + 0.0001f);
+    int z1 = (int)ceilf(eye_z) - 1;
+    for (x = x0; x <= x1; x++)
+    for (y = y0; y <= y1; y++)
+    for (z = z0; z <= z1; z++) {
+        if (gxl_voxel_solid(vol, x, y, z))
+            return true;
+    }
+    return false;
+}
+
+static void gxl_apply_player_pose_height(camera_t *cam, float eye_h)
+{
+    if (gxl_pose_cam != cam) {
+        gxl_pose_cam = cam;
+        gxl_pose_prev_eye_h = eye_h;
+        return;
+    }
+    if (gxl_pose_prev_eye_h >= 0.f && eye_h != gxl_pose_prev_eye_h)
+        cam->mat[3][2] += (eye_h - gxl_pose_prev_eye_h);
+    gxl_pose_prev_eye_h = eye_h;
+}
+
+static void gxl_player_frame(camera_t *cam, const inputs_t *inputs,
+                             double deltaTime, float t)
+{
+    const volume_t *vol = goxel_get_layers_volume(goxel.image);
+    bool crouch = inputs->keys[KEY_CONTROL];
+    float eye_h = crouch ? cam->crouch_height : cam->standing_height;
+    gxl_apply_player_pose_height(cam, eye_h);
+    float rx = 0, ry = 0;
+    if (inputs->keys['W'] || inputs->keys['w']) ry -= t;
+    if (inputs->keys['S'] || inputs->keys['s']) ry += t;
+    if (inputs->keys['A'] || inputs->keys['a']) rx -= t;
+    if (inputs->keys['D'] || inputs->keys['d']) rx += t;
+
+    float save[4][4];
+    mat4_copy(cam->mat, save);
+    camera_move(cam, rx, ry, 0);
+    float dx = cam->mat[3][0] - save[3][0];
+    float dy = cam->mat[3][1] - save[3][1];
+    mat4_copy(save, cam->mat);
+
+    float ox = save[3][0];
+    float oy = save[3][1];
+    float oz = save[3][2];
+    float px = ox, py = oy;
+
+    if (!gxl_player_body_blocked(vol, ox + dx, oy, oz, eye_h))
+        px = ox + dx;
+    if (!gxl_player_body_blocked(vol, px, oy + dy, oz, eye_h))
+        py = oy + dy;
+
+    cam->mat[3][0] = px;
+    cam->mat[3][1] = py;
+
+    float ground_feet = gxl_ground_feet_z(vol, px, py, oz - eye_h - 0.01f);
+    float want_eye = ground_feet + eye_h;
+    bool on_ground = (oz <= want_eye + 0.08f) && (oz >= want_eye - 0.2f) &&
+            cam->player_vel[2] <= 0.05f;
+
+    bool sp = inputs->keys[' '];
+    bool space_edge = sp && !gxl_player_space_was;
+    gxl_player_space_was = sp;
+
+    float dt = (float)deltaTime;
+    if (on_ground) {
+        if (space_edge) {
+            cam->player_vel[2] = sqrtf(2.f * GXL_P_GRAVITY * GXL_P_JUMP_H);
+        } else {
+            cam->player_vel[2] = 0;
+            oz = want_eye;
+        }
+    } else {
+        cam->player_vel[2] -= GXL_P_GRAVITY * dt;
+    }
+
+    if (!on_ground || cam->player_vel[2] > 0.f) {
+        /* Sweep landing so a large |vel*dt| cannot tunnel through the floor. */
+        float vz = cam->player_vel[2];
+        float new_oz = oz + vz * dt;
+        if (vz < 0.f && new_oz < want_eye) {
+            new_oz = want_eye;
+            cam->player_vel[2] = 0;
+        }
+        oz = new_oz;
+    }
+
+    if (oz < want_eye && cam->player_vel[2] <= 0.f) {
+        oz = want_eye;
+        cam->player_vel[2] = 0;
+    }
+
+    /* Ceiling: nudge down only while still above the floor-supported eye. */
+    if (gxl_player_body_blocked(vol, px, py, oz, eye_h)) {
+        if (oz > want_eye + 0.02f) {
+            int steps = 0;
+            while (gxl_player_body_blocked(vol, px, py, oz, eye_h) && steps < 20 &&
+                   oz - 0.1f > want_eye - 0.01f) {
+                oz -= 0.1f;
+                steps++;
+            }
+        }
+        cam->player_vel[2] = fminf(cam->player_vel[2], 0.f);
+    }
+
+    /* Uncrouch: standing_height > crouch height; if oz stays the same, feet
+     * (oz - eye_h) drop through the floor. Re-measure and snap the eye so feet
+     * rest on the surface. Same fix for any small “feet under floor” error. */
+    {
+        float gf = gxl_ground_feet_z(vol, px, py, oz - eye_h - 0.01f);
+        float feet = oz - eye_h;
+        if (feet < gf - 0.02f) {
+            oz = gf + eye_h;
+            if (cam->player_vel[2] < 0.f)
+                cam->player_vel[2] = 0;
+        }
+    }
+
+    cam->mat[3][2] = oz;
+}
 
 static void (*post_reset_func)() = NULL;
 
@@ -499,6 +687,8 @@ int goxel_iter(const inputs_t *inputs)
     inputs_t inputs2;
     camera_t *camera = get_camera();
 
+    goxel.player_flycam_hold = false;
+
     if (!goxel.graphics_initialized)
         goxel_create_graphics();
 
@@ -611,7 +801,7 @@ static bool unproject_delta(const float win[3], const float model[4][4],
 static int on_pan(const gesture_t *gest, void *user)
 {
     camera_t *camera = get_camera();
-    if (camera->fpv) {
+    if (camera_is_firstperson(camera)) {
         return on_rotate(gest, user);
     }
     if (gest->state == GESTURE_BEGIN) {
@@ -638,15 +828,15 @@ static int on_rotate(const gesture_t *gest, void *user)
 {
     float x1, y1, x2, y2, x_rot, z_rot;
     camera_t *camera = get_camera();
-    const bool fpv = camera->fpv;
+    const bool first = camera_is_firstperson(camera);
 
-    if (gest->state == GESTURE_END && fpv)
+    if (gest->state == GESTURE_END && first)
         goxel.fpv_look_drag = false;
 
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
         vec2_copy(gest->pos, goxel.move_origin.pos);
-        if (fpv) {
+        if (first) {
             goxel.move_origin.has_pivot_point = false; /* in-place mouselook */
             vec3_set(goxel.move_origin.camera_ofs, 0, 0, 0);
             goxel.fpv_look_drag = true;
@@ -698,12 +888,12 @@ static int on_rotate(const gesture_t *gest, void *user)
 
     mat4_copy(goxel.move_origin.camera_mat, camera->mat);
 
-    if (!fpv && goxel.move_origin.has_pivot_point) {
+    if (!first && goxel.move_origin.has_pivot_point) {
         camera_turntable_around_point(camera, z_rot, x_rot, goxel.move_origin.pivot_point);
     } else {
         camera_turntable(camera, z_rot, x_rot);
     }
-    if (fpv) {
+    if (first) {
         /* Arrow-key world offset (move_origin.camera_ofs) only, not
          * mat[3]-origin (that re-applied mouselook drift and slid the eye). */
         vec3_add(camera->mat[3], goxel.move_origin.camera_ofs, camera->mat[3]);
@@ -752,6 +942,9 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 {
     float p[3], n[3];
     camera_t *camera = get_camera();
+    const bool player_alt_fly = camera->mode == CAMERA_MODE_PLAYER &&
+        (inputs->keys[KEY_LEFT_ALT] || inputs->keys[KEY_RIGHT_ALT]);
+    goxel.player_flycam_hold = player_alt_fly;
     double frameTime = get_unix_time();
     double deltaTime = frameTime - g_time;
     g_time = frameTime;
@@ -772,8 +965,9 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
                          &goxel.image->box : NULL;
     // Only paint mode support alpha.
     if (painter.mode != MODE_PAINT) painter.color[3] = 255;
-    // Swap OVER/SUB modes.
-    if (inputs->keys[' ']) {
+    // Swap OVER/SUB modes (not when Space is jump in player mode; in Alt fly, like FPV).
+    if (inputs->keys[' '] &&
+        (!camera_is_player(camera) || player_alt_fly)) {
         if (goxel.painter.mode == MODE_SUB) painter.mode = MODE_OVER;
         if (goxel.painter.mode == MODE_OVER) painter.mode = MODE_SUB;
     }
@@ -785,7 +979,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         tool_iter(goxel.tool, &painter, viewport);
     }
 
-    if (inputs->mouse_wheel && !camera->fpv) {
+    if (inputs->mouse_wheel && !camera_is_firstperson(camera)) {
         mat4_itranslate(camera->mat, 0, 0,
                 -camera->dist * (1 - pow(1.1, -inputs->mouse_wheel)));
         camera->dist *= pow(1.1, -inputs->mouse_wheel);
@@ -800,53 +994,77 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     // handle keyboard rotations
     if (!capture_keys) return;
 
+    if (!camera_is_player(camera)) {
+        gxl_player_space_was = false;
+        gxl_pose_cam = NULL;
+        gxl_pose_prev_eye_h = -1.f;
+    }
+
     double t = deltaTime * 100;
     /* Initialized for -Wuninitialized: only read when acc_fpv_key (same for both ifs). */
     float fpv_eye0[3] = {0.f, 0.f, 0.f};
-    const bool acc_fpv_key = camera->fpv && goxel.fpv_look_drag;
+    const bool acc_fpv_key =
+            camera_is_firstperson(camera) && goxel.fpv_look_drag;
     if (acc_fpv_key)
         vec3_copy(camera->mat[3], fpv_eye0);
     //LOG_D("time: %f -- frame time: %f -- delta: %f -- t: %f", time, frameTime, deltaTime, t);
-    if (inputs->keys[KEY_LEFT]) {
-        if(camera->fpv) {
-            camera_move(camera, -t, 0, 0);
-        } else {
-            camera_turntable(camera, +0.05, 0);
+    if (player_alt_fly)
+        vec3_set(camera->player_vel, 0, 0, 0);
+    if (camera_is_player(camera) && !player_alt_fly) {
+        gxl_player_frame(camera, inputs, deltaTime, t);
+    } else {
+        const bool fly_move = camera->mode == CAMERA_MODE_FPV || player_alt_fly;
+        if (inputs->keys[KEY_LEFT]) {
+            if (fly_move) {
+                camera_move(camera, -t, 0, 0);
+            } else {
+                camera_turntable(camera, +0.05, 0);
+            }
         }
-    }
-    if (inputs->keys[KEY_RIGHT]) {
-        if(camera->fpv) {
-            camera_move(camera, +t, 0, 0);
-        } else {
-            camera_turntable(camera, -0.05, 0);
+        if (inputs->keys[KEY_RIGHT]) {
+            if (fly_move) {
+                camera_move(camera, +t, 0, 0);
+            } else {
+                camera_turntable(camera, -0.05, 0);
+            }
         }
-    }
-    if (inputs->keys[KEY_UP]) {
-        if(camera->fpv) {
-            camera_move(camera, 0, -t, 0);
-        } else {
-            camera_turntable(camera, +0.05, 0);
+        if (inputs->keys[KEY_UP]) {
+            if (fly_move) {
+                camera_move(camera, 0, -t, 0);
+            } else {
+                camera_turntable(camera, +0.05, 0);
+            }
         }
-    }
-    if (inputs->keys[KEY_DOWN]) {
-        if(camera->fpv) {
-            camera_move(camera, 0, +t, 0);
-        } else {
-            camera_turntable(camera, 0, -0.05);
+        if (inputs->keys[KEY_DOWN]) {
+            if (fly_move) {
+                camera_move(camera, 0, +t, 0);
+            } else {
+                camera_turntable(camera, 0, -0.05);
+            }
         }
-    }
-    if (inputs->keys[KEY_PAGE_UP]) {
-        if(camera->fpv) {
-            camera_move(camera, 0, 0, +t);
-        } else {
-            camera_turntable(camera, 0, +0.05);
+        if (inputs->keys[KEY_PAGE_UP]) {
+            if (fly_move) {
+                camera_move(camera, 0, 0, +t);
+            } else {
+                camera_turntable(camera, 0, +0.05);
+            }
         }
-    }
-    if (inputs->keys[KEY_PAGE_DOWN]) {
-        if(camera->fpv) {
-            camera_move(camera, 0, 0, -t);
-        } else {
-            camera_turntable(camera, 0, -0.05);
+        if (inputs->keys[KEY_PAGE_DOWN]) {
+            if (fly_move) {
+                camera_move(camera, 0, 0, -t);
+            } else {
+                camera_turntable(camera, 0, -0.05);
+            }
+        }
+        if (player_alt_fly) {
+            if (inputs->keys['W'] || inputs->keys['w'])
+                camera_move(camera, 0, -t, 0);
+            if (inputs->keys['S'] || inputs->keys['s'])
+                camera_move(camera, 0, +t, 0);
+            if (inputs->keys['A'] || inputs->keys['a'])
+                camera_move(camera, -t, 0, 0);
+            if (inputs->keys['D'] || inputs->keys['d'])
+                camera_move(camera, +t, 0, 0);
         }
     }
     if (acc_fpv_key) {
@@ -857,7 +1075,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 
     // C: recenter the view:
     // XXX: this should be an action!
-    if (inputs->keys['C']) {
+    if (inputs->keys['C'] && (!camera_is_player(camera) || player_alt_fly)) {
         if (goxel_unproject_on_volume(viewport, inputs->touches[0].pos,
                                 goxel_get_layers_volume(goxel.image), p, n)) {
             camera_set_target(camera, p);
@@ -1932,12 +2150,13 @@ ACTION_REGISTER(ACTION_tool_size_decrease,
 
 static void toggle_first_person_camera(void)
 {
-    camera_t* cam = get_camera();
-    cam->fpv = !cam->fpv;
-    post_toggle_fpv(cam);
+    camera_t *cam = get_camera();
+    int n = (int)cam->mode;
+    n = (n + 1) % 3;
+    camera_set_mode(cam, (camera_mode_t)n);
 }
 ACTION_REGISTER(ACTION_toggle_first_person_camera,
-    .help = "Toggle first person camera",
+    .help = "Cycle camera mode (orbit / first person / player)",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = toggle_first_person_camera,
     .default_shortcut = "#",

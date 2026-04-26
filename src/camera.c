@@ -30,6 +30,10 @@ camera_t *camera_new(const char *name)
     cam->speed = 2.5;
     cam->fovy = 40.;
     cam->fovy_fpv = 100.;
+    cam->mode = CAMERA_MODE_ORBIT;
+    cam->standing_height = 2.7f;
+    cam->crouch_height = 1.7f;
+    vec3_set(cam->player_vel, 0, 0, 0);
     mat4_itranslate(cam->mat, 0, 0, cam->dist);
     camera_turntable(cam, M_PI / 4, M_PI / 4);
     return cam;
@@ -55,12 +59,15 @@ void camera_set(camera_t *cam, const camera_t *other)
 {
     cam->ortho = other->ortho;
     cam->dist = other->dist;
-    cam->fpv = other->fpv;
+    cam->mode = other->mode;
     cam->speed = other->speed;
     cam->fovy = other->fovy;
     cam->fovy_fpv = other->fovy_fpv;
     cam->prev_dist = other->prev_dist;
     cam->prev_ortho = other->prev_ortho;
+    cam->standing_height = other->standing_height;
+    cam->crouch_height = other->crouch_height;
+    vec3_copy(other->player_vel, cam->player_vel);
     mat4_copy(other->mat, cam->mat);
 }
 
@@ -142,7 +149,7 @@ void camera_update(camera_t *camera)
                 clip_near, clip_far);
     } else {
         mat4_perspective(camera->proj_mat,
-                (camera->fpv) ? camera->fovy_fpv : camera->fovy,
+                camera_is_firstperson(camera) ? camera->fovy_fpv : camera->fovy,
                 camera->aspect, clip_near, clip_far);
     }
 }
@@ -162,7 +169,7 @@ void camera_update_for_volume(camera_t *camera, const volume_t *vol)
                 clip_near, clip_far);
     } else {
         mat4_perspective(camera->proj_mat,
-                (camera->fpv) ? camera->fovy_fpv : camera->fovy,
+                camera_is_firstperson(camera) ? camera->fovy_fpv : camera->fovy,
                 camera->aspect, clip_near, clip_far);
     }
 }
@@ -222,9 +229,11 @@ uint32_t camera_get_key(const camera_t *cam)
     key = XXH32(&cam->ortho, sizeof(cam->ortho), key);
     key = XXH32(&cam->dist, sizeof(cam->dist), key);
     key = XXH32(&cam->mat, sizeof(cam->mat), key);    
-    key = XXH32(&cam->fpv, sizeof(cam->fpv), key);
+    key = XXH32(&cam->mode, sizeof(cam->mode), key);
     key = XXH32(&cam->fovy, sizeof(cam->fovy), key);
     key = XXH32(&cam->fovy_fpv, sizeof(cam->fovy_fpv), key);
+    key = XXH32(&cam->standing_height, sizeof(cam->standing_height), key);
+    key = XXH32(&cam->crouch_height, sizeof(cam->crouch_height), key);
     return key;
 }
 
@@ -292,19 +301,36 @@ void camera_move(camera_t *cam, float rx, float ry, float rz)
     mat4_copy(mat, cam->mat);
 }
 
-/* Perform some property caching and edits post switching fpv on/off. */
-void post_toggle_fpv(camera_t *cam)
+bool camera_is_firstperson(const camera_t *cam)
 {
-    if (cam->fpv) {
-        // If switching to first person
-        // Stash current dist and replace with 0 for duration
+    return cam->mode == CAMERA_MODE_FPV || cam->mode == CAMERA_MODE_PLAYER;
+}
+
+bool camera_is_player(const camera_t *cam)
+{
+    return cam->mode == CAMERA_MODE_PLAYER;
+}
+
+void camera_set_mode(camera_t *cam, camera_mode_t m)
+{
+    camera_mode_t old = cam->mode;
+    if (old == m)
+        return;
+    if (old == CAMERA_MODE_PLAYER && m != CAMERA_MODE_PLAYER)
+        vec3_set(cam->player_vel, 0, 0, 0);
+    if (m == CAMERA_MODE_PLAYER && old != CAMERA_MODE_PLAYER)
+        vec3_set(cam->player_vel, 0, 0, 0);
+
+    if (old == CAMERA_MODE_ORBIT &&
+        (m == CAMERA_MODE_FPV || m == CAMERA_MODE_PLAYER)) {
         cam->prev_dist = cam->dist;
         cam->dist = 0;
         cam->prev_ortho = cam->ortho;
         cam->ortho = false;
-    } else {
-        // Switching off fpv, restore previous dist if applicable
+    } else if ((old == CAMERA_MODE_FPV || old == CAMERA_MODE_PLAYER) &&
+               m == CAMERA_MODE_ORBIT) {
         cam->dist = cam->prev_dist;
         cam->ortho = cam->prev_ortho;
     }
+    cam->mode = m;
 }

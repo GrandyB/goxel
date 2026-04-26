@@ -41,6 +41,8 @@ bool gui_pan_scroll_behavior(int dir);
 #   define typeof __typeof__
 #endif
 
+#include <cctype>
+
 #define IM_VEC4_CLASS_EXTRA \
         ImVec4(const uint8_t f[4]) { \
             x = f[0] / 255.; \
@@ -455,6 +457,13 @@ static int check_action_shortcut(action_t *action, void *user)
     bool check_key = true;
     bool check_char = true;
     if (!*s) return 0;
+    if (goxel.image && goxel.image->active_camera &&
+        goxel.image->active_camera->mode == CAMERA_MODE_PLAYER &&
+        !goxel.player_flycam_hold && !io.KeyCtrl) {
+        int c0 = std::tolower((unsigned char)s[0]);
+        if (c0 == 'w' || c0 == 'a' || c0 == 's' || c0 == 'd')
+            return 0;
+    }
     if (io.KeyCtrl) {
         if (!str_startswith(s, "Ctrl")) return 0;
         s += strlen("Ctrl ");

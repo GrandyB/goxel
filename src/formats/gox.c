@@ -408,6 +408,12 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
                                sizeof(camera->ortho));
         chunk_write_dict_value(&c, out, "mat", &camera->mat,
                                sizeof(camera->mat));
+        chunk_write_dict_value(&c, out, "mode", &camera->mode,
+                               sizeof(camera->mode));
+        chunk_write_dict_value(&c, out, "standing_h", &camera->standing_height,
+                               sizeof(camera->standing_height));
+        chunk_write_dict_value(&c, out, "crouch_h", &camera->crouch_height,
+                               sizeof(camera->crouch_height));
         if (camera == img->active_camera)
             chunk_write_dict_value(&c, out, "active", NULL, 0);
 
@@ -637,6 +643,7 @@ int load_from_file(const char *path, bool replace)
                     layer->material = get_material(goxel.image, material_idx);
             }
         } else if (strncmp(c.type, "CAMR", 4) == 0) {
+            bool cam_got_mode = false;
             camera = camera_new("unnamed");
             DL_APPEND(goxel.image->cameras, camera);
             while ((chunk_read_dict_value(&c, in, dict_key, dict_value,
@@ -647,9 +654,24 @@ int load_from_file(const char *path, bool replace)
                 DICT_CPY("dist", camera->dist);
                 DICT_CPY("ortho", camera->ortho);
                 DICT_CPY("mat", camera->mat);
+                if (DICT_CPY("mode", camera->mode))
+                    cam_got_mode = true;
+                DICT_CPY("standing_h", camera->standing_height);
+                DICT_CPY("crouch_h", camera->crouch_height);
+                if (strcmp(dict_key, "fpv") == 0 &&
+                    dict_value_size == sizeof(bool)) {
+                    bool bf;
+                    memcpy(&bf, dict_value, sizeof(bf));
+                    if (bf && !cam_got_mode)
+                        camera->mode = CAMERA_MODE_FPV;
+                }
                 if (strcmp(dict_key, "active") == 0)
                     goxel.image->active_camera = camera;
             }
+            if (camera->mode > CAMERA_MODE_PLAYER)
+                camera->mode = CAMERA_MODE_ORBIT;
+            if (camera_is_firstperson(camera) && camera->dist != 0.f)
+                camera->dist = 0;
         } else if (strncmp(c.type, "MATE", 4) == 0) {
             mat = image_add_material(goxel.image, NULL);
             while ((chunk_read_dict_value(&c, in, dict_key, dict_value,

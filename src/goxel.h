@@ -74,7 +74,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_2m"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_2n-pre2"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -550,12 +550,18 @@ typedef struct goxel
     struct {
         float  rotation[4];
         float  pos[2];
+        /* FPV: world offset from RMB-rotate (gesture) mat[3] that arrow keys
+         * have applied since RMB; on_rotate re-adds it after mouselook reset. */
         float  camera_ofs[3];
         float  camera_mat[4][4];
         // Pivot point for rotation around hovered voxel
         float  pivot_point[3];
         bool   has_pivot_point;
     } move_origin;
+    /* FPV: mouselook (RMB/MMB) in progress; arrow strafe in move_origin.camera_ofs. */
+    bool   fpv_look_drag;
+    /* Player + Alt: temporary fly (FPV) until Alt released; for shortcut routing. */
+    bool   player_flycam_hold;
 
     palette_t  *palettes;   // The list of all the palettes
     palette_t  *palette;    // The current color palette
