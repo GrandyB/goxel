@@ -64,6 +64,32 @@ void camera_set(camera_t *cam, const camera_t *other)
     mat4_copy(other->mat, cam->mat);
 }
 
+static void compute_clip_tiles(
+        const float view_mat[4][4], const volume_t *volume, float *near_, float *far_)
+{
+    int bpos[3];
+    float p[3];
+    float n = FLT_MAX, f = 256;
+    const int margin = 8 * BLOCK_SIZE;
+    volume_iterator_t iter;
+
+    if (volume) {
+        iter = volume_get_iterator(volume, VOLUME_ITER_TILES);
+        while (volume_iter(&iter, bpos)) {
+            vec3_set(p, bpos[0], bpos[1], bpos[2]);
+            mat4_mul_vec3(view_mat, p, p);
+            if (p[2] < 0) {
+                n = min(n, -p[2] - margin);
+                f = max(f, -p[2] + margin);
+            }
+        }
+    }
+    if (n >= f) n = 1;
+    n = max(n, 0.1);
+    *near_ = n;
+    *far_ = f;
+}
+
 static void compute_clip(const float view_mat[4][4], float *near_, float *far_)
 {
     int bpos[3];
@@ -108,6 +134,26 @@ void camera_update(camera_t *camera)
 
     mat4_invert(camera->mat, camera->view_mat);
     compute_clip(camera->view_mat, &clip_near, &clip_far);
+    if (camera->ortho) {
+        size = camera->dist;
+        mat4_ortho(camera->proj_mat,
+                -size, +size,
+                -size / camera->aspect, +size / camera->aspect,
+                clip_near, clip_far);
+    } else {
+        mat4_perspective(camera->proj_mat,
+                (camera->fpv) ? camera->fovy_fpv : camera->fovy,
+                camera->aspect, clip_near, clip_far);
+    }
+}
+
+void camera_update_for_volume(camera_t *camera, const volume_t *vol)
+{
+    float size;
+    float clip_near, clip_far;
+
+    mat4_invert(camera->mat, camera->view_mat);
+    compute_clip_tiles(camera->view_mat, vol, &clip_near, &clip_far);
     if (camera->ortho) {
         size = camera->dist;
         mat4_ortho(camera->proj_mat,

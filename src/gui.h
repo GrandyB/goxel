@@ -25,6 +25,8 @@
 #ifndef GUI_H
 #define GUI_H
 
+#include <stdint.h>
+
 #include "inputs.h"
 
 #ifndef GUI_PANEL_WIDTH_NORMAL
@@ -145,6 +147,10 @@ void gui_combo_end(void);
 void gui_enabled_begin(bool enabled);
 void gui_enabled_end(void);
 void gui_dummy(int w, int h);
+/* GL texture2D: logical size img_w x img_h within pow2 tex; uses UV sub-rect. */
+void gui_image_gl_subrect(
+        uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
+        float display_w, float display_h);
 void gui_spacing(int w);
 void gui_same_line(void);
 

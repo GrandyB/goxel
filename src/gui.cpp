@@ -1210,6 +1210,20 @@ void gui_dummy(int w, int h)
     ImGui::Dummy(ImVec2(w, h));
 }
 
+void gui_image_gl_subrect(
+        uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
+        float display_w, float display_h)
+{
+    ImVec2 uv0(0, 0);
+    ImVec2 uv1(1, 1);
+    if (tex_w > 0 && tex_h > 0) {
+        uv1.x = (float)img_w / (float)tex_w;
+        uv1.y = (float)img_h / (float)tex_h;
+    }
+    ImGui::Image((ImTextureID)(intptr_t)gl_tex, ImVec2(display_w, display_h),
+                 uv0, uv1);
+}
+
 void gui_same_line(void)
 {
     ImGui::SameLine();

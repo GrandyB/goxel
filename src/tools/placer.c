@@ -18,7 +18,13 @@
 
 #include "goxel.h"
 #include "file_format.h"
+#include "utils/volume_preview.h"
 #include "utlist.h"
+
+#ifndef PLACER_PAST_PREVIEW_SIZE
+#   define PLACER_PAST_PREVIEW_SIZE 64
+#endif
+#define PLACER_PAST_THUMB_DISPLAY 32.f
 
 #define BOOL_STR(b) ((b) ? "true" : "false")
 
@@ -320,6 +326,9 @@ struct past_import {
     const char *path;
     const char *file_name;
     const file_format_t *format;
+    texture_t *preview;
+    /* true: in-memory preview attempted (import) or disk lazy load finished */
+    bool preview_ready;
 };
 past_import_t *past_files = NULL;
 
@@ -328,6 +337,7 @@ void placer_past_files_clear(void) {
     DL_FOREACH_SAFE(past_files, f, tmp) {
         free((void *)f->path);
         free((void *)f->file_name);
+        texture_delete(f->preview);
         DL_DELETE(past_files, f);
         free(f);
     }
@@ -418,6 +428,7 @@ void placer_past_files_load_gox(const char *data, size_t len) {
                 if (strcmp(f->file_name, name) != 0) continue;
                 free((void *)f->path);
                 free((void *)f->file_name);
+                texture_delete(f->preview);
                 DL_DELETE(past_files, f);
                 free(f);
             }
@@ -431,8 +442,25 @@ static void placer_past_remove(past_import_t *e) {
     if (!e) return;
     free((void *)e->path);
     free((void *)e->file_name);
+    texture_delete(e->preview);
     DL_DELETE(past_files, e);
     free(e);
+}
+
+/* Lazily build preview for entries restored from .gox (path only, no in-memory import yet). */
+static void placer_ensure_past_preview(past_import_t *i)
+{
+    volume_t *v;
+    int err;
+
+    if (i->preview || i->preview_ready)
+        return;
+    i->preview_ready = true;
+    v = volume_new();
+    err = i->format->import_volume_func(i->format, v, i->path);
+    if (!err)
+        i->preview = volume_preview_to_texture(v, PLACER_PAST_PREVIEW_SIZE);
+    volume_delete(v);
 }
 
 static void on_file_import(const char *path, const char *file_name, const file_format_t *format) {
@@ -450,12 +478,19 @@ static void on_file_import(const char *path, const char *file_name, const file_f
         LOG_D("Delete %s", f->file_name);
         free((void *)f->path);
         free((void *)f->file_name);
+        texture_delete(f->preview);
         DL_DELETE(past_files, f);
         free(f);
     }
 
     LOG_D("On file import: %s / %s / %s", past->path, past->file_name, past->format->name);
     DL_APPEND(past_files, past);
+    past->preview_ready = true;
+    if (goxel.tool && goxel.tool->id == TOOL_PLACER) {
+        tool_placer_t *pl = (tool_placer_t *)goxel.tool;
+        past->preview = volume_preview_to_texture(pl->imported_volume,
+                                                  PLACER_PAST_PREVIEW_SIZE);
+    }
 }
 
 static void post_import(tool_placer_t *placer) {
@@ -693,9 +728,19 @@ static int gui(tool_t *tool)
 
         remove_me = NULL;
         DL_FOREACH_REVERSE(past_files, i) {
+            placer_ensure_past_preview(i);
             gui_row_begin(0);
             snprintf(idbuf, sizeof(idbuf), "%p", (void *)i);
             gui_push_id(idbuf);
+            if (i->preview) {
+                gui_image_gl_subrect(
+                        i->preview->tex, i->preview->tex_w, i->preview->tex_h,
+                        i->preview->w, i->preview->h, PLACER_PAST_THUMB_DISPLAY,
+                        PLACER_PAST_THUMB_DISPLAY);
+            } else {
+                gui_dummy((int)PLACER_PAST_THUMB_DISPLAY, (int)PLACER_PAST_THUMB_DISPLAY);
+            }
+            gui_same_line();
             if (gui_button(i->file_name, 0.88f, 0)) {
                 reset(placer);
                 i->format->import_volume_func(i->format, placer->imported_volume,

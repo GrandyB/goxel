@@ -145,4 +145,9 @@ void camera_move(camera_t *camera, float rx, float ry, float rz);
 */
 void post_toggle_fpv(camera_t *camera);
 
+/* Like camera_update, but near/far are computed from vol's tiles only (not the
+ * main scene or image box). Used for off-screen single-volume renders. */
+struct volume;
+void camera_update_for_volume(camera_t *camera, const struct volume *vol);
+
 #endif // CAMERA_H
