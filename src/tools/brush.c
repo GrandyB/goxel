@@ -110,6 +110,8 @@ static void get_box3(const float p0[3], const float p1[3], const float n[3],
     vec3_cross(box[2], box[0], v);
     vec3_normalize(v, v);
     vec3_mul3(v, r_x, r_y, r_z, box[1]);
+    if (goxel.brush_origin_at_base)
+        box[3][2] += r_z;
     mat4_copy(box, out);
 }
 
