@@ -37,6 +37,8 @@ typedef struct {
         int        mode;
         uint64_t   volume_key;
     } last_op;
+    /* Active layer before this stroke; used to add map-color history on commit. */
+    uint64_t   layer_key_at_stroke_start;
 
     struct {
         gesture3d_t drag;
@@ -136,6 +138,8 @@ static int on_drag(gesture3d_t *gest, void *user)
     }
 
     if (gest->state == GESTURE_BEGIN) {
+        brush->layer_key_at_stroke_start =
+            volume_get_key(goxel.image->active_layer->volume);
         volume_set(brush->volume_orig, goxel.image->active_layer->volume);
         brush->last_op.mode = 0; // Discard last op.
         vec3_copy(target, brush->last_pos);
@@ -191,6 +195,12 @@ static int on_drag(gesture3d_t *gest, void *user)
 
     if (gest->state == GESTURE_END) {
         volume_set(goxel.image->active_layer->volume, goxel.tool_volume);
+        if (volume_get_key(goxel.image->active_layer->volume) !=
+            brush->layer_key_at_stroke_start) {
+            int m = goxel.painter.mode;
+            if (m == MODE_OVER || m == MODE_PAINT)
+                image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+        }
         volume_set(brush->volume_orig, goxel.tool_volume);
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;

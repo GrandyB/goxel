@@ -81,6 +81,13 @@
  *      UTF-8 lines: first line is "goxel-placer-history 2" (or "1" for legacy),
  *      then for each past import, one line "format_name<TAB>path[<TAB>unix_ts]"
  *      (newest first; unix_ts is optional in v2, omitted in v1).
+ *
+ *   CLRH: recent "map" paint colors (MRU) for the top bar, binary:
+ *      4 bytes: count (0 .. GOXEL_RECENT_COLOR_HISTORY_MAX)
+ *      for each (newest first, same as in-memory [0]..[count-1]):
+ *          4 bytes: color RGBA
+ *          4 x int32: noise_enabled, noise_intensity, noise_saturation,
+ *                     noise_coverage
  */
 
 // We create a hash table of all the blocks, so that blocks with the same
@@ -446,6 +453,32 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
         }
     }
 
+    {
+        int ri, n = img->recent_color_count;
+        int w = 0, bsz = 4 + n * 20;
+        uint8_t *buf = (uint8_t *)calloc(1, bsz);
+        if (buf) {
+            int32_t nn = n;
+            memcpy(buf + w, &nn, 4);
+            w += 4;
+            for (ri = 0; ri < n; ri++) {
+                const image_recent_color_t *e = &img->recent_colors[ri];
+                memcpy(buf + w, e->color, 4);
+                w += 4;
+                memcpy(buf + w, &e->noise_enabled, 4);
+                w += 4;
+                memcpy(buf + w, &e->noise_intensity, 4);
+                w += 4;
+                memcpy(buf + w, &e->noise_saturation, 4);
+                w += 4;
+                memcpy(buf + w, &e->noise_coverage, 4);
+                w += 4;
+            }
+            chunk_write_all(out, "CLRH", (char *)buf, w);
+            free(buf);
+        }
+    }
+
     HASH_ITER(hh, blocks_table, data, data_tmp) {
         HASH_DEL(blocks_table, data);
         free(data);
@@ -572,6 +605,8 @@ int load_from_file(const char *path, bool replace)
         goxel.image->active_camera = NULL;
 
         memset(&goxel.image->box, 0, sizeof(goxel.image->box));
+
+        goxel.image->recent_color_count = 0;
 
         placer_past_files_clear();
     }
@@ -709,6 +744,27 @@ int load_from_file(const char *path, bool replace)
             } else {
                 chunk_read(&c, in, NULL, c.length, __LINE__);
             }
+        } else if (strncmp(c.type, "CLRH", 4) == 0) {
+            int n, ent;
+            n = chunk_read_int32(&c, in, __LINE__);
+            if (n < 0) n = 0;
+            if (n > GOXEL_RECENT_COLOR_HISTORY_MAX)
+                n = GOXEL_RECENT_COLOR_HISTORY_MAX;
+            for (i = 0, ent = 0; i < n; i++) {
+                if (c.pos + 20 > c.length) break;
+                {
+                    image_recent_color_t *e = &goxel.image->recent_colors[ent];
+                    chunk_read(&c, in, (char *)e->color, 4, __LINE__);
+                    e->noise_enabled = chunk_read_int32(&c, in, __LINE__);
+                    e->noise_intensity = chunk_read_int32(&c, in, __LINE__);
+                    e->noise_saturation = chunk_read_int32(&c, in, __LINE__);
+                    e->noise_coverage = chunk_read_int32(&c, in, __LINE__);
+                    ent++;
+                }
+            }
+            goxel.image->recent_color_count = ent;
+            if (c.pos < c.length)
+                chunk_read(&c, in, NULL, c.length - c.pos, __LINE__);
         } else {
             // Ignore other blocks.
             chunk_read(&c, in, NULL, c.length, __LINE__);

@@ -84,6 +84,9 @@ const tool_t *tool_get(int id);
 int tool_iter(tool_t *tool, const painter_t *painter, const float viewport[4]);
 int tool_gui(tool_t *tool);
 
+/* Brush / shape / laser / fill / etc. — show "recent map colors" in snap bar. */
+bool tool_uses_map_recent_colors(const tool_t *tool);
+
 int tool_gui_snap(void);
 int tool_gui_mask_mode(void);
 int tool_gui_shape(const shape_t **shape);

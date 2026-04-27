@@ -62,6 +62,15 @@ gui_window_ret_t gui_window_end(void);
 void gui_floating_panel_begin(const char *title, float init_w, float init_h);
 void gui_floating_panel_end(void);
 
+/*
+ * Standard ImGui floating palette window: closable, collapsible title bar.
+ * Begins a frame only if palette_win_open; syncs palette_win_collapsed after
+ * Begin; palette_win_expand_once triggers expand before Begin (then cleared).
+ * Returns false if the window is closed (skip body and do not call End).
+ */
+bool gui_palette_window_begin(float init_w, float init_h);
+void gui_palette_window_end(void);
+
 void gui_set_cursor_pos(float x, float y);
 float gui_window_content_region_min_x(void);
 float gui_window_content_region_max_x(void);
@@ -155,6 +164,8 @@ bool gui_color_small_no_label(const char *id, uint8_t color[4]);
 bool gui_color_inline(const char *label, uint8_t color[4]);
 bool gui_color_small_f3(const char *label, float color[3]);
 bool gui_color_opacity(uint8_t color[4]);
+/* Color swatch: 0=none, 1=left (apply), 2=right (e.g. remove from list). */
+int gui_color_swatch(const char *id, const uint8_t color[4], float size);
 bool gui_input_text(const char *label, char *buf, int size);
 bool gui_input_text_multiline(const char *label, char *buf, int size,
                               float width, float height);

@@ -98,12 +98,69 @@ void gui_top_bar(void)
     } gui_row_end();
 }
 
-void gui_snap_bar(void) {
-    gui_row_begin(0); {
-        if (goxel.tool->has_snap) {
-            tool_gui_snap_inline();
+void gui_snap_bar(void)
+{
+    gui_row_begin(0);
+    if (goxel.tool->has_snap) {
+        tool_gui_snap_inline();
+    }
+    gui_row_end();
+}
+
+void gui_map_colors_bar(void)
+{
+    int i, click;
+    char id[32];
+    char tip[320];
+    const image_recent_color_t *e;
+    if (!goxel.image) return;
+    if (goxel.image->recent_color_count == 0) {
+        /* Avoid empty gui_row + w=0 window auto-sizing the bar to full width. */
+        gui_dummy(8, 16);
+        return;
+    }
+    gui_row_begin(0);
+    for (i = 0; i < goxel.image->recent_color_count; i++) {
+        if (i) gui_same_line();
+        sprintf(id, "mrc#%d", i);
+        e = &goxel.image->recent_colors[i];
+        click = gui_color_swatch(id, e->color, 16.f);
+        if (e->color[3] < 255) {
+            if (e->noise_enabled) {
+                snprintf(
+                    tip, sizeof(tip),
+                    "#%02X%02X%02X%02X (A=%d)\n"
+                    "Noise: on, intensity %d, saturation %d, coverage %d",
+                    e->color[0], e->color[1], e->color[2], e->color[3], e->color[3],
+                    e->noise_intensity, e->noise_saturation, e->noise_coverage);
+            } else {
+                snprintf(
+                    tip, sizeof(tip),
+                    "#%02X%02X%02X%02X (A=%d)", e->color[0], e->color[1],
+                    e->color[2], e->color[3], e->color[3]);
+            }
+        } else {
+            if (e->noise_enabled) {
+                snprintf(
+                    tip, sizeof(tip),
+                    "#%02X%02X%02X\n"
+                    "Noise: on, intensity %d, saturation %d, coverage %d",
+                    e->color[0], e->color[1], e->color[2], e->noise_intensity,
+                    e->noise_saturation, e->noise_coverage);
+            } else {
+                snprintf(tip, sizeof(tip), "#%02X%02X%02X", e->color[0], e->color[1],
+                         e->color[2]);
+            }
         }
-    } gui_row_end();
+        gui_tooltip_if_hovered(tip);
+        if (click == 1) {
+            image_recent_color_apply_to_goxel_painter(goxel.image, i);
+        } else if (click == 2) {
+            image_recent_color_remove_at(goxel.image, i);
+            break;
+        }
+    }
+    gui_row_end();
 }
 
 #endif // GUI_CUSTOM_TOPBAR

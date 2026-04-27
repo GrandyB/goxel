@@ -175,6 +175,7 @@ static int gui(tool_t *tool_)
         volume_merge(volume, goxel.mask, MODE_SUB, NULL);
     }
     if (gui_button("Fill", 1, 0)) {
+        uint64_t k0 = volume_get_key(volume);
         image_history_push(goxel.image);
         volume_t *vol = volume_copy(goxel.mask);
         float box[4][4] = MAT4_IDENTITY;
@@ -184,6 +185,8 @@ static int gui(tool_t *tool_)
         volume_op(vol, &goxel.painter, box);
         volume_merge(volume, vol, MODE_OVER, NULL);
         goxel.painter.mode = existing_mode;
+        if (volume_get_key(volume) != k0)
+            image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     }
     if (gui_button("Cut as new layer", 1, 0)) {
         image_history_push(goxel.image);

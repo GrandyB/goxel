@@ -187,6 +187,7 @@ image_t *image_new(void)
     layer_t *layer;
     image_t *img = calloc(1, sizeof(*img));
     img->ref = 1;
+    img->recent_color_count = 0;
     const int aabb[2][3] = {{-16, -16, 0}, {16, 16, 32}};
     bbox_from_aabb(img->box, aabb);
     img->export_width = 1024;
@@ -203,6 +204,68 @@ image_t *image_new(void)
     // Prevent saving an empty image.
     img->saved_key = image_get_key(img);
     return img;
+}
+
+/* Same 6-char #RRGGBB identity; alpha and noise are ignored for deduplication. */
+static bool image_recent_color_same_hex_rgb(
+        const image_recent_color_t *a, const uint8_t rgb[3])
+{
+    return a->color[0] == rgb[0] && a->color[1] == rgb[1] && a->color[2] == rgb[2];
+}
+
+void image_recent_color_push_from_painter(
+        image_t *img, const struct painter *p0)
+{
+    const painter_t *p = (const painter_t *)p0;
+    image_recent_color_t e, tmp[GOXEL_RECENT_COLOR_HISTORY_MAX];
+    int n, w, i;
+
+    if (!img || !p) return;
+    memcpy(e.color, p->color, 4);
+    e.noise_enabled = p->noise_enabled;
+    e.noise_intensity = p->noise_intensity;
+    e.noise_saturation = p->noise_saturation;
+    e.noise_coverage = p->noise_coverage;
+
+    /* New entry first, then rest; drop any older entry with the same #RRGGBB
+     * so changing noise/alpha reuses one slot. */
+    w = 0;
+    tmp[w++] = e;
+    n = img->recent_color_count;
+    for (i = 0; i < n && w < GOXEL_RECENT_COLOR_HISTORY_MAX; i++) {
+        if (image_recent_color_same_hex_rgb(&img->recent_colors[i], e.color))
+            continue;
+        tmp[w++] = img->recent_colors[i];
+    }
+    for (i = 0; i < w; i++)
+        img->recent_colors[i] = tmp[i];
+    img->recent_color_count = w;
+}
+
+void image_recent_color_apply_to_goxel_painter(
+        const image_t *img, int idx)
+{
+    const image_recent_color_t *e;
+    if (!img || idx < 0 || idx >= img->recent_color_count) return;
+    e = &img->recent_colors[idx];
+    memcpy(goxel.painter.color, e->color, 4);
+    goxel.painter.noise_enabled = e->noise_enabled;
+    goxel.painter.noise_intensity = e->noise_intensity;
+    goxel.painter.noise_saturation = e->noise_saturation;
+    goxel.painter.noise_coverage = e->noise_coverage;
+}
+
+void image_recent_color_remove_at(image_t *img, int idx)
+{
+    int n, tail;
+    if (!img || idx < 0 || idx >= img->recent_color_count) return;
+    n = img->recent_color_count;
+    tail = n - idx - 1;
+    if (tail > 0) {
+        memmove(&img->recent_colors[idx], &img->recent_colors[idx + 1],
+                (size_t)tail * sizeof(image_recent_color_t));
+    }
+    img->recent_color_count = n - 1;
 }
 
 /*

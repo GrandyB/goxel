@@ -26,7 +26,22 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Max swatches in "recent map colors" bar and in .gox CLRH; change in one place. */
+#ifndef GOXEL_RECENT_COLOR_HISTORY_MAX
+#   define GOXEL_RECENT_COLOR_HISTORY_MAX 20
+#endif
+
+typedef struct {
+    uint8_t color[4];
+    int     noise_enabled;
+    int     noise_intensity;
+    int     noise_saturation;
+    int     noise_coverage;
+} image_recent_color_t;
+
 typedef struct history history_t;
+
+struct painter; /* see volume_utils.h (painter_t) */
 
 typedef struct image image_t;
 struct image {
@@ -51,6 +66,9 @@ struct image {
     int      export_height;
     bool     export_transparent_background;
     uint32_t saved_key;     // image_get_key() value of saved file.
+
+    int recent_color_count;
+    image_recent_color_t recent_colors[GOXEL_RECENT_COLOR_HISTORY_MAX];
 
     image_t *history;
     image_t *history_next, *history_prev;
@@ -90,6 +108,12 @@ bool layer_name_exists(void *user, const char *name);
 bool camera_name_exists(void *user, const char *name);
 
 void image_set_image_dimensions_and_center(image_t *img, int w, int h, int d);
+
+void image_recent_color_push_from_painter(
+        image_t *img, const struct painter *p);
+void image_recent_color_apply_to_goxel_painter(
+        const image_t *img, int idx);
+void image_recent_color_remove_at(image_t *img, int idx);
 
 /*
  * Function: image_get_key

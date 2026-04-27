@@ -59,6 +59,166 @@ void palette_insert(palette_t *p, const uint8_t col[4], const char *name)
     p->size++;
 }
 
+void palette_remove_at(palette_t *p, int idx)
+{
+    if (!p || idx < 0 || idx >= p->size)
+        return;
+    memmove(p->entries + idx, p->entries + idx + 1,
+            (size_t)(p->size - idx - 1) * sizeof(*p->entries));
+    p->size--;
+}
+
+void palette_free(palette_t *p)
+{
+    if (!p)
+        return;
+    free(p->entries);
+    free(p);
+}
+
+palette_t *palette_clone(const palette_t *src, const char *new_name)
+{
+    palette_t *d;
+
+    d = calloc(1, sizeof(*d));
+    snprintf(d->name, sizeof(d->name), "%s", new_name);
+    d->columns = src->columns;
+    d->size = src->size;
+    d->allocated = src->size;
+    if (src->size > 0) {
+        d->entries = malloc(d->allocated * sizeof(*d->entries));
+        memcpy(d->entries, src->entries, src->size * sizeof(*d->entries));
+    }
+    return d;
+}
+
+palette_t *palette_new_empty(const char *name)
+{
+    palette_t *p;
+
+    p = calloc(1, sizeof(*p));
+    snprintf(p->name, sizeof(p->name), "%s", name);
+    p->size = 0;
+    p->allocated = 0;
+    p->entries = NULL;
+    return p;
+}
+
+void palette_list_remove(palette_t **list_head, palette_t *p)
+{
+    DL_DELETE(*list_head, p);
+    palette_free(p);
+}
+
+bool palette_name_in_use(const palette_t *list, const char *name,
+                          const palette_t *except)
+{
+    const palette_t *q;
+
+    for (q = list; q; q = q->next) {
+        if (q == except)
+            continue;
+        if (strcmp(q->name, name) == 0)
+            return true;
+    }
+    return false;
+}
+
+static void palette_sanitize_basename(const char *name, char *out, size_t out_sz)
+{
+    size_t i = 0;
+    const char *s;
+
+    if (!name || !name[0]) {
+        snprintf(out, out_sz, "palette");
+        return;
+    }
+    for (s = name; *s && i + 1 < out_sz; s++) {
+        unsigned char c = (unsigned char)*s;
+
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == ' ' || c == '-' || c == '_' ||
+            c == '.')
+            out[i++] = (char)c;
+        else
+            out[i++] = '_';
+    }
+    out[i] = '\0';
+    while (i > 0 && (out[i - 1] == ' ' || out[i - 1] == '.'))
+        out[--i] = '\0';
+    if (!out[0])
+        snprintf(out, out_sz, "palette");
+}
+
+static void fprint_gpl_one_line(FILE *f, const char *str)
+{
+    const char *s;
+
+    for (s = str ? str : ""; *s; s++) {
+        if (*s == '\n' || *s == '\r')
+            fputc(' ', f);
+        else
+            fputc(*s, f);
+    }
+}
+
+int palette_save_user_gpl(const palette_t *p)
+{
+    const char *root;
+    char *path = NULL;
+    char base_fn[240];
+    FILE *f;
+    int i, cols, err;
+
+    if (!p)
+        return -2;
+    root = sys_get_user_dir();
+    if (!root || !root[0])
+        return -1;
+
+    palette_sanitize_basename(p->name, base_fn, sizeof(base_fn));
+    asprintf(&path, "%s/palettes/%s.gpl", root, base_fn);
+    if (!path)
+        return -2;
+
+    if (sys_make_dir(path) != 0) {
+        LOG_E("palette_save_user_gpl: sys_make_dir failed for %s", path);
+        free(path);
+        return -2;
+    }
+
+    f = fopen(path, "wb");
+    if (!f) {
+        LOG_E("palette_save_user_gpl: cannot open %s", path);
+        free(path);
+        return -2;
+    }
+
+    cols = p->columns > 0 ? p->columns : 8;
+    fprintf(f, "GIMP Palette\nName: ");
+    fprint_gpl_one_line(f, p->name);
+    fprintf(f, "\nColumns: %d\n#\n", cols);
+
+    for (i = 0; i < p->size; i++) {
+        const palette_entry_t *e = &p->entries[i];
+        int r = e->color[0];
+        int g = e->color[1];
+        int b = e->color[2];
+
+        fprintf(f, "%d\t%d\t%d\t", r, g, b);
+        fprint_gpl_one_line(f, e->name);
+        fprintf(f, "\n");
+    }
+
+    err = fclose(f);
+    free(path);
+    if (err != 0) {
+        LOG_E("palette_save_user_gpl: fclose failed");
+        return -2;
+    }
+    return 0;
+}
+
 
 // Parse a gimp palette.
 // XXX: we don't check for buffer overflow!

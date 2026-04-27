@@ -1765,12 +1765,20 @@ static void a_fill_selection(void)
     image_history_push(goxel.image);
 
     if (!volume_is_empty(goxel.mask)) {
+        uint64_t k0 = volume_get_key(layer->volume);
         volume_merge(layer->volume, goxel.mask, MODE_OVER, goxel.painter.color);
+        if (volume_get_key(layer->volume) != k0)
+            image_recent_color_push_from_painter(goxel.image, &goxel.painter);
         return;
     }
 
     if (box_is_null(goxel.selection)) return;
-    volume_op(layer->volume, &goxel.painter, goxel.selection);
+    {
+        uint64_t k0 = volume_get_key(layer->volume);
+        volume_op(layer->volume, &goxel.painter, goxel.selection);
+        if (volume_get_key(layer->volume) != k0)
+            image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+    }
 }
 
 ACTION_REGISTER(ACTION_fill_selection_box,

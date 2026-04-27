@@ -24,6 +24,7 @@ typedef struct {
     float  start_pos[3];
     volume_t *volume_orig;
     bool   planar; // Stay on the original plane.
+    uint64_t layer_key_at_stroke_start;
 
     struct {
         gesture3d_t drag;
@@ -70,6 +71,7 @@ static int on_drag(gesture3d_t *gest, void *user)
     cursor_t *curs = gest->cursor;
 
     if (gest->state == GESTURE_BEGIN) {
+        shape->layer_key_at_stroke_start = volume_get_key(layer_volume);
         volume_set(shape->volume_orig, layer_volume);
         vec3_copy(curs->pos, shape->start_pos);
         image_history_push(goxel.image);
@@ -87,6 +89,11 @@ static int on_drag(gesture3d_t *gest, void *user)
 
     if (gest->state == GESTURE_END) {
         volume_set(layer_volume, goxel.tool_volume);
+        if (volume_get_key(layer_volume) != shape->layer_key_at_stroke_start) {
+            int m = goxel.painter.mode;
+            if (m == MODE_OVER || m == MODE_PAINT)
+                image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+        }
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
         mat4_copy(plane_null, goxel.tool_plane);

@@ -49,6 +49,19 @@ const tool_t *tool_get(int id)
     return g_tools[id];
 }
 
+bool tool_uses_map_recent_colors(const tool_t *t)
+{
+    if (!t) return false;
+    switch (t->id) {
+    case TOOL_BRUSH:
+    case TOOL_SHAPE:
+    case TOOL_FILL:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static int pick_color_gesture(gesture3d_t *gest, void *user)
 {
     cursor_t *curs = &goxel.cursor;
@@ -65,7 +78,10 @@ static int pick_color_gesture(gesture3d_t *gest, void *user)
     volume_get_at(volume, NULL, pi, color);
     color[3] = 255;
     goxel_set_help_text("pick: %d %d %d", color[0], color[1], color[2]);
-    if (curs->flags & CURSOR_PRESSED) vec4_copy(color, goxel.painter.color);
+    if (curs->flags & CURSOR_PRESSED) {
+        vec4_copy(color, goxel.painter.color);
+        image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+    }
     return 0;
 }
 

@@ -614,9 +614,10 @@ static void gui_iter(const inputs_t *inputs)
         io.FontGlobalScale = 1 / inputs->scale;
         io.MousePos.x = inputs->touches[0].pos[0];
         io.MousePos.y = inputs->touches[0].pos[1];
+        /* inputs: down[0]=L, down[1]=M, down[2]=R — ImGui: 0=L, 1=R, 2=M */
         io.MouseDown[0] = inputs->touches[0].down[0];
-        io.MouseDown[1] = inputs->touches[0].down[1];
-        io.MouseDown[2] = inputs->touches[0].down[2];
+        io.MouseDown[1] = inputs->touches[0].down[2];
+        io.MouseDown[2] = inputs->touches[0].down[1];
         gui->margins = inputs->safe_margins;
         io.MouseWheel = inputs->mouse_wheel;
 
@@ -840,6 +841,33 @@ void gui_floating_panel_begin(const char *title, float init_w, float init_h)
 }
 
 void gui_floating_panel_end(void)
+{
+    ImGui::End();
+}
+
+bool gui_palette_window_begin(float init_w, float init_h)
+{
+    if (!goxel.gui.palette_win_open)
+        return false;
+
+    if (goxel.gui.palette_win_expand_once) {
+        ImGui::SetNextWindowCollapsed(false, ImGuiCond_Always);
+        goxel.gui.palette_win_expand_once = false;
+    }
+
+    ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImVec2 pos = ImVec2(vp->WorkPos.x + 52.f, vp->WorkPos.y + 96.f);
+
+    ImGui::SetNextWindowPos(pos, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(init_w, init_h), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(220.f, 140.f), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::Begin("Palette##palette_floating", &goxel.gui.palette_win_open,
+                 ImGuiWindowFlags_None);
+    goxel.gui.palette_win_collapsed = ImGui::IsWindowCollapsed();
+    return true;
+}
+
+void gui_palette_window_end(void)
 {
     ImGui::End();
 }
@@ -1760,6 +1788,44 @@ bool gui_color_opacity(uint8_t color[4]) {
     if (ret) {
         color[3] = roundf((opacity / 100.0f) * 255.0f);
     }
+    return ret;
+}
+
+int gui_color_swatch(const char *id, const uint8_t color[4], float size) {
+    /* ColorButton() only uses ButtonBehavior for the left button; RMB does
+     * not register on the item, so we use InvisibleButton with L+R. */
+    ImVec4 c((float)color[0] / 255.f, (float)color[1] / 255.f,
+               (float)color[2] / 255.f, (float)color[3] / 255.f);
+    ImGui::PushID(id);
+    const ImVec2 s(size, size);
+    ImGui::InvisibleButton("##sw", s, ImGuiButtonFlags_MouseButtonLeft |
+                                     ImGuiButtonFlags_MouseButtonRight);
+    const ImVec2 a = ImGui::GetItemRectMin();
+    const ImVec2 b = ImGui::GetItemRectMax();
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    ImGuiContext &g = *GImGui;
+    const float grid_step = ImMin(s.x, s.y) / 2.99f;
+    const float rounding = ImMin(g.Style.FrameRounding, grid_step * 0.5f);
+    const float off = -0.75f;
+    const ImU32 col_u32 = ImGui::GetColorU32(c);
+    if (c.w < 1.0f) {
+        ImGui::RenderColorRectWithAlphaCheckerboard(
+            dl, a, b, col_u32, grid_step, ImVec2(off, off), rounding);
+    } else {
+        dl->AddRectFilled(a, b, col_u32, rounding);
+    }
+    if (g.Style.FrameBorderSize > 0.0f) {
+        dl->AddRect(a, b, ImGui::GetColorU32(ImGuiCol_Border), rounding, 0,
+                    g.Style.FrameBorderSize);
+    } else {
+        dl->AddRect(a, b, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+    }
+    int ret = 0;
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        ret = 1;
+    else if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+        ret = 2;
+    ImGui::PopID();
     return ret;
 }
 

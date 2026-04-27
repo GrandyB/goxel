@@ -41,7 +41,10 @@ int tool_color_picker_iter(tool_t *tool, const painter_t *painter,
     volume_get_at(volume, NULL, pi, color);
     color[3] = 255;
     goxel_set_help_text("%d %d %d", color[0], color[1], color[2]);
-    if (curs->flags & CURSOR_PRESSED) vec4_copy(color, goxel.painter.color);
+    if (curs->flags & CURSOR_PRESSED) {
+        vec4_copy(color, goxel.painter.color);
+        image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+    }
     return 0;
 }
 

@@ -170,6 +170,7 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
     volume_iterator_t iter, new_vol_iter;
     uint8_t voxel[4];
     int box_dimensions[3], box_start_pos[3];
+    uint64_t layer_key0 = volume_get_key(volume);
     volume_t *new_vol = volume_new();
 
     const int start[3] = {
@@ -280,6 +281,8 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
     volume_op(new_vol, &goxel.painter, box);
     volume_merge(volume, new_vol, MODE_OVER, NULL);
     goxel.painter.mode = existing_mode;
+    if (volume_get_key(volume) != layer_key0)
+        image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     volume_delete(new_vol);
 
     LOG_D("flood_fill: complete");

@@ -60,4 +60,20 @@ int palette_search(const palette_t *palette, const uint8_t col[4],
 
 void palette_insert(palette_t *p, const uint8_t col[4], const char *name);
 
+/* Remove one entry by index; shifts later entries down. */
+void palette_remove_at(palette_t *p, int idx);
+
+void palette_free(palette_t *p);
+palette_t *palette_clone(const palette_t *src, const char *new_name);
+palette_t *palette_new_empty(const char *name);
+void palette_list_remove(palette_t **list_head, palette_t *p);
+bool palette_name_in_use(const palette_t *list, const char *name,
+                         const palette_t *except);
+
+/*
+ * Write palette as GIMP .gpl under sys_get_user_dir()/palettes/.
+ * Returns 0 on success, -1 if no user dir, -2 on I/O error.
+ */
+int palette_save_user_gpl(const palette_t *p);
+
 #endif // PALETTE_H
