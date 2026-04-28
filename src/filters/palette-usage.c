@@ -19,8 +19,6 @@
 #include "goxel.h"
 #include "palette.h"
 
-#include <stdio.h>
-
 typedef struct color_stat_hash {
     int rgba_key;
     uint8_t color[4];
@@ -38,8 +36,6 @@ typedef struct {
     int usage_threshold;
     int max_colors;
     bool current_layer_only;
-    char palette_name[256];
-    char name_at_conflict[256];
     char status_msg[256];
 
     bool analysis_valid;
@@ -50,10 +46,6 @@ typedef struct {
     color_stat_entry_t *sorted;
     int sorted_count;
 
-    bool overwrite_saved;
-    bool show_overwrite;
-    char overwrite_filename[256];
-    char gpl_display_name[128];
     char save_error[256];
 } filter_palette_usage_t;
 
@@ -89,31 +81,6 @@ static int color_stat_cmp(const void *a, const void *b)
     if (kx > ky)
         return 1;
     return 0;
-}
-
-static void trim_inplace(char *s)
-{
-    char *end;
-    size_t len;
-
-    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')
-        memmove(s, s + 1, strlen(s) + 1);
-    len = strlen(s);
-    end = s + len;
-    while (end > s && (end[-1] == ' ' || end[-1] == '\t' ||
-                       end[-1] == '\n' || end[-1] == '\r'))
-        end--;
-    *end = '\0';
-}
-
-static void sanitize_stem(char *s)
-{
-    char *p;
-
-    for (p = s; *p; p++) {
-        if (*p == '/' || *p == '\\')
-            *p = '_';
-    }
 }
 
 static void add_volume_layer_counts(filter_palette_usage_t *filter,
@@ -233,29 +200,6 @@ static void run_analyse(filter_palette_usage_t *filter)
     filter->analysis_valid = true;
 }
 
-static int save_gpl(const char *path, const char *gpl_name,
-                    const color_stat_entry_t *entries, int n)
-{
-    FILE *fp;
-    int i, r, g, b;
-    char entry_name[64];
-
-    fp = fopen(path, "w");
-    if (!fp)
-        return -1;
-
-    fprintf(fp, "GIMP Palette\nName: %s\nColumns: 16\n#\n", gpl_name);
-    for (i = 0; i < n; i++) {
-        r = entries[i].color[0];
-        g = entries[i].color[1];
-        b = entries[i].color[2];
-        snprintf(entry_name, sizeof(entry_name), "#%02x%02x%02x", r, g, b);
-        fprintf(fp, "%3d %3d %3d    %s\n", r, g, b, entry_name);
-    }
-    fclose(fp);
-    return 0;
-}
-
 static void on_open(filter_t *filter_)
 {
     filter_palette_usage_t *filter = (void *)filter_;
@@ -263,16 +207,10 @@ static void on_open(filter_t *filter_)
     filter->usage_threshold = 5;
     filter->max_colors = -1;
     filter->current_layer_only = false;
-    filter->palette_name[0] = '\0';
     filter->status_msg[0] = '\0';
-    filter->name_at_conflict[0] = '\0';
     filter->analysis_valid = false;
     filter->sorted = NULL;
     filter->sorted_count = 0;
-    filter->overwrite_saved = false;
-    filter->show_overwrite = false;
-    filter->overwrite_filename[0] = '\0';
-    filter->gpl_display_name[0] = '\0';
     filter->save_error[0] = '\0';
 }
 
@@ -292,19 +230,11 @@ static int gui(filter_t *filter_)
     const char *help_text =
         "Analyse counts RGBA voxel colours on plain voxel layers (optionally "
         "only the active layer). Results are sorted by usage. When usage "
-        "threshold is not -1, only colours meeting that count are kept. Save "
-        "writes a GIMP .gpl file; Add to current palette appends analysed "
-        "colours to the palette selected in the palette panel.";
+        "threshold is not -1, only colours meeting that count are kept. Add to "
+        "current palette appends analysed colours to the palette selected in "
+        "the palette panel.";
 
     goxel_set_help_text(help_text);
-
-    if (filter->show_overwrite && filter->name_at_conflict[0] &&
-        strcmp(filter->palette_name, filter->name_at_conflict) != 0) {
-        filter->show_overwrite = false;
-        filter->overwrite_saved = false;
-        filter->overwrite_filename[0] = '\0';
-        filter->name_at_conflict[0] = '\0';
-    }
 
     gui_input_int("Usage threshold", &ut, 0, 0);
     gui_input_int("Max # of colours", &mc, 0, 0);
@@ -360,109 +290,8 @@ static int gui(filter_t *filter_)
     if (filter->status_msg[0])
         gui_text("%s", filter->status_msg);
 
-    gui_input_text("Palette name", filter->palette_name,
-                   sizeof(filter->palette_name));
-
-    if (gui_button("Save palette", -1, 0)) {
-        char stem[256];
-        char path[512];
-        char fname[256];
-        const char *udir;
-        FILE *probe;
-
-        filter->save_error[0] = '\0';
-        snprintf(stem, sizeof(stem), "%s", filter->palette_name);
-        trim_inplace(stem);
-        sanitize_stem(stem);
-        if (!stem[0]) {
-            snprintf(filter->save_error, sizeof(filter->save_error),
-                     "Enter a palette name.");
-        } else {
-            if (str_endswith(stem, ".gpl")) {
-                snprintf(fname, sizeof(fname), "%s", stem);
-            } else {
-                /* 251 + strlen(".gpl") + '\0' fits in fname[256]. */
-                snprintf(fname, sizeof(fname), "%.251s.gpl", stem);
-            }
-
-            snprintf(filter->gpl_display_name, sizeof(filter->gpl_display_name),
-                     "%.127s", stem);
-            if (str_endswith(filter->gpl_display_name, ".gpl"))
-                filter->gpl_display_name[strlen(filter->gpl_display_name) - 4] =
-                    '\0';
-
-            udir = sys_get_user_dir();
-            if (!udir) {
-                snprintf(filter->save_error, sizeof(filter->save_error),
-                         "User data directory is not available.");
-            } else if (!filter->analysis_valid || filter->sorted_count == 0) {
-                snprintf(filter->save_error, sizeof(filter->save_error),
-                         "Run Analyse first (no colours to save).");
-            } else {
-                snprintf(path, sizeof(path), "%s/palettes/%s", udir, fname);
-                sys_make_dir(path);
-                probe = fopen(path, "rb");
-                if (probe) {
-                    fclose(probe);
-                    if (!filter->overwrite_saved) {
-                        filter->show_overwrite = true;
-                        snprintf(filter->overwrite_filename,
-                                 sizeof(filter->overwrite_filename), "%s",
-                                 fname);
-                        snprintf(filter->name_at_conflict,
-                                 sizeof(filter->name_at_conflict), "%s",
-                                 filter->palette_name);
-                        snprintf(filter->save_error,
-                                 sizeof(filter->save_error),
-                                 "File exists. Enable overwrite to replace it.");
-                    } else {
-                        if (save_gpl(path, filter->gpl_display_name,
-                                     filter->sorted, filter->sorted_count) != 0) {
-                            LOG_E("Could not write %s", path);
-                            snprintf(filter->save_error,
-                                     sizeof(filter->save_error),
-                                     "Could not write palette file.");
-                        } else {
-                            goxel.palette = palette_reload_all(
-                                &goxel.palettes, filter->gpl_display_name);
-                            if (!goxel.palette)
-                                goxel.palette = goxel.palettes;
-                            filter->show_overwrite = false;
-                            filter->overwrite_saved = false;
-                            filter->overwrite_filename[0] = '\0';
-                            filter->name_at_conflict[0] = '\0';
-                        }
-                    }
-                } else {
-                    if (save_gpl(path, filter->gpl_display_name, filter->sorted,
-                                 filter->sorted_count) != 0) {
-                        LOG_E("Could not write %s", path);
-                        snprintf(filter->save_error, sizeof(filter->save_error),
-                                 "Could not write palette file.");
-                    } else {
-                        goxel.palette = palette_reload_all(
-                            &goxel.palettes, filter->gpl_display_name);
-                        if (!goxel.palette)
-                            goxel.palette = goxel.palettes;
-                        filter->show_overwrite = false;
-                        filter->overwrite_saved = false;
-                        filter->name_at_conflict[0] = '\0';
-                    }
-                }
-            }
-        }
-    }
-
     if (filter->save_error[0])
         gui_text("%s", filter->save_error);
-
-    if (filter->show_overwrite) {
-        char lbl[320];
-
-        snprintf(lbl, sizeof(lbl), "Overwrite saved %s",
-                 filter->overwrite_filename);
-        gui_checkbox(lbl, &filter->overwrite_saved, NULL);
-    }
 
     return 0;
 }
@@ -471,5 +300,5 @@ FILTER_REGISTER(palette_usage, filter_palette_usage_t,
                 .name = "Palette - usage from layers",
                 .on_open = on_open,
                 .on_close = on_close,
-                .panel_width = 275,
+                .panel_width = 325,
                 .gui_fn = gui, )
