@@ -34,14 +34,16 @@ typedef struct {
 typedef struct {
     filter_t filter;
     int usage_threshold;
-    int max_colors;
     bool current_layer_only;
+    bool condense_similar;
+    int degree_diff;
     char status_msg[256];
 
     bool analysis_valid;
     int blocks_analysed;
     int unique_colors;
     int colors_above_threshold;
+    int colors_after_condense;
 
     color_stat_entry_t *sorted;
     int sorted_count;
@@ -83,6 +85,104 @@ static int color_stat_cmp(const void *a, const void *b)
     return 0;
 }
 
+/** True if every channel differs by at most `diff` (Chebyshev on RGBA). */
+static bool colors_within_degree_diff(const uint8_t a[4], const uint8_t b[4],
+                                      int diff)
+{
+    int d0 = abs((int)a[0] - (int)b[0]);
+    int d1 = abs((int)a[1] - (int)b[1]);
+    int d2 = abs((int)a[2] - (int)b[2]);
+    int d3 = abs((int)a[3] - (int)b[3]);
+    int m = d0;
+
+    if (d1 > m)
+        m = d1;
+    if (d2 > m)
+        m = d2;
+    if (d3 > m)
+        m = d3;
+    return m <= diff;
+}
+
+/**
+ * Colours left if we walk popularity order and drop any later colour within
+ * `degree_diff` of an earlier (more popular) kept colour.
+ */
+static int count_after_condensing(const color_stat_entry_t *sorted, int n,
+                                  int degree_diff)
+{
+    bool *skipped;
+    int i, j, count = 0;
+
+    if (n <= 0)
+        return 0;
+    skipped = calloc((size_t)n, sizeof(bool));
+    if (!skipped)
+        return 0;
+    for (i = 0; i < n; i++) {
+        if (skipped[i])
+            continue;
+        count++;
+        for (j = i + 1; j < n; j++) {
+            if (skipped[j])
+                continue;
+            if (colors_within_degree_diff(sorted[i].color, sorted[j].color,
+                                          degree_diff))
+                skipped[j] = true;
+        }
+    }
+    free(skipped);
+    return count;
+}
+
+/**
+ * Append analysed swatches to the current palette. When condense_similar is
+ * set, uses the same greedy merge as count_after_condensing; otherwise adds
+ * every entry in sorted. Returns the number of insert attempts (one per
+ * representative colour), or -1 on allocation failure.
+ */
+static int append_analysed_swatches_to_palette(filter_palette_usage_t *filter)
+{
+    int n = filter->sorted_count;
+    color_stat_entry_t *sorted = filter->sorted;
+    bool *skipped = NULL;
+    int i, j;
+    int attempted = 0;
+    char entry_name[64];
+
+    if (n <= 0 || !sorted)
+        return 0;
+
+    if (filter->condense_similar) {
+        skipped = calloc((size_t)n, sizeof(bool));
+        if (!skipped) {
+            snprintf(filter->save_error, sizeof(filter->save_error),
+                     "Out of memory.");
+            return -1;
+        }
+    }
+
+    for (i = 0; i < n; i++) {
+        if (skipped && skipped[i])
+            continue;
+        attempted++;
+        snprintf(entry_name, sizeof(entry_name), "#%02x%02x%02x",
+                 sorted[i].color[0], sorted[i].color[1], sorted[i].color[2]);
+        palette_insert(goxel.palette, sorted[i].color, entry_name);
+        if (skipped) {
+            for (j = i + 1; j < n; j++) {
+                if (skipped[j])
+                    continue;
+                if (colors_within_degree_diff(sorted[i].color, sorted[j].color,
+                                              filter->degree_diff))
+                    skipped[j] = true;
+            }
+        }
+    }
+    free(skipped);
+    return attempted;
+}
+
 static void add_volume_layer_counts(filter_palette_usage_t *filter,
                                     layer_t *layer,
                                     color_stat_hash_t **colors)
@@ -121,7 +221,7 @@ static void run_analyse(filter_palette_usage_t *filter)
     layer_t *layer;
     color_stat_hash_t *colors = NULL;
     color_stat_hash_t *el, *tmp;
-    int i, n, cap, above, max_keep;
+    int i, n, above;
 
     free(filter->sorted);
     filter->sorted = NULL;
@@ -130,6 +230,7 @@ static void run_analyse(filter_palette_usage_t *filter)
     filter->blocks_analysed = 0;
     filter->unique_colors = 0;
     filter->colors_above_threshold = 0;
+    filter->colors_after_condense = 0;
     filter->status_msg[0] = '\0';
 
     if (filter->current_layer_only) {
@@ -190,12 +291,13 @@ static void run_analyse(filter_palette_usage_t *filter)
         }
     }
 
-    max_keep = filter->max_colors;
-    if (max_keep > 0 && n > max_keep) {
-        cap = max_keep;
-        filter->sorted = realloc(filter->sorted, cap * sizeof(*filter->sorted));
-        n = cap;
+    if (n > 0) {
+        filter->colors_after_condense =
+            count_after_condensing(filter->sorted, n, filter->degree_diff);
+    } else {
+        filter->colors_after_condense = 0;
     }
+
     filter->sorted_count = n;
     filter->analysis_valid = true;
 }
@@ -205,8 +307,9 @@ static void on_open(filter_t *filter_)
     filter_palette_usage_t *filter = (void *)filter_;
 
     filter->usage_threshold = 5;
-    filter->max_colors = -1;
     filter->current_layer_only = false;
+    filter->condense_similar = false;
+    filter->degree_diff = 5;
     filter->status_msg[0] = '\0';
     filter->analysis_valid = false;
     filter->sorted = NULL;
@@ -226,7 +329,6 @@ static int gui(filter_t *filter_)
 {
     filter_palette_usage_t *filter = (void *)filter_;
     int ut = filter->usage_threshold;
-    int mc = filter->max_colors;
     const char *help_text =
         "Analyse counts RGBA voxel colours on plain voxel layers (optionally "
         "only the active layer). Results are sorted by usage. When usage "
@@ -236,14 +338,24 @@ static int gui(filter_t *filter_)
 
     goxel_set_help_text(help_text);
 
+    gui_label_size_push(130.0f);
     gui_input_int("Usage threshold", &ut, 0, 0);
-    gui_input_int("Max # of colours", &mc, 0, 0);
+    gui_label_size_pop();
     filter->usage_threshold = ut;
-    filter->max_colors = mc;
 
     gui_checkbox("Current layer only", &filter->current_layer_only,
                  "If checked, only the active layer is scanned (must be a "
                  "plain voxel layer).");
+
+    gui_checkbox("Condense similar colours", &filter->condense_similar,
+                 "When reporting, merge colours within the degree difference "
+                 "into the more popular swatch (per-channel max delta).");
+    if (filter->condense_similar) {
+        int dd = filter->degree_diff;
+
+        gui_input_int("Degree diff", &dd, 0, 255);
+        filter->degree_diff = dd;
+    }
 
     if (gui_button("Analyse", -1, 0))
         run_analyse(filter);
@@ -255,12 +367,15 @@ static int gui(filter_t *filter_)
             gui_text("Colours above usage threshold: %d",
                      filter->colors_above_threshold);
         }
+        if (filter->condense_similar) {
+            gui_text("Colours after condensing similar: %d",
+                     filter->colors_after_condense);
+        }
     }
 
     if (gui_button("Add to current palette", -1, 0)) {
         int before;
-        int i;
-        char entry_name[64];
+        int attempted;
 
         filter->save_error[0] = '\0';
         filter->status_msg[0] = '\0';
@@ -272,18 +387,19 @@ static int gui(filter_t *filter_)
                      "Run Analyse first (no colours to add).");
         } else {
             before = goxel.palette->size;
-            for (i = 0; i < filter->sorted_count; i++) {
-                uint8_t *c = filter->sorted[i].color;
-
-                snprintf(entry_name, sizeof(entry_name), "#%02x%02x%02x",
-                         c[0], c[1], c[2]);
-                palette_insert(goxel.palette, filter->sorted[i].color,
-                               entry_name);
+            attempted = append_analysed_swatches_to_palette(filter);
+            if (attempted >= 0) {
+                snprintf(filter->status_msg, sizeof(filter->status_msg),
+                         "Added %d new swatches (%d already in palette).",
+                         goxel.palette->size - before,
+                         attempted - (goxel.palette->size - before));
+                if (goxel.palette->size > before &&
+                    palette_save_user_gpl(goxel.palette) != 0) {
+                    gui_alert("Palette",
+                              "Could not save the palette to your palettes "
+                              "folder.");
+                }
             }
-            snprintf(filter->status_msg, sizeof(filter->status_msg),
-                     "Added %d new swatches (%d already in palette).",
-                     goxel.palette->size - before,
-                     filter->sorted_count - (goxel.palette->size - before));
         }
     }
 

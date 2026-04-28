@@ -109,8 +109,20 @@ void gui_palette_panel(void)
                                        goxel.palette)) {
             gui_alert("Palette", "A palette with that name already exists.");
         } else {
+            char old_name[sizeof(goxel.palette->name)];
+
+            snprintf(old_name, sizeof(old_name), "%s", goxel.palette->name);
             snprintf(goxel.palette->name, sizeof(goxel.palette->name), "%s",
                      name_buf);
+            if (palette_save_user_gpl(goxel.palette) != 0) {
+                snprintf(goxel.palette->name, sizeof(goxel.palette->name), "%s",
+                         old_name);
+                snprintf(name_buf, sizeof(name_buf), "%s", old_name);
+                gui_alert("Palette",
+                          "Could not save the palette to your palettes folder.");
+            } else {
+                palette_remove_obsolete_gpl_after_rename(old_name, name_buf);
+            }
         }
     }
     if (gui_button("Copy", -1, 0)) {
@@ -216,6 +228,17 @@ void gui_palette_panel(void)
     }
     gui_tooltip_if_hovered("Remove the highlighted color swatch from the "
                            "current palette.");
+    gui_row_end();
+
+    gui_row_begin(1);
+    if (gui_button("Clear all colours", -1, 0)) {
+        if (goxel.palette->size > 0) {
+            palette_clear(goxel.palette);
+            palette_persist_or_alert();
+        }
+    }
+    gui_tooltip_if_hovered("Remove every color swatch from the current "
+                           "palette.");
     gui_row_end();
 }
 

@@ -70,6 +70,9 @@ void palette_insert(palette_t *p, const uint8_t col[4], const char *name);
 /* Remove one entry by index; shifts later entries down. */
 void palette_remove_at(palette_t *p, int idx);
 
+/* Remove all entries; keeps the entries buffer allocated for reuse. */
+void palette_clear(palette_t *p);
+
 void palette_free(palette_t *p);
 palette_t *palette_clone(const palette_t *src, const char *new_name);
 palette_t *palette_new_empty(const char *name);
@@ -89,5 +92,19 @@ int palette_save_user_gpl(const palette_t *p);
  * Returns 0 on success or nothing to remove, -2 if deletion failed.
  */
 int palette_delete_user_gpl(const palette_t *p);
+
+/*
+ * Same as palette_delete_user_gpl, but basename is derived from display name
+ * (e.g. the previous palette name after a rename).
+ */
+int palette_delete_user_gpl_named(const char *palette_display_name);
+
+/*
+ * After a palette rename once the new content is saved under the new name:
+ * removes the obsolete .gpl for old_display_name when it would map to a
+ * different filename than new_display_name (same basename ⇒ no deletion).
+ */
+void palette_remove_obsolete_gpl_after_rename(const char *old_display_name,
+                                              const char *new_display_name);
 
 #endif // PALETTE_H

@@ -70,6 +70,13 @@ void palette_remove_at(palette_t *p, int idx)
     p->size--;
 }
 
+void palette_clear(palette_t *p)
+{
+    if (!p)
+        return;
+    p->size = 0;
+}
+
 void palette_free(palette_t *p)
 {
     if (!p)
@@ -221,30 +228,51 @@ int palette_save_user_gpl(const palette_t *p)
     return 0;
 }
 
-int palette_delete_user_gpl(const palette_t *p)
+int palette_delete_user_gpl_named(const char *palette_display_name)
 {
     const char *root;
     char *path = NULL;
     char base_fn[240];
 
-    if (!p)
+    if (!palette_display_name)
         return -2;
     root = sys_get_user_dir();
     if (!root || !root[0])
         return 0;
 
-    palette_sanitize_basename(p->name, base_fn, sizeof(base_fn));
+    palette_sanitize_basename(palette_display_name, base_fn, sizeof(base_fn));
     /* (asprintf) bypasses goxel.h's CHECK(asprintf...) macro. */
     if ((asprintf)(&path, "%s/palettes/%s.gpl", root, base_fn) < 0 || !path)
         return -2;
 
     if (sys_delete_file(path) != 0 && errno != ENOENT) {
-        LOG_E("palette_delete_user_gpl: cannot remove %s", path);
+        LOG_E("palette_delete_user_gpl_named: cannot remove %s", path);
         free(path);
         return -2;
     }
     free(path);
     return 0;
+}
+
+int palette_delete_user_gpl(const palette_t *p)
+{
+    if (!p)
+        return -2;
+    return palette_delete_user_gpl_named(p->name);
+}
+
+void palette_remove_obsolete_gpl_after_rename(const char *old_display_name,
+                                              const char *new_display_name)
+{
+    char base_old[240], base_new[240];
+
+    if (!old_display_name || !new_display_name)
+        return;
+    palette_sanitize_basename(old_display_name, base_old, sizeof(base_old));
+    palette_sanitize_basename(new_display_name, base_new, sizeof(base_new));
+    if (strcmp(base_old, base_new) == 0)
+        return;
+    palette_delete_user_gpl_named(old_display_name);
 }
 
 
