@@ -69,6 +69,7 @@ void gui_palette_panel(void)
         sync_name_field(goxel.palette, &name_sync_palette, name_buf,
                         (int)sizeof(name_buf));
     }
+    gui_same_line();
     if (gui_button("Delete palette", -1, 0)) {
         palette_t *victim = goxel.palette;
         palette_t *next_sel;
@@ -80,15 +81,21 @@ void gui_palette_panel(void)
             gui_alert("Palette", "Cannot delete the last palette.");
         } else {
             next_sel = victim->next ? victim->next : victim->prev;
-            palette_list_remove(&goxel.palettes, victim);
-            goxel.palette = next_sel;
-            name_sync_palette = NULL;
-            sync_name_field(goxel.palette, &name_sync_palette, name_buf,
-                            (int)sizeof(name_buf));
+            if (palette_delete_user_gpl(victim) != 0) {
+                gui_alert("Palette",
+                          "Could not delete the palette file from your palettes "
+                          "folder.");
+            } else {
+                palette_list_remove(&goxel.palettes, victim);
+                goxel.palette = next_sel;
+                name_sync_palette = NULL;
+                sync_name_field(goxel.palette, &name_sync_palette, name_buf,
+                                (int)sizeof(name_buf));
+            }
         }
     }
-    gui_tooltip_if_hovered(
-            "Delete the whole palette from the list (not a file on disk).");
+    gui_tooltip_if_hovered("Remove this palette from the list and delete its "
+                           ".gpl file from your palettes folder.");
     gui_row_end();
     free(names);
 

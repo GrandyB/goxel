@@ -18,6 +18,8 @@
 
 #include "goxel.h"
 
+#include <errno.h>
+
 /*
  * Function: palette_search
  * Search a given color in a palette
@@ -219,6 +221,32 @@ int palette_save_user_gpl(const palette_t *p)
     return 0;
 }
 
+int palette_delete_user_gpl(const palette_t *p)
+{
+    const char *root;
+    char *path = NULL;
+    char base_fn[240];
+
+    if (!p)
+        return -2;
+    root = sys_get_user_dir();
+    if (!root || !root[0])
+        return 0;
+
+    palette_sanitize_basename(p->name, base_fn, sizeof(base_fn));
+    /* (asprintf) bypasses goxel.h's CHECK(asprintf...) macro. */
+    if ((asprintf)(&path, "%s/palettes/%s.gpl", root, base_fn) < 0 || !path)
+        return -2;
+
+    if (sys_delete_file(path) != 0 && errno != ENOENT) {
+        LOG_E("palette_delete_user_gpl: cannot remove %s", path);
+        free(path);
+        return -2;
+    }
+    free(path);
+    return 0;
+}
+
 
 // Parse a gimp palette.
 // XXX: we don't check for buffer overflow!
@@ -295,18 +323,100 @@ static int parse_png(const void *data, int len, palette_t *palette)
 }
 
 
-static int on_palette(int i, const char *path, void *user)
+static int on_system_palette(int i, const char *path, void *user)
 {
     palette_t **list = user;
     const char *data;
     palette_t *pal;
-    pal = calloc(1, sizeof(*pal));
+
+    (void)i;
     data = assets_get(path, NULL);
+    if (!data)
+        return 0;
+
+    pal = calloc(1, sizeof(*pal));
     pal->size = parse_gpl(data, pal->name, &pal->columns, NULL);
+    if (pal->name[0] && palette_name_in_use(*list, pal->name, NULL)) {
+        free(pal);
+        return 0;
+    }
     pal->entries = calloc(pal->size, sizeof(*pal->entries));
     parse_gpl(data, NULL, NULL, pal->entries);
     DL_APPEND(*list, pal);
     return 0;
+}
+
+/* First run: copy embedded palettes into the user folder, then create bundled_marker.
+ * Later runs: marker present → skip copy so the user controls which files exist. */
+static int copy_bundled_palette_asset(int i, const char *path, void *user)
+{
+    const char *root = user;
+    const char *slash = strrchr(path, '/');
+    const char *base = slash ? slash + 1 : path;
+    const void *data;
+    int sz;
+    char *outpath = NULL;
+    FILE *f;
+
+    (void)i;
+    if (!str_endswith(base, ".gpl"))
+        return 0;
+    data = assets_get(path, &sz);
+    if (!data || sz <= 0)
+        return 0;
+    asprintf(&outpath, "%s/palettes/%s", root, base);
+    if (sys_make_dir(outpath) != 0) {
+        LOG_E("copy_bundled_palette_asset: sys_make_dir failed for %s", outpath);
+        free(outpath);
+        return 0;
+    }
+    f = fopen(outpath, "wb");
+    if (!f) {
+        LOG_E("copy_bundled_palette_asset: cannot open %s", outpath);
+        free(outpath);
+        return 0;
+    }
+    if (fwrite(data, 1, (size_t)sz, f) != (size_t)sz) {
+        LOG_E("copy_bundled_palette_asset: short write %s", outpath);
+        fclose(f);
+        free(outpath);
+        return 0;
+    }
+    if (fclose(f) != 0) {
+        LOG_E("copy_bundled_palette_asset: fclose failed %s", outpath);
+        free(outpath);
+        return 0;
+    }
+    free(outpath);
+    return 0;
+}
+
+static void palette_seed_bundled_if_needed(void)
+{
+    const char *root;
+    char *marker_path = NULL;
+    FILE *mf;
+
+    root = sys_get_user_dir();
+    if (!root || !root[0])
+        return;
+    asprintf(&marker_path, "%s/palettes/bundled_marker", root);
+
+    mf = fopen(marker_path, "rb");
+    if (mf) {
+        fclose(mf);
+        free(marker_path);
+        return;
+    }
+
+    assets_list("data/palettes/", (void *)root, copy_bundled_palette_asset);
+
+    mf = fopen(marker_path, "wb");
+    if (mf)
+        fclose(mf);
+    else
+        LOG_E("palette_seed_bundled_if_needed: cannot create %s", marker_path);
+    free(marker_path);
 }
 
 static int on_palette2(const char *dir, const char *name, void *user)
@@ -357,10 +467,35 @@ end:
 void palette_load_all(palette_t **list)
 {
     char *dir;
-    assets_list("data/palettes/", list, on_palette);
+
     if (sys_get_user_dir()) {
+        palette_seed_bundled_if_needed();
         asprintf(&dir, "%s/palettes", sys_get_user_dir());
         sys_list_dir(dir, on_palette2, list);
         free(dir);
+    } else {
+        assets_list("data/palettes/", list, on_system_palette);
     }
+}
+
+palette_t *palette_reload_all(palette_t **list, const char *prefer_name)
+{
+    palette_t *p, *tmp;
+
+    DL_FOREACH_SAFE(*list, p, tmp) {
+        DL_DELETE(*list, p);
+        palette_free(p);
+    }
+    *list = NULL;
+
+    palette_load_all(list);
+
+    if (!prefer_name || !prefer_name[0])
+        return NULL;
+
+    DL_FOREACH(*list, p) {
+        if (strcmp(p->name, prefer_name) == 0)
+            return p;
+    }
+    return NULL;
 }

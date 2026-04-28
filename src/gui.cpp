@@ -1535,6 +1535,7 @@ bool gui_placer_past_entry(
     load = ImGui::InvisibleButton("##pl_load", ImVec2(s, s));
     ImVec2 rmin = ImGui::GetItemRectMin();
     ImVec2 rmax = ImGui::GetItemRectMax();
+    const bool load_area_hovered = ImGui::IsItemHovered();
 
     const float xbtn = ImGui::GetFrameHeight() * 0.7f;
     ImGui::SetCursorPos(
@@ -1544,8 +1545,7 @@ bool gui_placer_past_entry(
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.15f, 0.15f, 0.95f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.1f, 0.1f, 1.f));
     remove_btn = ImGui::SmallButton("x##remove");
-    ImVec2 x_rmin = ImGui::GetItemRectMin();
-    ImVec2 x_rmax = ImGui::GetItemRectMax();
+    const bool remove_hovered = ImGui::IsItemHovered();
     ImGui::PopStyleColor(3);
     ImGui::PopStyleVar(1);
     if (remove_btn) {
@@ -1611,10 +1611,9 @@ bool gui_placer_past_entry(
     ImGui::EndGroup();
 
     if (!gui->scrolling) {
-        if (path_tooltip && ImGui::IsMouseHoveringRect(x_rmin, x_rmax, false))
+        if (path_tooltip && remove_hovered)
             gui_tooltip("Remove model from placer history");
-        else if (path_tooltip
-                && ImGui::IsMouseHoveringRect(rmin, rmax, false))
+        else if (path_tooltip && load_area_hovered)
             gui_tooltip(path_tooltip);
     }
 
@@ -1941,7 +1940,7 @@ bool gui_input_text_multiline(const char *label, char *buf, int size,
 bool gui_combo(const char *label, int *v, const char **names, int nb)
 {
     bool ret;
-    ImGui::PushItemWidth(-1);
+    ImGui::PushItemWidth(gui_row_cell_width());
     ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR(COMBO, INNER, 0));
     ImGui::PushStyleColor(ImGuiCol_PopupBg, COLOR(COMBO, BACKGROUND, 0));
     ImGui::PushStyleColor(ImGuiCol_Button, COLOR(COMBO, ITEM, 0));

@@ -71,7 +71,7 @@
  
  void actions_iter(int (*f)(action_t *action, void *user), void *user);
  
- inline void action_exec2(int id)
+ static inline void action_exec2(int id)
  {
      action_exec(action_get(id, true));
  }

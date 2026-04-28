@@ -56,6 +56,7 @@ bool tool_uses_map_recent_colors(const tool_t *t)
     case TOOL_BRUSH:
     case TOOL_SHAPE:
     case TOOL_FILL:
+    case TOOL_FUZZY_SELECT:
         return true;
     default:
         return false;

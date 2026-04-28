@@ -43,6 +43,13 @@ struct palette {
 void palette_load_all(palette_t **list);
 
 /*
+ * Free every palette in *list, reload from disk/assets, then optionally find
+ * one whose name equals prefer_name. Returns that palette or NULL (caller may
+ * fall back to the list head).
+ */
+palette_t *palette_reload_all(palette_t **list, const char *prefer_name);
+
+/*
  * Function: palette_search
  * Search a given color in a palette
  *
@@ -75,5 +82,12 @@ bool palette_name_in_use(const palette_t *list, const char *name,
  * Returns 0 on success, -1 if no user dir, -2 on I/O error.
  */
 int palette_save_user_gpl(const palette_t *p);
+
+/*
+ * Remove the palette's .gpl under sys_get_user_dir()/palettes/ using the same
+ * basename rule as palette_save_user_gpl. Missing file is OK.
+ * Returns 0 on success or nothing to remove, -2 if deletion failed.
+ */
+int palette_delete_user_gpl(const palette_t *p);
 
 #endif // PALETTE_H
