@@ -27,6 +27,9 @@
 typedef struct {
     tool_t tool;
     float  box[4][4];
+    /* When true (checkbox ticked), boundaries come from the active layer only.
+     * When false (default), boundaries use the merged visible layers volume. */
+    bool current_layer_only;
 
     struct {
         gesture3d_t drag;
@@ -163,14 +166,15 @@ static bool in_box(int dims[3], int start_pos[3], int pos[3]) {
     return true;
 }
 
-bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t fill_color[4])
+bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
+                       const float start_pos[3], const uint8_t fill_color[4])
 {
     queue_t queue;
     visited_voxel_t *visited = NULL;
-    volume_iterator_t iter, new_vol_iter;
+    volume_iterator_t iter_sample, new_vol_iter;
     uint8_t voxel[4];
     int box_dimensions[3], box_start_pos[3];
-    uint64_t layer_key0 = volume_get_key(volume);
+    uint64_t layer_key0 = volume_get_key(paint_volume);
     volume_t *new_vol = volume_new();
 
     const int start[3] = {
@@ -194,9 +198,9 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
 
     queue_init(&queue);
 
-    iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
+    iter_sample = volume_get_iterator(sample_volume, VOLUME_ITER_VOXELS);
     new_vol_iter = volume_get_iterator(new_vol, VOLUME_ITER_VOXELS);
-    volume_get_at(volume, &iter, start, voxel);
+    volume_get_at(sample_volume, &iter_sample, start, voxel);
 
     if (!rgba_is_empty(voxel)) {
         //LOG_D("flood_fill: start voxel is not empty -> abort");
@@ -223,7 +227,7 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
 
         //LOG_D("visit: (%i,%i,%i)", pos[0], pos[1], pos[2]);
 
-        volume_get_at(volume, &iter, pos, voxel);
+        volume_get_at(sample_volume, &iter_sample, pos, voxel);
 
         if (!rgba_is_empty(voxel)) {
             LOG_D("skip: (%i,%i,%i) not empty", pos[0], pos[1], pos[2]);
@@ -257,7 +261,7 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
                 return false;
             }
 
-            volume_get_at(volume, &iter, next, voxel);
+            volume_get_at(sample_volume, &iter_sample, next, voxel);
 
             if (rgba_is_empty(voxel)) {
                 //LOG_D("enqueue: (%i,%i,%i)", next[0], next[1], next[2]);
@@ -279,9 +283,9 @@ bool flood_fill_volume(volume_t *volume, const float start_pos[3], const uint8_t
     int existing_mode = goxel.painter.mode;
     goxel.painter.mode = MODE_PAINT;
     volume_op(new_vol, &goxel.painter, box);
-    volume_merge(volume, new_vol, MODE_OVER, NULL);
+    volume_merge(paint_volume, new_vol, MODE_OVER, NULL);
     goxel.painter.mode = existing_mode;
-    if (volume_get_key(volume) != layer_key0)
+    if (volume_get_key(paint_volume) != layer_key0)
         image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     volume_delete(new_vol);
 
@@ -307,7 +311,8 @@ static int on_hover(gesture3d_t *gest, void *user)
 
 static int on_drag(gesture3d_t *gest, void *user)
 {
-    volume_t *volume = goxel.image->active_layer->volume;
+    tool_fill_t *filler = USER_GET(user, 0);
+    volume_t *paint_volume = goxel.image->active_layer->volume;
 
     if (gest->state == GESTURE_BEGIN) {
         image_history_push(goxel.image);
@@ -315,7 +320,11 @@ static int on_drag(gesture3d_t *gest, void *user)
         const painter_t *painter = USER_GET(user, 1);
 
         cursor_t *curs = gest->cursor;
-        flood_fill_volume(volume, curs->pos, painter->color);
+        const volume_t *sample_volume = filler->current_layer_only
+            ? paint_volume
+            : goxel_get_layers_volume(goxel.image);
+        flood_fill_volume(paint_volume, sample_volume, curs->pos,
+                          painter->color);
     }
 
     return 0;
@@ -351,6 +360,11 @@ int tool_fill_iter(tool_t *tool, const painter_t *painter,
 
 static int gui(tool_t *tool)
 {
+    tool_fill_t *filler = (void *)tool;
+    gui_checkbox(
+            "Current layer only", &filler->current_layer_only,
+            "Restrict floodfill to be within blocks only on the current layer");
+
     tool_gui_color();
     gui_section_end();
     return 0;
