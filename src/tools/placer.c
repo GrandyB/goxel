@@ -39,7 +39,7 @@
 /* 0=S, 1=M, 2=L thumbnails; 3=Details (one row per entry: name + x). */
 enum { PLACER_HIST_VIEW_S = 0, PLACER_HIST_VIEW_M = 1, PLACER_HIST_VIEW_L = 2,
        PLACER_HIST_VIEW_DETAILS = 3 };
-static int placer_history_preview_preset = PLACER_HIST_VIEW_M;
+static int placer_history_preview_preset = PLACER_HIST_VIEW_S;
 
 enum { PLACER_HIST_SORT_TIME = 0, PLACER_HIST_SORT_NAME = 1 };
 static int placer_history_sort_key = PLACER_HIST_SORT_TIME;
@@ -414,6 +414,12 @@ static void center_origin(tool_placer_t *placer)
     vec3_set(placer->origin, 0, 0, 0);
 }
 
+static void post_import(tool_placer_t *placer)
+{
+    placer->imported_volume_orig = volume_copy(placer->imported_volume);
+    center_origin(placer);
+}
+
 static int on_drag(gesture3d_t *gest, void *user)
 {
     if (gest->state == GESTURE_END) {
@@ -766,9 +772,33 @@ static void on_file_import(const char *path, const char *file_name, const file_f
     }
 }
 
-static void post_import(tool_placer_t *placer) {
-    placer->imported_volume_orig = volume_copy(placer->imported_volume);
-    center_origin(placer);
+/* paths from sys_open_multi_file_dialog: '|'-separated (tinyfd). */
+static void placer_import_selected_paths(tool_placer_t *placer, char *paths_mut)
+{
+    char *saveptr = NULL;
+    char *token;
+    bool reset_done = false;
+
+    for (token = strtok_r(paths_mut, "|", &saveptr); token;
+         token = strtok_r(NULL, "|", &saveptr)) {
+        const file_format_t *f = file_format_for_path(token,
+                ff_import_current->name, "r");
+        const char *file_name;
+        int err;
+
+        if (!f)
+            continue;
+        if (!reset_done) {
+            reset(placer);
+            reset_done = true;
+        }
+        err = f->import_volume_func(f, placer->imported_volume, token);
+        if (err)
+            continue;
+        file_name = get_file_name_from_path(token);
+        on_file_import(strdup(token), strdup(file_name), f);
+        post_import(placer);
+    }
 }
 
 static int past_cmp_for_qsort(const void *a, const void *b)
@@ -861,7 +891,8 @@ static void placer_gui_history_preset_bar(void)
 
     need_sort = gui_calc_text_width("Sort:") + 8.f
             + gui_toolbar_segment_width("Time v##pl_sort_t") + 4.f
-            + gui_toolbar_segment_width("Name v##pl_sort_n") + 4.f;
+            + gui_toolbar_segment_width("Name v##pl_sort_n") + 4.f
+            + 8.f + gui_calc_text_width("Clear") + 24.f;
     if (gui_content_avail_x() < need_sort)
         gui_new_line();
     else
@@ -898,6 +929,9 @@ static void placer_gui_history_preset_bar(void)
             placer_history_sort_asc = true;
         }
     }
+    gui_same_line_spaced(8.f);
+    if (gui_button("Clear##pl_hist_clear", 0, 0))
+        placer_past_files_clear();
 }
 
 static void placer_gui_history_body(tool_placer_t *placer)
@@ -1145,9 +1179,16 @@ static int gui(tool_t *tool)
             ff_import_current->import_gui(ff_import_current);
 
         if (gui_button("Import", 1, 0)) {
-            reset(placer);
-            goxel_import_file_to_volume(NULL, ff_import_current->name, placer->imported_volume, on_file_import);
-            post_import(placer);
+            const char *paths_raw = sys_open_multi_file_dialog(
+                    "Import", NULL,
+                    ff_import_current->exts, ff_import_current->exts_desc);
+            if (paths_raw) {
+                char *paths_work = strdup(paths_raw);
+                if (paths_work) {
+                    placer_import_selected_paths(placer, paths_work);
+                    free(paths_work);
+                }
+            }
         }
         
         if (gui_button("Reset", 1, 0)) {
