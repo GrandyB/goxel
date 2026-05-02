@@ -360,6 +360,8 @@ void image_delete(image_t *img)
 
 layer_t *image_add_layer(image_t *img, layer_t *layer)
 {
+    layer_t *below = img->active_layer;
+
     assert(img);
     if (!layer) {
         layer = layer_new(NULL);
@@ -369,7 +371,10 @@ layer_t *image_add_layer(image_t *img, layer_t *layer)
     layer->visible = true;
     layer->id = img_get_new_id(img);
     layer->material = img->active_material;
-    DL_APPEND(img->layers, layer);
+    if (below)
+        DL_PREPEND_ELEM(img->layers, below, layer);
+    else
+        DL_APPEND(img->layers, layer);
     img->active_layer = layer;
     return layer;
 }
@@ -377,6 +382,8 @@ layer_t *image_add_layer(image_t *img, layer_t *layer)
 layer_t *image_add_shape_layer(image_t *img)
 {
     layer_t *layer;
+    layer_t *below = img->active_layer;
+
     assert(img);
     layer = layer_new("shape");
     layer->visible = true;
@@ -390,7 +397,10 @@ layer_t *image_add_shape_layer(image_t *img)
         mat4_iscale(layer->mat, 4, 4, 4);
     }
     layer->id = img_get_new_id(img);
-    DL_APPEND(img->layers, layer);
+    if (below)
+        DL_PREPEND_ELEM(img->layers, below, layer);
+    else
+        DL_APPEND(img->layers, layer);
     img->active_layer = layer;
     return layer;
 }
