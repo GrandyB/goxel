@@ -892,7 +892,7 @@ static void placer_gui_history_preset_bar(void)
     need_sort = gui_calc_text_width("Sort:") + 8.f
             + gui_toolbar_segment_width("Time v##pl_sort_t") + 4.f
             + gui_toolbar_segment_width("Name v##pl_sort_n") + 4.f
-            + 8.f + gui_calc_text_width("Clear") + 24.f;
+            + 8.f + gui_calc_text_width("Clear history") + 24.f;
     if (gui_content_avail_x() < need_sort)
         gui_new_line();
     else
@@ -930,7 +930,7 @@ static void placer_gui_history_preset_bar(void)
         }
     }
     gui_same_line_spaced(8.f);
-    if (gui_button("Clear##pl_hist_clear", 0, 0))
+    if (gui_button("Clear history##pl_hist_clear", 0, 0))
         placer_past_files_clear();
 }
 
@@ -1049,7 +1049,7 @@ void placer_gui_history_floating(void)
         return;
     placer = (tool_placer_t *)goxel.tool;
 
-    gui_floating_panel_begin("Placer history##placer_history_win", 340.f, 420.f);
+    gui_floating_panel_begin("Placer history##placer_history_win", 440.f, 440.f);
     placer_gui_history_body(placer);
     gui_floating_panel_end();
 }

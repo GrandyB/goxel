@@ -184,7 +184,6 @@ void image_update(image_t *img)
 
 image_t *image_new(void)
 {
-    layer_t *layer;
     image_t *img = calloc(1, sizeof(*img));
     img->ref = 1;
     img->recent_color_count = 0;
@@ -194,13 +193,8 @@ image_t *image_new(void)
     img->export_height = 1024;
     image_add_material(img, NULL);
     image_add_camera(img, NULL);
-    layer = image_add_layer(img, NULL);
-    layer->visible = true;
-    layer->id = img_get_new_id(img);
-    layer->material = img->active_material;
-    DL_APPEND(img->layers, layer);
+    image_add_layer(img, NULL);
     DL_APPEND2(img->history, img, history_prev, history_next);
-    img->active_layer = layer;
     // Prevent saving an empty image.
     img->saved_key = image_get_key(img);
     return img;
@@ -358,10 +352,21 @@ void image_delete(image_t *img)
     free(img);
 }
 
-layer_t *image_add_layer(image_t *img, layer_t *layer)
+/* Link *layer* onto *img->layers*. Loaders and image_add_layer append in file
+ * order. The UI "new layer" command passes below_active so the row appears
+ * just under the selection (see gui_list's DL_FOREACH_REVERSE order). */
+static void image_link_layer_on_stack(image_t *img, layer_t *layer,
+                                      bool below_active)
 {
-    layer_t *below = img->active_layer;
+    if (below_active && img->active_layer)
+        DL_PREPEND_ELEM(img->layers, img->active_layer, layer);
+    else
+        DL_APPEND(img->layers, layer);
+}
 
+static layer_t *image_add_layer_impl(image_t *img, layer_t *layer,
+                                     bool below_active)
+{
     assert(img);
     if (!layer) {
         layer = layer_new(NULL);
@@ -371,20 +376,25 @@ layer_t *image_add_layer(image_t *img, layer_t *layer)
     layer->visible = true;
     layer->id = img_get_new_id(img);
     layer->material = img->active_material;
-    if (below)
-        DL_PREPEND_ELEM(img->layers, below, layer);
-    else
-        DL_APPEND(img->layers, layer);
+    image_link_layer_on_stack(img, layer, below_active);
     img->active_layer = layer;
     return layer;
 }
 
-layer_t *image_add_shape_layer(image_t *img)
+layer_t *image_add_layer(image_t *img, layer_t *layer)
+{
+    return image_add_layer_impl(img, layer, false);
+}
+
+layer_t *image_add_layer_below_active(image_t *img, layer_t *layer)
+{
+    return image_add_layer_impl(img, layer, true);
+}
+
+static layer_t *shape_layer_new_from_ui_state(image_t *img)
 {
     layer_t *layer;
-    layer_t *below = img->active_layer;
 
-    assert(img);
     layer = layer_new("shape");
     layer->visible = true;
     layer->shape = &shape_sphere;
@@ -397,10 +407,27 @@ layer_t *image_add_shape_layer(image_t *img)
         mat4_iscale(layer->mat, 4, 4, 4);
     }
     layer->id = img_get_new_id(img);
-    if (below)
-        DL_PREPEND_ELEM(img->layers, below, layer);
-    else
-        DL_APPEND(img->layers, layer);
+    return layer;
+}
+
+layer_t *image_add_shape_layer(image_t *img)
+{
+    layer_t *layer;
+
+    assert(img);
+    layer = shape_layer_new_from_ui_state(img);
+    image_link_layer_on_stack(img, layer, false);
+    img->active_layer = layer;
+    return layer;
+}
+
+layer_t *image_add_shape_layer_below_active(image_t *img)
+{
+    layer_t *layer;
+
+    assert(img);
+    layer = shape_layer_new_from_ui_state(img);
+    image_link_layer_on_stack(img, layer, true);
     img->active_layer = layer;
     return layer;
 }
@@ -408,8 +435,20 @@ layer_t *image_add_shape_layer(image_t *img)
 void image_delete_layer(image_t *img, layer_t *layer)
 {
     layer_t *other;
+    layer_t *sel_after_delete = NULL;
     assert(img);
     assert(layer);
+    /*
+     * Layers panel renders tail-to-head with DL_FOREACH_REVERSE (gui_list).
+     * The row visually below deleted is layer->prev. If deleting the bottom row
+     * (forward head img->layers), that index no longer exists: pick last row /
+     * new forward head layer->next.
+     */
+    if (layer->next != layer && img->layers) {
+        sel_after_delete = (layer == img->layers)
+                ? layer->next
+                : layer->prev;
+    }
     DL_DELETE(img->layers, layer);
     if (layer == img->active_layer) img->active_layer = NULL;
 
@@ -427,7 +466,12 @@ void image_delete_layer(image_t *img, layer_t *layer)
         layer->id = img_get_new_id(img);
         DL_APPEND(img->layers, layer);
     }
-    if (!img->active_layer) img->active_layer = img->layers->prev;
+    if (!img->active_layer) {
+        if (sel_after_delete)
+            img->active_layer = sel_after_delete;
+        else
+            img->active_layer = img->layers;
+    }
 }
 
 static void image_move_layer(image_t *img, layer_t *layer, int d)
@@ -924,7 +968,7 @@ ACTION_REGISTER(ACTION_layer_clear,
 
 static void a_image_add_layer(void)
 {
-    image_add_layer(goxel.image, NULL);
+    image_add_layer_below_active(goxel.image, NULL);
 }
 
 ACTION_REGISTER(ACTION_img_new_layer,
@@ -1111,7 +1155,7 @@ ACTION_REGISTER(ACTION_img_image_layer_to_volume,
 
 static void a_img_new_shape_layer(void)
 {
-    image_add_shape_layer(goxel.image);
+    image_add_shape_layer_below_active(goxel.image);
 }
 
 ACTION_REGISTER(ACTION_img_new_shape_layer,
