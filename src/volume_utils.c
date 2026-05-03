@@ -23,6 +23,22 @@
 
 #define N TILE_SIZE
 
+/*
+ * Merge / painter-op LRU-ish caches (utils/cache.c). Values are entry counts
+ * (cost 1 each). Larger sizes reduce thrashing with many layers/tiles; each
+ * miss does heavy work. Override at compile time if needed, e.g.
+ * -DVOLUME_MERGE_CACHE_SIZE=4096
+ */
+#ifndef VOLUME_OP_CACHE_SIZE
+#   define VOLUME_OP_CACHE_SIZE 128
+#endif
+#ifndef VOLUME_TILE_MERGE_CACHE_SIZE
+#   define VOLUME_TILE_MERGE_CACHE_SIZE 8192
+#endif
+#ifndef VOLUME_MERGE_CACHE_SIZE
+#   define VOLUME_MERGE_CACHE_SIZE 2048
+#endif
+
 // Used for the cache.
 static int volume_del(void *data_)
 {
@@ -367,7 +383,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     const float *sym_o = painter->symmetry_origin;
 
     // Check if the operation has been cached.
-    if (!cache) cache = cache_create(32);
+    if (!cache) cache = cache_create(VOLUME_OP_CACHE_SIZE);
     struct {
         uint64_t  id;
         float     box[4][4];
@@ -615,7 +631,7 @@ static void tile_merge(volume_t *volume, const volume_t *other, const int pos[3]
     }
 
     // Check if the merge op has been cached.
-    if (!cache) cache = cache_create(2048);
+    if (!cache) cache = cache_create(VOLUME_TILE_MERGE_CACHE_SIZE);
     struct {
         uint64_t id1;
         uint64_t id2;
@@ -678,7 +694,7 @@ void volume_merge(volume_t *volume, const volume_t *other, int mode,
     }
 
     // Check if the merge op has been cached.
-    if (!cache) cache = cache_create(512);
+    if (!cache) cache = cache_create(VOLUME_MERGE_CACHE_SIZE);
     id1 = volume_get_key(volume);
     id2 = volume_get_key(other);
     struct {
