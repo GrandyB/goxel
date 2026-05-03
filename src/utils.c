@@ -107,13 +107,12 @@ char *strsep(char **stringp, const char *delim) {
 }
 
 char* get_file_name_from_path(const char *path) {
-    char *token, *str, *tofree, *toRet = "Layer.";
+    char *token, *str, *tofree, *toRet = NULL;
 
-    tofree = str = strdup(path);  // We own str's memory now.
-    while ((token = strsep(&str, "\\"))) {
-        //LOG_D("Token: %s", token);
+    tofree = str = strdup(path);
+    while ((token = strsep(&str, "\\")))
         toRet = token;
-    };
+    toRet = strdup(toRet ? toRet : "Layer.");
     free(tofree);
     return strsep(&toRet, ".");
 }
