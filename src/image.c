@@ -867,7 +867,24 @@ void image_redo(image_t *img)
 static void image_clear_layer(void)
 {
     painter_t painter;
-    layer_t *layer = goxel.image->active_layer;
+    image_t *img = goxel.image;
+    layer_t *layer = img->active_layer;
+
+    if (!layer || !image_layer_can_edit(img, layer))
+        return;
+
+    /* Full-layer clear is a no-op if already empty. */
+    if (box_is_null(goxel.selection) && volume_is_empty(goxel.mask) &&
+            volume_is_empty(layer->volume))
+        return;
+
+    /*
+     * Snapshot must be taken before mutating the volume; action_exec's
+     * ACTION_TOUCH_IMAGE push runs after cfunc and would record the
+     * post-clear state (undo would not restore voxels).
+     */
+    image_history_push(img);
+
     if (box_is_null(goxel.selection) && volume_is_empty(goxel.mask)) {
         volume_clear(layer->volume);
         return;
@@ -964,7 +981,7 @@ ACTION_REGISTER(ACTION_layer_clear,
     .help = "Clear the current layer",
     .cfunc = image_clear_layer,
     .icon = ICON_DELETE,
-    .flags = ACTION_TOUCH_IMAGE,
+    .default_shortcut = "Delete",
 )
 
 static void a_image_add_layer(void)

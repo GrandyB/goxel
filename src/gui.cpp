@@ -42,6 +42,7 @@ bool gui_pan_scroll_behavior(int dir);
 #endif
 
 #include <cctype>
+#include <cstring>
 
 #define IM_VEC4_CLASS_EXTRA \
         ImVec4(const uint8_t f[4]) { \
@@ -204,6 +205,24 @@ static bool isCharPressed(int c)
     ImGuiContext& g = *GImGui;
     if (g.IO.InputQueueCharacters.Size == 0) return false;
     return g.IO.InputQueueCharacters[0] == c;
+}
+
+/*
+ * Multi-character shortcut tokens (same spelling as ACTION_REGISTER .shortcut).
+ * Return -1 if `token` is not a recognized name.
+ */
+static int shortcut_named_legacy_key(const char *token)
+{
+    static const struct {
+        const char *name;
+        int         key;
+    } map[] = {
+        {"Delete", KEY_DELETE},
+    };
+    if (!token || !token[0]) return -1;
+    for (unsigned i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if (strcmp(token, map[i].name) == 0) return map[i].key;
+    return -1;
 }
 
 #define COLOR(g, c, s) ({ \
@@ -460,9 +479,15 @@ static int check_action_shortcut(action_t *action, void *user)
     if (goxel.image && goxel.image->active_camera &&
         goxel.image->active_camera->mode == CAMERA_MODE_PLAYER &&
         !goxel.player_flycam_hold && !io.KeyCtrl) {
-        int c0 = std::tolower((unsigned char)s[0]);
-        if (c0 == 'w' || c0 == 'a' || c0 == 's' || c0 == 'd')
-            return 0;
+        /*
+         * Suppress WASD shortcuts in player movement mode only when the shortcut
+         * is a single-letter binding (otherwise "Delete" would be skipped wrongly).
+         */
+        if (strlen(s) == 1) {
+            int c0 = std::tolower((unsigned char)s[0]);
+            if (c0 == 'w' || c0 == 'a' || c0 == 's' || c0 == 'd')
+                return 0;
+        }
     }
     if (io.KeyCtrl) {
         if (!str_startswith(s, "Ctrl")) return 0;
@@ -474,8 +499,18 @@ static int check_action_shortcut(action_t *action, void *user)
     if (io.KeyShift) {
         check_key = false;
     }
+    if (strlen(s) != 1) {
+        int named = shortcut_named_legacy_key(s);
+        if (named >= 0 && check_key &&
+            ImGui::IsKeyPressed((ImGuiKey)named, false)) {
+            action_exec(action);
+            return 1;
+        }
+        return 0;
+    }
     if (    (check_char && isCharPressed(s[0])) ||
-            (check_key && ImGui::IsKeyPressed((ImGuiKey)s[0], false))) {
+            (check_key && ImGui::IsKeyPressed((ImGuiKey)(unsigned char)s[0],
+                                              false))) {
         action_exec(action);
         return 1;
     }
