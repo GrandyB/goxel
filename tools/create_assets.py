@@ -115,14 +115,17 @@ def posix_data_path(f):
 
 def create_file(f):
     data = open(f, 'rb').read()
-    size = len(data)
     c_path = posix_data_path(f)
     name = c_path.replace('/', '_').replace('.', '_').replace('-', '_')
     ext = f.split(".")[-1]
     if TYPES[ext]['text']:
-        size += 1 # So that we NULL terminate the string.
+        # Normalize line endings before measuring size so that the recorded
+        # size matches the C string literal (encode_str strips \r).
+        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        size = len(data) + 1 # +1 for NULL terminator.
         data = encode_str(data)
     else:
+        size = len(data)
         data = encode_bin(data)
     return File(c_path, name, data, size)
 
