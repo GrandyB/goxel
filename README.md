@@ -63,6 +63,12 @@ Changes in this fork
             - Can rotate the imported voxels non-destructively, offset from an origin point
             - Copy the current selection into the placer
             - Cut the current selection into the placer
+            - History pane with previews of models
+            - Options for randomised flip/rotates
+            - Options for colour replacement within models to a fixed or random colour
+        - New fill tool - floodfills current z with a colour, until it hits a boundary
+        - Palettes can be added/removed/edited
+        - Colour history bar stores 20 recent colours (and any noise settings), stored in the .gox file
         - Selection tool
             - Holding 'shift' temporarily switches to 'move' rather than 'resize' mode
             - 'Select entire layer' button
@@ -87,6 +93,8 @@ Changes in this fork
             - Speed
             - FOV
             - Manual X/Y/Z
+        - Player camera - with gravity and collisions
+            - WASD to move, Space to jump, Ctrl to crouch, hold Alt for noclip fly
         - Rotational camera (default) FOV setting (and its base value is higher than it was before); it also pivots around the block under the cursor
     - Image
         - "Crop to visible & reset origin", uses only visible layers, crops to the size of those layers, resets the origin
@@ -100,7 +108,7 @@ Changes in this fork
     - Hotkeys
         - Move plane up/down = < >
         - Plane visibility = /
-        - FPV Camera = #
+        - FPV/Player Camera = #
         - Select layer under cursor = '
     - UI
         - Always add arrows to number fields < >
