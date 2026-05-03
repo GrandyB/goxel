@@ -103,15 +103,19 @@ if target_os == 'posix':
     # Note: add '--static' to link with all the libs needed by glfw3.
     env.ParseConfig('pkg-config --libs glfw3')
 
-# Windows compilation support.
-if target_os == 'msys':
+# Windows compilation support (MinGW-w64).
+# MSYS2 shells often report PLATFORM as 'msys'; native Windows Python reports
+# 'win32'. Both need bundled GLEW (glew.c) and the same link flags.
+if target_os in ('msys', 'win32'):
     env.Append(CXXFLAGS=['-Wno-attributes', '-Wno-unused-variable',
                          '-Wno-unused-function'])
     env.Append(CCFLAGS=['-Wno-error=address']) # To remove if possible.
     env.Append(LIBS=['glfw3', 'opengl32', 'z', 'tre', 'gdi32', 'Comdlg32',
                      'ole32'],
                LINKFLAGS='--static')
-    sources += glob.glob('ext_src/glew/glew.c')
+    _glew_sources = glob.glob('ext_src/glew/glew.c')
+    sources += _glew_sources
+    goxel_info_sources += _glew_sources
     env.Append(CPPPATH=['ext_src/glew'])
     env.Append(CPPDEFINES=['GLEW_STATIC', 'FREE_WINDOWS'])
 
