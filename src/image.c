@@ -502,7 +502,8 @@ layer_t *image_duplicate_layer(image_t *img, layer_t *other)
                    layer_name_exists);
     layer->visible = true;
     layer->id = img_get_new_id(img);
-    DL_APPEND(img->layers, layer);
+    /* Place on the row beneath *other* (gui_list uses DL_FOREACH_REVERSE). */
+    DL_PREPEND_ELEM(img->layers, other, layer);
     img->active_layer = layer;
     return layer;
 }
