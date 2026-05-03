@@ -179,6 +179,7 @@ static int kvx_import_to_volume(const file_format_t *format, volume_t *volume,
     if (!path) return -1;
 
     file = fopen(path, "rb");
+    if (!file) return -1;
     size = READ(uint32_t, file);
     w = READ(uint32_t, file);
     h = READ(uint32_t, file);

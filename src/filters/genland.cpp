@@ -220,7 +220,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     // Variables for noise sampling, blending, and color computations
     double sampleX, sampleY, tempValue, grassBlend, secondaryBlend, riverNoise;
     // Array storing amplitude for each octave of noise
-    double octaveAmplitudes[settings->num_octaves];
+    double *octaveAmplitudes = (double *)calloc(settings->num_octaves, sizeof(double));
     // Base height samples and corrected height samples (for normal calculation)
     double baseSamples[3], correctedSamples[3];
     double normalX, normalY, normalZ;
@@ -231,7 +231,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     // Loop indices and temporary variables
     long octaveIndex, shadowIter, pixelX, pixelY, globalIndex, octave, progressPercent, maxAmbient, colorIndex;
     // Lookup table for noise mask values per octave
-    long maskLUT[settings->num_octaves];
+    long *maskLUT = (long *)calloc(settings->num_octaves, sizeof(long));
 
     printf("Heightmap generator by Tom Dobrowoski (http://ged.ax.pl/~tomkh)\n");
     printf("Assistance by Ken Silverman (http://advsys.net/ken)\n");
@@ -410,6 +410,8 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     // Process and integrate the voxel data into the volume structure
     process_voxel_data(volume, settings, buf);
 
+    free(octaveAmplitudes);
+    free(maskLUT);
     printf("Done!\n");
 }
 
