@@ -84,6 +84,15 @@ for root, dirnames, filenames in os.walk('src'):
         if filename.endswith('.c') or filename.endswith('.cpp'):
             sources.append(os.path.join(root, filename))
 
+# Separate goxel_info sources: everything except main.c and goxel_info.c,
+# plus goxel_info.c as the entry point.
+goxel_info_sources = [s for s in sources if os.path.basename(s) not in
+                      ('main.c', 'goxel_info.c')]
+goxel_info_sources.append('src/goxel_info.c')
+
+# Exclude goxel_info.c from the main goxel build.
+sources = [s for s in sources if os.path.basename(s) != 'goxel_info.c']
+
 # Check for libpng.
 if conf.CheckLibWithHeader('libpng', 'png.h', 'c'):
     env.Append(CPPDEFINES='HAVE_LIBPNG=1')
@@ -140,3 +149,4 @@ env.Append(
 )
 
 env.Program(target='goxel', source=sorted(sources))
+env.Program(target='goxel_info', source=sorted(goxel_info_sources))

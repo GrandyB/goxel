@@ -5,6 +5,7 @@
 .sconsign.dblite
 /.sconf_temp
 /goxel
+/goxel_info
 /imgui.ini
 /config.log
 .DS_Store

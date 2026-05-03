@@ -1563,7 +1563,7 @@ int goxel_import_file(const char *path, const char *format)
         } else {
             layer = image_add_layer(goxel.image, NULL);
         }
-        char *file_name = strdup(get_file_name_from_path(path));
+        char *file_name = get_file_name_from_path(path);
         char *path_copy = strdup(path);
         err = f->import_func(f, goxel.image, path_copy);
         if (!f->affect_current_layer) {
@@ -1596,6 +1596,7 @@ int goxel_import_file_to_volume(const char *path, const char *format, volume_t *
     const char *file_name = get_file_name_from_path(path);
     LOG_D("path: '%s' - file_name: '%s'", path, file_name);
     on_select(strdup(path), strdup(file_name), f);
+    free((void *)file_name);
     if (err) return err;
 
     return 0;

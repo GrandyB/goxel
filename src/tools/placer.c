@@ -687,7 +687,7 @@ void placer_past_files_load_gox(const char *data, size_t len) {
             }
             {
                 const char *path = path_start;
-                char *name = strdup(get_file_name_from_path(path));
+                char *name = get_file_name_from_path(path);
                 past_import_t *past, *f, *tmp;
 
                 if (!name) {
@@ -796,7 +796,8 @@ static void placer_import_selected_paths(tool_placer_t *placer, char *paths_mut)
         if (err)
             continue;
         file_name = get_file_name_from_path(token);
-        on_file_import(strdup(token), strdup(file_name), f);
+        on_file_import(strdup(token), file_name, f);
+        free((void *)file_name);
         post_import(placer);
     }
 }
@@ -1212,7 +1213,9 @@ static int gui(tool_t *tool)
         if (gui_button("Export placer content", -1, 0)) {
             const char* path = sys_get_save_path("", ff_export_current->exts, ff_export_current->exts_desc);
             ff_export_current->export_volume_func(ff_export_current, placer->imported_volume, path);
-            on_file_import(path, get_file_name_from_path(path), ff_export_current);
+            char *fname = get_file_name_from_path(path);
+            on_file_import(path, fname, ff_export_current);
+            free(fname);
         }
     } gui_section_end();
 

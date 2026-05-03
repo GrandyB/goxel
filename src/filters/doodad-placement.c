@@ -359,7 +359,7 @@ void handle_multi_file_selection(const char *paths, filter_doodadplacement_t *fi
 
     token = strtok_r(paths_copy, "|", &saveptr);
     while (token != NULL) {
-        const char *file_name = strdup(get_file_name_from_path(token));
+        const char *file_name = get_file_name_from_path(token);
         volume_t *vol = volume_new();
         goxel_import_file_to_volume(token, cur_file_format->name, vol, on_file_import);
         add_model(filter, file_name, token, vol);
