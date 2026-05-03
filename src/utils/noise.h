@@ -1,6 +1,10 @@
 #ifndef NOISE_H
 #define NOISE_H
 
+#ifndef NOISE_TEXTURE_SIZE
+#   define NOISE_TEXTURE_SIZE 512
+#endif
+
 #include <stdio.h>
 #include <math.h>
 #include <goxel.h>

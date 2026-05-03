@@ -330,6 +330,14 @@ void get_color_beneath(int start_pos[3], uint8_t* out) {
     memcpy(out, color, 4);
 }
 
+static inline int noise_tex_coord(int w)
+{
+    int m = w % NOISE_TEXTURE_SIZE;
+    if (m < 0)
+        m += NOISE_TEXTURE_SIZE;
+    return m;
+}
+
 void apply_noise_if_applicable(const painter_t* painter, float global_p[3], uint8_t col[4]) {
     if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
         float noise_value = uniform_noise(global_p[0], global_p[1], global_p[2]);
@@ -451,7 +459,10 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     // For every tile in the volume, iterate
     while (volume_iter(&iter, vp)) {
         vec3_set(p, vp[0] + 0.5, vp[1] + 0.5, vp[2] + 0.5);
-        vec3_set(global_p, iter.tile_pos[0]-p[0], iter.tile_pos[1]-p[1], iter.tile_pos[2]-p[2]);
+        vec3_set(global_p,
+                 (float)noise_tex_coord(vp[0]),
+                 (float)noise_tex_coord(vp[1]),
+                 (float)noise_tex_coord(vp[2]));
         if (use_box && !bbox_contains_vec(*painter->box, p)) continue;
         mat4_mul_vec3(mat, p, p);
         k = shape_func(p, size, painter->smoothness);
