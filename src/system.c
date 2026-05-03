@@ -102,8 +102,8 @@ void sys_log(const char *msg)
     if (sys_callbacks.log) {
         sys_callbacks.log(sys_callbacks.user, msg);
     } else {
-        printf("%s\n", msg);
-        fflush(stdout);
+        fprintf(stderr, "%s\n", msg);
+        fflush(stderr);
     }
 }
 
