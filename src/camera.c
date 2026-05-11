@@ -119,6 +119,38 @@ static void compute_clip(const float view_mat[4][4], float *near_, float *far_)
         }
     }
 
+    // If wrap preview is enabled, extend clipping for the 8 wrapped instances
+    // around the image box (same offsets as the render path).
+    if (goxel.wrap_view && !box_is_null(goxel.image->box)) {
+        float half[3], full[3];
+        float off[8][3];
+        box_get_size(goxel.image->box, half);
+        full[0] = half[0] * 2.0f;
+        full[1] = half[1] * 2.0f;
+        full[2] = half[2] * 2.0f;
+
+        off[0][0] = -full[0]; off[0][1] =  0;       off[0][2] = 0;
+        off[1][0] =  full[0]; off[1][1] =  0;       off[1][2] = 0;
+        off[2][0] =  0;       off[2][1] = -full[1]; off[2][2] = 0;
+        off[3][0] =  0;       off[3][1] =  full[1]; off[3][2] = 0;
+        off[4][0] = -full[0]; off[4][1] = -full[1]; off[4][2] = 0;
+        off[5][0] = -full[0]; off[5][1] =  full[1]; off[5][2] = 0;
+        off[6][0] =  full[0]; off[6][1] = -full[1]; off[6][2] = 0;
+        off[7][0] =  full[0]; off[7][1] =  full[1]; off[7][2] = 0;
+
+        box_get_vertices(goxel.image->box, vertices);
+        for (int oi = 0; oi < 8; oi++) {
+            for (i = 0; i < 8; i++) {
+                vec3_add(vertices[i], off[oi], p);
+                mat4_mul_vec3(view_mat, p, p);
+                if (p[2] < 0) {
+                    n = min(n, -p[2] - margin);
+                    f = max(f, -p[2] + margin);
+                }
+            }
+        }
+    }
+
     iter = volume_get_iterator(volume, VOLUME_ITER_TILES);
     while (volume_iter(&iter, bpos)) {
         vec3_set(p, bpos[0], bpos[1], bpos[2]);

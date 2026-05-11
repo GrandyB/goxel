@@ -81,6 +81,12 @@ void render_deinit(void);
 void render_volume(renderer_t *rend, const volume_t *volume,
                  const material_t *material,
                  int effects);
+
+// Render a volume without copying it (caller retains ownership).
+// The model matrix is applied as a base transform (in voxel units).
+void render_volume_ref(renderer_t *rend, const volume_t *volume,
+                       const material_t *material, int effects,
+                       const float model[4][4]);
 void render_grid(renderer_t *rend, const float plane[4][4],
                  const uint8_t color[4], const float clip_box[4][4]);
 void render_line(renderer_t *rend, const float a[3], const float b[3],

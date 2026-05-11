@@ -31,6 +31,53 @@
 goxel_t goxel = {};
 double g_time = 0.0;
 
+static void wrap_view_clear(void)
+{
+    if (goxel.wrap_view_volume) {
+        volume_delete(goxel.wrap_view_volume);
+        goxel.wrap_view_volume = NULL;
+    }
+    goxel.wrap_view_material = NULL;
+}
+
+static void wrap_view_build(void)
+{
+    painter_t painter;
+    wrap_view_clear();
+
+    if (box_is_null(goxel.image->box))
+        return;
+
+    goxel.wrap_view_volume = volume_copy(goxel_get_layers_volume(goxel.image));
+    painter = (painter_t){
+        .shape = &shape_cube,
+        .mode = MODE_INTERSECT,
+        .color = {255, 255, 255, 255},
+    };
+    volume_op(goxel.wrap_view_volume, &painter, goxel.image->box);
+
+    // Try to use the same material as the main render path.
+    // If multiple materials are used in the scene, fallback to active layer.
+    goxel.wrap_view_material = NULL;
+    {
+        const layer_t *rl = goxel_get_render_layers(false);
+        if (rl) goxel.wrap_view_material = rl->material;
+        if (!goxel.wrap_view_material)
+            goxel.wrap_view_material = goxel.image->active_layer->material;
+    }
+}
+
+void goxel_wrap_view_set(bool enabled)
+{
+    if (!enabled) {
+        wrap_view_clear();
+        goxel.wrap_view = false;
+        return;
+    }
+    goxel.wrap_view = true;
+    wrap_view_build();
+}
+
 /* ---- Player camera (CAMERA_MODE_PLAYER) --------------------------------- */
 #define GXL_P_GRAVITY       45.f
 #define GXL_P_JUMP_H        1.1f
@@ -558,6 +605,7 @@ void goxel_init(void)
 
 void goxel_reset(void)
 {
+    goxel_wrap_view_set(false);
     image_delete(goxel.image);
     goxel.image = image_new();
     placer_past_files_clear();
@@ -1296,6 +1344,33 @@ void goxel_render_view(const float viewport[4], bool render_mode)
     for (layer = goxel_get_render_layers(true); layer; layer = layer->next) {
         if (layer->visible && layer->volume)
             render_volume(rend, layer->volume, layer->material, effects);
+    }
+
+    if (goxel.wrap_view && goxel.wrap_view_volume) {
+        float half[3];
+        float full[3];
+        float off[8][3];
+        float m[4][4];
+        box_get_size(goxel.image->box, half);
+        full[0] = half[0] * 2.0f;
+        full[1] = half[1] * 2.0f;
+        full[2] = half[2] * 2.0f;
+
+        off[0][0] = -full[0]; off[0][1] =  0;       off[0][2] = 0;
+        off[1][0] =  full[0]; off[1][1] =  0;       off[1][2] = 0;
+        off[2][0] =  0;       off[2][1] = -full[1]; off[2][2] = 0;
+        off[3][0] =  0;       off[3][1] =  full[1]; off[3][2] = 0;
+        off[4][0] = -full[0]; off[4][1] = -full[1]; off[4][2] = 0;
+        off[5][0] = -full[0]; off[5][1] =  full[1]; off[5][2] = 0;
+        off[6][0] =  full[0]; off[6][1] = -full[1]; off[6][2] = 0;
+        off[7][0] =  full[0]; off[7][1] =  full[1]; off[7][2] = 0;
+
+        for (int i = 0; i < 8; i++) {
+            mat4_set_identity(m);
+            mat4_itranslate(m, off[i][0], off[i][1], off[i][2]);
+            render_volume_ref(rend, goxel.wrap_view_volume,
+                              goxel.wrap_view_material, effects, m);
+        }
     }
 
     if (!box_is_null(goxel.image->active_layer->box))

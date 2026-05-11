@@ -60,6 +60,8 @@ struct render_item_t
         volume_t        *volume;
         float           mat[4][4];
     };
+    float           volume_mat[4][4];
+    bool            owns_volume;
     material_t      material;
     uint8_t         color[4];
     float           clip_box[4][4];
@@ -570,7 +572,8 @@ static void compute_shadow_map_box(
 
 static void render_volume_(renderer_t *rend, volume_t *volume,
                          const material_t *material, int effects,
-                         const float shadow_mvp[4][4])
+                         const float shadow_mvp[4][4],
+                         const float base_model[4][4])
 {
     gl_shader_t *shader;
     float model[4][4], camera[4][4];
@@ -579,7 +582,8 @@ static void render_volume_(renderer_t *rend, volume_t *volume,
     bool shadow = false;
     volume_iterator_t iter;
 
-    mat4_set_identity(model);
+    if (base_model) mat4_copy(base_model, model);
+    else mat4_set_identity(model);
     get_light_dir(rend, light_dir);
 
     if (effects & EFFECT_MARCHING_CUBES)
@@ -683,7 +687,7 @@ static void render_volume_(renderer_t *rend, volume_t *volume,
     if (effects & EFFECT_SEE_BACK) {
         effects &= ~EFFECT_SEE_BACK;
         effects |= EFFECT_SEMI_TRANSPARENT;
-        render_volume_(rend, volume, material, effects, shadow_mvp);
+        render_volume_(rend, volume, material, effects, shadow_mvp, base_model);
     }
     GL(glDisable(GL_BLEND));
 }
@@ -723,6 +727,8 @@ void render_volume(renderer_t *rend, const volume_t *volume,
         item = calloc(1, sizeof(*item));
         item->type = ITEM_VOLUME;
         item->volume = volume_copy(volume);
+        mat4_set_identity(item->volume_mat);
+        item->owns_volume = true;
         item->material = *material;
         item->effects = effects | rend->settings.effects;
         item->effects &= ~(EFFECT_GRID | EFFECT_EDGES);
@@ -740,6 +746,8 @@ void render_volume(renderer_t *rend, const volume_t *volume,
         item = calloc(1, sizeof(*item));
         item->type = ITEM_VOLUME;
         item->volume = volume_copy(volume);
+        mat4_set_identity(item->volume_mat);
+        item->owns_volume = true;
         item->effects = EFFECT_GRID | EFFECT_BORDERS;
         item->material = *material;
         vec4_set(item->material.base_color, 0, 0, 0, alpha);
@@ -751,11 +759,37 @@ void render_volume(renderer_t *rend, const volume_t *volume,
         item = calloc(1, sizeof(*item));
         item->type = ITEM_VOLUME;
         item->volume = volume_copy(volume);
+        mat4_set_identity(item->volume_mat);
+        item->owns_volume = true;
         item->effects = EFFECT_EDGES | EFFECT_BORDERS;
         item->material = *material;
         vec4_set(item->material.base_color, 0, 0, 0, alpha);
         DL_APPEND(rend->items, item);
     }
+}
+
+void render_volume_ref(renderer_t *rend, const volume_t *volume,
+                       const material_t *material, int effects,
+                       const float model[4][4])
+{
+    render_item_t *item;
+    const material_t default_material = MATERIAL_DEFAULT;
+
+    if (volume == NULL) return;
+    material = material ?: &default_material;
+
+    item = calloc(1, sizeof(*item));
+    item->type = ITEM_VOLUME;
+    item->volume = (volume_t*)volume;
+    mat4_copy(model, item->volume_mat);
+    item->owns_volume = false;
+    item->material = *material;
+    item->effects = effects | rend->settings.effects;
+    item->effects &= ~(EFFECT_GRID | EFFECT_EDGES);
+    if (item->effects & EFFECT_RENDER_POS)
+        item->effects &= ~(EFFECT_SEMI_TRANSPARENT | EFFECT_SEE_BACK |
+                           EFFECT_MARCHING_CUBES);
+    DL_APPEND(rend->items, item);
 }
 
 static void render_model_item(renderer_t *rend, const render_item_t *item,
@@ -1012,7 +1046,8 @@ static void render_shadow_map(renderer_t *rend, float shadow_mvp[4][4])
         if (item->type == ITEM_VOLUME) {
             effects = (item->effects & EFFECT_MARCHING_CUBES);
             effects |= EFFECT_SHADOW_MAP;
-            render_volume_(&srend, item->volume, &item->material, effects, NULL);
+            render_volume_(&srend, item->volume, &item->material, effects, NULL,
+                           item->volume_mat);
         }
     }
     mat4_copy(bias_mat, ret);
@@ -1095,8 +1130,9 @@ void render_submit(renderer_t *rend, const float viewport[4],
         switch (item->type) {
         case ITEM_VOLUME:
             render_volume_(rend, item->volume, &item->material, item->effects,
-                         shadow_mvp);
-            volume_delete(item->volume);
+                         shadow_mvp, item->volume_mat);
+            if (item->owns_volume)
+                volume_delete(item->volume);
             break;
         case ITEM_MODEL3D:
             render_model_item(rend, item, viewport);

@@ -35,6 +35,10 @@ void gui_view_panel(void)
         gui_color_small(COLORS[i].label, COLORS[i].color);
     }
     gui_checkbox("Hide box", &goxel.hide_box, NULL);
+    if (gui_checkbox("Wrap", &goxel.wrap_view,
+            "Create a one-time copy of the image and place 8 of them around the outside of the box, simulating the wrap. Untick and re-tick to regenerate the wrapping pieces")) {
+        goxel_wrap_view_set(goxel.wrap_view);
+    }
 
     gui_text("Effects");
 
