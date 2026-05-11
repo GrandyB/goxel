@@ -460,6 +460,7 @@ static void post_import(tool_placer_t *placer)
     center_origin(placer);
     placer->uniform_scale = 1.f;
     placer->preview_scale = 1.f;
+    placer_scale_custom_pct = 100.f;
 }
 
 static int on_drag(gesture3d_t *gest, void *user)
