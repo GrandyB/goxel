@@ -76,6 +76,9 @@ static void center_origin(layer_t *layer)
 }
 
 int degX = 0, degY = 0, degZ = 0;
+static bool move_scale_custom = false;
+static float move_scale_custom_pct = 100.f;
+
 static int gui(tool_t *tool)
 {
     layer_t *layer;
@@ -149,6 +152,20 @@ static int gui(tool_t *tool)
     if (gui_button("x2", -1, 0)) mat4_iscale(mat, 2, 2, 2);
     if (gui_button("x0.5", -1, 0)) mat4_iscale(mat, 0.5, 0.5, 0.5);
     gui_row_end();
+
+    if (gui_checkbox("Custom", &move_scale_custom,
+                     "Apply a custom, possibly destructive, scaling")) {
+        if (move_scale_custom)
+            move_scale_custom_pct = 100.f;
+    }
+    if (move_scale_custom) {
+        gui_input_float("%", &move_scale_custom_pct, 1.f, 0.f, 100.f, "%.2f");
+        if (gui_button("Apply", -1, 0)) {
+            float m = move_scale_custom_pct / 100.f;
+            if (m > 1e-6f)
+                mat4_iscale(mat, m, m, m);
+        }
+    }
     gui_group_end();
 
     if (layer_is_volume(layer)) {

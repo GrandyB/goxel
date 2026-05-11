@@ -67,6 +67,9 @@ enum {
 static file_format_t *ff_import_current = NULL;
 static file_format_t *ff_export_current = NULL;
 
+static bool placer_scale_custom = false;
+static float placer_scale_custom_pct = 100.f;
+
 typedef struct {
     tool_t tool;
 
@@ -81,6 +84,8 @@ typedef struct {
     float origin[3]; // relative offset of origin from the center
     float last_curs_pos[3];
     float rot[4][4]; // current rotation applied to the doodad; modified by the GUI, applied to a copy of imported_volume_orig, which is then set back to imported_volume
+    float uniform_scale; // uniform scale relative to imported_volume_orig (1 = original size)
+    float preview_scale; // extra uniform scale for hover/place preview only (imported_volume unchanged)
 
     // Gesture start and last pos (should we put it in the 3d gesture?)
     float start_pos[3];
@@ -93,6 +98,7 @@ typedef struct {
         int        mode;
         uint64_t   volume_key;
         uint32_t   cr_stamp_seq;
+        float      preview_scale;
     } last_op;
 
     struct {
@@ -160,6 +166,34 @@ static void move_to(tool_placer_t *placer, float curs_pos[3]) {
     update_bbox(placer);
 }
 
+/* Pivot matching apply_rotation / layer placement (world-space). */
+static void placer_hover_pivot(const tool_placer_t *placer, float out[3])
+{
+    vec3_set(out,
+             floorf(placer->mat[3][0]) + 0.5f,
+             floorf(placer->mat[3][1]) + 0.5f,
+             floorf(placer->mat[3][2]) + 0.5f);
+    vec3_add(out, placer->center, out);
+    vec3_add(out, placer->origin, out);
+}
+
+static void placer_stamp_preview_scale(tool_placer_t *placer, volume_t *stamp)
+{
+    float m[4][4], pivot[3];
+
+    if (!(placer->preview_scale > 0.f))
+        placer->preview_scale = 1.f;
+    if (fabsf(placer->preview_scale - 1.f) <= 1e-6f)
+        return;
+    placer_hover_pivot(placer, pivot);
+    mat4_copy(mat4_identity, m);
+    mat4_itranslate(m, pivot[0], pivot[1], pivot[2]);
+    mat4_iscale(m, placer->preview_scale, placer->preview_scale,
+                placer->preview_scale);
+    mat4_itranslate(m, -pivot[0], -pivot[1], -pivot[2]);
+    volume_move(stamp, m);
+}
+
 static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
         float m[4][4] = MAT4_IDENTITY;
         float origin[3];
@@ -179,6 +213,8 @@ static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
         // (same mechanic as do_move)
         mat4_itranslate(m, +origin[0], +origin[1], +origin[2]);
         mat4_imul(m, placer->rot);
+        mat4_iscale(m, placer->uniform_scale, placer->uniform_scale,
+                    placer->uniform_scale);
         mat4_itranslate(m, -origin[0], -origin[1], -origin[2]);
         volume_t *copy = volume_copy(placer->imported_volume_orig);
         volume_move(copy, placer->mat);
@@ -190,6 +226,8 @@ static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
         mat4_copy(mat4_identity, m);
         mat4_itranslate(m, +placer->origin[0], +placer->origin[1], +placer->origin[2]);
         mat4_imul(m, placer->rot);
+        mat4_iscale(m, placer->uniform_scale, placer->uniform_scale,
+                     placer->uniform_scale);
         mat4_itranslate(m, -placer->origin[0], -placer->origin[1], -placer->origin[2]);
 
         float imat[4][4];
@@ -294,11 +332,13 @@ static bool check_can_skip(tool_placer_t *placer, const cursor_t *curs)
     if (    pressed == placer->last_op.pressed &&
             placer->last_op.volume_key == volume_get_key(volume) &&
             placer->last_op.cr_stamp_seq == placer->color_replace_stamp_seq &&
+            placer->last_op.preview_scale == placer->preview_scale &&
             vec3_equal(curs->pos, placer->last_op.pos)) {
         return true;
     }
     placer->last_op.pressed = pressed;
     placer->last_op.volume_key = volume_get_key(volume);
+    placer->last_op.preview_scale = placer->preview_scale;
     vec3_copy(curs->pos, placer->last_op.pos);
     return false;
 }
@@ -418,6 +458,8 @@ static void post_import(tool_placer_t *placer)
 {
     placer->imported_volume_orig = volume_copy(placer->imported_volume);
     center_origin(placer);
+    placer->uniform_scale = 1.f;
+    placer->preview_scale = 1.f;
 }
 
 static int on_drag(gesture3d_t *gest, void *user)
@@ -451,25 +493,27 @@ static int on_hover(gesture3d_t *gest, void *user)
     if (gest->state == GESTURE_END || !curs->snaped) {
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
+        volume_delete(volume);
         return 0;
     }
 
-    if (goxel.tool_volume && check_can_skip(placer, curs))
+    if (goxel.tool_volume && check_can_skip(placer, curs)) {
+        volume_delete(volume);
         return 0;
+    }
     
     if (placer->imported_volume && curs->snaped) {
         volume_t *stamp;
 
         move_to(placer, curs->pos);
 
-        if (placer->color_replace_mode != PLACER_CR_NONE) {
-            stamp = volume_copy(placer->imported_volume);
+        stamp = volume_copy(placer->imported_volume);
+        if (placer->color_replace_mode != PLACER_CR_NONE)
             placer_stamp_apply_color_replace(placer, stamp);
-            volume_merge(volume, stamp, MODE_OVER, NULL);
-            volume_delete(stamp);
-        } else {
-            volume_merge(volume, placer->imported_volume, MODE_OVER, NULL);
-        }
+        placer_stamp_preview_scale(placer, stamp);
+        volume_merge(volume, stamp, MODE_OVER, NULL);
+        volume_delete(stamp);
+
         if (!goxel.tool_volume) goxel.tool_volume = volume_new();
         volume_set(goxel.tool_volume, volume);
         placer->last_op.cr_stamp_seq = placer->color_replace_stamp_seq;
@@ -486,6 +530,11 @@ static int iter(tool_t *tool, const painter_t *painter,
 {
     goxel_set_help_text("Click to brush - there are hotkeys for changing modes etc! TIP: Holding shift will toggle line mode.");
     tool_placer_t *placer = (tool_placer_t*)tool;
+
+    if (!(placer->uniform_scale > 0.f))
+        placer->uniform_scale = 1.f;
+    if (!(placer->preview_scale > 0.f))
+        placer->preview_scale = 1.f;
 
     placer_color_replace_apply_defaults(placer);
     cursor_t *curs = &goxel.cursor;
@@ -572,6 +621,8 @@ static void reset(tool_placer_t* placer) {
     vec3_set(placer->origin, 0, 0, 0);
     vec3_set(placer->last_curs_pos, 0, 0, 0);
     mat4_copy(mat4_identity, placer->rot);
+    placer->uniform_scale = 1.f;
+    placer->preview_scale = 1.f;
 }
 typedef struct past_import past_import_t;
 struct past_import {
@@ -1091,6 +1142,11 @@ static int gui(tool_t *tool)
     tool_placer_t *placer = (tool_placer_t*)tool;
     int prev_cr_mode;
 
+    if (!(placer->uniform_scale > 0.f))
+        placer->uniform_scale = 1.f;
+    if (!(placer->preview_scale > 0.f))
+        placer->preview_scale = 1.f;
+
     placer_color_replace_apply_defaults(placer);
     float rotation[4][4] = MAT4_IDENTITY;
     float rot_degs[3];
@@ -1323,6 +1379,40 @@ static int gui(tool_t *tool)
                                    placer->random_flip_xy_mode == PLACER_RAND_FLIP_XY))
                     placer->random_flip_xy_mode = PLACER_RAND_FLIP_XY;
                 gui_combo_end();
+            }
+        }
+        gui_section_end();
+
+        if (gui_section_begin("Scale", true)) {
+            gui_row_begin(3);
+            if (gui_button("x2", -1, 0)) {
+                placer->preview_scale *= 2.f;
+            }
+            if (gui_button("x0.5", -1, 0)) {
+                placer->preview_scale *= 0.5f;
+            }
+            if (gui_button("Reset##placer_scale", -1, 0)) {
+                placer->uniform_scale = 1.f;
+                placer->preview_scale = 1.f;
+                placer_scale_custom_pct = 100.f;
+                changed = true;
+            }
+            gui_row_end();
+
+            if (gui_checkbox("Custom", &placer_scale_custom,
+                             "Apply a custom, possibly destructive, scaling")) {
+                if (placer_scale_custom)
+                    placer_scale_custom_pct = placer->uniform_scale * 100.f;
+            }
+            if (placer_scale_custom) {
+                if (gui_input_float("%", &placer_scale_custom_pct, -1.f, 0.f,
+                                    500.f, "%.2f")) {
+                    float s = placer_scale_custom_pct / 100.f;
+                    if (s < 1e-6f)
+                        s = 1e-6f;
+                    placer->uniform_scale = s;
+                    changed = true;
+                }
             }
         }
         gui_section_end();

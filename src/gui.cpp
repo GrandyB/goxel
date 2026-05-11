@@ -1109,19 +1109,39 @@ bool gui_input_float(const char *label, float *v, float step,
     float button_width = 20; // Compute exactly.
     const char *left_utf = "◀";
     const char *right_utf = "▶";
-    float v_speed = step / 10;
-    //bool show_arrows = false;
-    //bool is_active = false;
-    //bool unbounded = false;
-    //ImGuiID key;
-    //ImGuiStorage *storage = ImGui::GetStateStorage();
+    bool snap_grid;
+    float snap_quant;
+    float arrow_step;
+    float v_speed;
 
     if (minv == 0.f && maxv == 0.f) {
         minv = -FLT_MAX;
         maxv = +FLT_MAX;
     }
-    if (step == 0.f) step = 0.1f;
+
+    if (step < 0.f) {
+        snap_grid = false;
+        arrow_step = -step;
+        snap_quant = 0.f;
+    } else {
+        snap_grid = true;
+        if (step == 0.f)
+            snap_quant = 0.1f;
+        else
+            snap_quant = step;
+        arrow_step = snap_quant;
+    }
+
     if (!format) format = "%.1f";
+
+    if (!snap_grid) {
+        if (maxv > minv && minv > -FLT_MAX / 4.f && maxv < FLT_MAX / 4.f)
+            v_speed = (maxv - minv) * 0.003f;
+        else
+            v_speed = 1.f;
+    } else {
+        v_speed = snap_quant / 10;
+    }
 
     ImGui::PushID(label);
 
@@ -1143,51 +1163,31 @@ bool gui_input_float(const char *label, float *v, float step,
     ImGui::BeginGroup();
     ImGui::PushButtonRepeat(true);
 
-    // if (minv == -FLT_MAX || maxv == +FLT_MAX) {
-    //     key = ImGui::GetID("show_arrows");
-    //     show_arrows = storage->GetBool(key, false);
-    // }
-
-    //if (show_arrows) {
         if (ImGui::Button(left_utf)) {
-            (*v) -= step;
+            (*v) -= arrow_step;
             ret = true;
         }
         ImGui::SameLine();
         ImGui::PushItemWidth(
                 ImGui::GetContentRegionAvail().x - button_width);
         ret = ImGui::DragFloat("", v, v_speed, minv, maxv, format) || ret;
-        //is_active = ImGui::IsItemActive();
         ImGui::PopItemWidth();
         ImGui::SameLine();
         if (ImGui::Button(right_utf)) {
-            (*v) += step;
+            (*v) += arrow_step;
             ret = true;
         }
-    //} 
-    // else {
-    //     ImGui::SetNextItemWidth(-1);
-    //     if (unbounded) {
-    //         ret = ImGui::DragFloat("", v, step, minv, maxv, format);
-    //     } else {
-    //         ret = slider_float(v, minv, maxv, format);
-    //     }
-
-    //     is_active = ImGui::IsItemActive();
-    // }
 
     ImGui::PopButtonRepeat();
     ImGui::PopStyleVar(1);
     ImGui::PopStyleColor(7);
     ImGui::EndGroup();
-    // if (unbounded) {
-    //     storage->SetBool(key, ret || is_active || ImGui::IsItemHovered());
-    // }
     ImGui::PopID();
 
     if (ret) {
         *v = clamp(*v, minv, maxv);
-        *v = floor(*v / step) * step;
+        if (snap_grid && snap_quant > 0.f)
+            *v = floor(*v / snap_quant) * snap_quant;
         on_click();
     }
     return ret;
