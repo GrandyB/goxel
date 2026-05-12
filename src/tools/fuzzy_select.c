@@ -177,14 +177,25 @@ static int gui(tool_t *tool_)
     if (gui_button("Fill", 1, 0)) {
         uint64_t k0 = volume_get_key(volume);
         image_history_push(goxel.image);
-        volume_t *vol = volume_copy(goxel.mask);
-        float box[4][4] = MAT4_IDENTITY;
+        // Build a paint volume covering the mask's AABB using volume_op so
+        // painter features (noise, color_blend) are applied per voxel.
+        // We start from an empty volume (not a copy of the mask) to avoid
+        // white voxels bleeding through, and override the painter's shape
+        // and box so they can't restrict the fill area. After painting,
+        // we intersect with the mask to clip the result to the selection
+        // before merging it onto the layer.
+        volume_t *vol = volume_new();
+        float box[4][4];
         volume_get_box(goxel.mask, true, box);
-        int existing_mode = goxel.painter.mode;
-        goxel.painter.mode = MODE_PAINT;
-        volume_op(vol, &goxel.painter, box);
+        painter_t p = goxel.painter;
+        p.mode = MODE_OVER;
+        p.shape = &shape_cube;
+        p.box = NULL;
+        p.symmetry = 0;
+        volume_op(vol, &p, box);
+        volume_merge(vol, goxel.mask, MODE_INTERSECT, NULL);
         volume_merge(volume, vol, MODE_OVER, NULL);
-        goxel.painter.mode = existing_mode;
+        volume_delete(vol);
         if (volume_get_key(volume) != k0)
             image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     }
