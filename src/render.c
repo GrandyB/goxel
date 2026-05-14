@@ -851,15 +851,19 @@ void render_grid(renderer_t *rend, const float plane[4][4],
 }
 
 void render_img(renderer_t *rend, texture_t *tex, const float mat[4][4],
-                int effects)
+                int effects, float opacity)
 {
-    render_item_t *item = calloc(1, sizeof(*item));
+    render_item_t *item;
+    opacity = clamp(opacity, 0.f, 1.f);
+
+    item = calloc(1, sizeof(*item));
     item->type = ITEM_MODEL3D;
     mat ? mat4_copy(mat, item->mat) : mat4_set_identity(item->mat);
     item->proj_screen = !mat || (effects & EFFECT_PROJ_SCREEN);
     item->tex = texture_copy(tex);
     item->model3d = g_rect_model;
     copy_color(NULL, item->color);
+    item->color[3] = (uint8_t)(opacity * 255.f + 0.5f);
     item->effects = effects;
     DL_APPEND(rend->items, item);
 }

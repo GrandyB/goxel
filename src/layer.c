@@ -28,6 +28,8 @@ layer_t *layer_new(const char *name)
     layer->volume = volume_new();
     theme_get_color(THEME_GROUP_WIDGET, THEME_COLOR_INNER, false, layer->marker_color);
     layer->marker_color[3] = 255.0f;
+    layer->opacity = 1.f;
+    layer->volume_snap = true;
     mat4_set_identity(layer->mat);
     return layer;
 }
@@ -69,6 +71,8 @@ layer_t *layer_copy(layer_t *other)
     layer->ref = 1;
     memcpy(layer->name, other->name, sizeof(layer->name));
     layer->visible = other->visible;
+    layer->opacity = other->opacity;
+    layer->volume_snap = other->volume_snap;
     layer->volume = volume_copy(other->volume);
     layer->image = texture_copy(other->image);
     layer->material = other->material;

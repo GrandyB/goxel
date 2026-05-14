@@ -148,6 +148,8 @@ static layer_t *layer_clone(layer_t *other)
     mat4_set_identity(layer->mat);
     layer->base_id = other->id;
     layer->base_volume_key = volume_get_key(other->volume);
+    layer->opacity = other->opacity;
+    layer->volume_snap = other->volume_snap;
     return layer;
 }
 
@@ -923,6 +925,7 @@ uint32_t image_get_key(const image_t *img)
     DL_FOREACH(img->layers, layer) {
         k = layer_get_key(layer);
         key = XXH32(&k, sizeof(k), key);
+        key = XXH32(&layer->opacity, sizeof(layer->opacity), key);
     }
     DL_FOREACH(img->cameras, camera) {
         k = camera_get_key(camera);

@@ -33,6 +33,10 @@ struct layer {
     const material_t  *material;
     int         id;         // Uniq id in the image (for clones).
     bool        visible;
+    /* 0..1; multiplies layer alpha when rendering (default 1). */
+    float       opacity;
+    /* If false, layer voxels are skipped for SNAP_VOLUME / pick ray (default true). */
+    bool        volume_snap;
     char        name[256];  // 256 chars max.
     float       box[4][4];  // Bounding box.
     float       mat[4][4];

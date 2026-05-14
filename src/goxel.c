@@ -19,6 +19,7 @@
 #include "goxel.h"
 #include "script.h"
 #include "xxhash.h"
+#include <math.h>
 #include "../ext_src/stb/stb_ds.h"
 
 #include "shader_cache.h"
@@ -466,7 +467,7 @@ int goxel_unproject(const float viewport[4],
         if (!(snap_mask & (1 << i))) continue;
         if ((1 << i) == SNAP_VOLUME) {
             r = goxel_unproject_on_volume(viewport, pos,
-                            goxel_get_layers_volume(goxel.image), p, n);
+                            goxel_get_layers_volume_for_snap(goxel.image), p, n);
         }
         if ((1 << i) == SNAP_PLANE)
             r = goxel_unproject_on_plane(viewport, pos,
@@ -893,7 +894,8 @@ static int on_rotate(const gesture_t *gest, void *user)
             // Try to detect a voxel under the mouse cursor for distance-based rotation
             float voxel_pos[3], voxel_normal[3];
             bool found_voxel = goxel_unproject_on_volume(
-                gest->viewport, gest->pos, goxel_get_layers_volume(goxel.image), 
+                gest->viewport, gest->pos,
+                goxel_get_layers_volume_for_snap(goxel.image),
                 voxel_pos, voxel_normal);
 
             if (found_voxel) {
@@ -962,7 +964,7 @@ static int on_zoom(const gesture_t *gest, void *user)
     camera->dist *= pow(1.1, -zoom);
     // Auto adjust the camera rotation position.
     if (goxel_unproject_on_volume(gest->viewport, gest->pos,
-                                goxel_get_layers_volume(goxel.image), p, n)) {
+                                goxel_get_layers_volume_for_snap(goxel.image), p, n)) {
         camera_set_target(camera, p);
     }
     return 0;
@@ -1034,7 +1036,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         camera->dist *= pow(1.1, -inputs->mouse_wheel);
         // Auto adjust the camera rotation position.
         if (goxel_unproject_on_volume(viewport, inputs->touches[0].pos,
-                                goxel_get_layers_volume(goxel.image), p, n)) {
+                                goxel_get_layers_volume_for_snap(goxel.image), p, n)) {
             camera_set_target(camera, p);
         }
         return;
@@ -1126,7 +1128,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     // XXX: this should be an action!
     if (inputs->keys['C'] && (!camera_is_player(camera) || player_alt_fly)) {
         if (goxel_unproject_on_volume(viewport, inputs->touches[0].pos,
-                                goxel_get_layers_volume(goxel.image), p, n)) {
+                                goxel_get_layers_volume_for_snap(goxel.image), p, n)) {
             camera_set_target(camera, p);
         }
     }
@@ -1199,7 +1201,8 @@ static void render_pathtrace_view(const float viewport[4])
     mat4_iscale(mat, min(a, 1.f), min(1.f / a, 1.f), 1);
     texture_set_data(pt->texture, pt->buf, pt->w, pt->h, 4);
     render_img(&goxel.rend, pt->texture, mat,
-               EFFECT_NO_SHADING | EFFECT_PROJ_SCREEN | EFFECT_ANTIALIASING);
+               EFFECT_NO_SHADING | EFFECT_PROJ_SCREEN | EFFECT_ANTIALIASING,
+               1.f);
     render_submit(&goxel.rend, viewport, goxel.back_color);
 }
 
@@ -1342,8 +1345,18 @@ void goxel_render_view(const float viewport[4], bool render_mode)
     effects |= goxel.view_effects;
 
     for (layer = goxel_get_render_layers(true); layer; layer = layer->next) {
-        if (layer->visible && layer->volume)
-            render_volume(rend, layer->volume, layer->material, effects);
+        if (layer->visible && layer->volume) {
+            material_t mat_buf;
+            const material_t *mat = layer->material;
+            float o = clamp(layer->opacity, 0.f, 1.f);
+            if (o <= 0.f) continue;
+            if (o < 1.f - 1e-5f) {
+                mat_buf = mat ? *mat : MATERIAL_DEFAULT;
+                mat_buf.base_color[3] *= o;
+                mat = &mat_buf;
+            }
+            render_volume(rend, layer->volume, mat, effects);
+        }
     }
 
     if (goxel.wrap_view && goxel.wrap_view_volume) {
@@ -1380,7 +1393,8 @@ void goxel_render_view(const float viewport[4], bool render_mode)
     // Render all the image layers.
     DL_FOREACH(goxel.image->layers, layer) {
         if (layer->visible && layer->image)
-            render_img(rend, layer->image, layer->mat, EFFECT_NO_SHADING);
+            render_img(rend, layer->image, layer->mat, EFFECT_NO_SHADING,
+                       clamp(layer->opacity, 0.f, 1.f));
     }
 
     render_box(rend, goxel.selection, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
@@ -1455,6 +1469,32 @@ const volume_t *goxel_get_layers_volume(const image_t *img)
     return goxel.layers_volume_;
 }
 
+const volume_t *goxel_get_layers_volume_for_snap(const image_t *img)
+{
+    uint32_t key = 0, k;
+    layer_t *layer;
+
+    image_update((image_t *)img);
+    DL_FOREACH(img->layers, layer) {
+        if (!layer->visible) continue;
+        if (!layer->volume) continue;
+        k = volume_get_key(layer->volume);
+        key = XXH32(&k, sizeof(k), key);
+        key = XXH32(&layer->volume_snap, sizeof(layer->volume_snap), key);
+    }
+    if (key != goxel.layers_snap_volume_hash) {
+        goxel.layers_snap_volume_hash = key;
+        if (!goxel.layers_snap_volume_) goxel.layers_snap_volume_ = volume_new();
+        volume_clear(goxel.layers_snap_volume_);
+        DL_FOREACH(img->layers, layer) {
+            if (!layer->visible) continue;
+            if (!layer->volume_snap) continue;
+            volume_merge(goxel.layers_snap_volume_, layer->volume, MODE_OVER, NULL);
+        }
+    }
+    return goxel.layers_snap_volume_;
+}
+
 const volume_t *goxel_get_render_volume(const image_t *img)
 {
     uint32_t key, k;
@@ -1514,7 +1554,8 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview)
             }
 
             if (    goxel.render_layers &&
-                    goxel.render_layers->prev->material == layer->material)
+                    goxel.render_layers->prev->material == layer->material &&
+                    fabsf(goxel.render_layers->prev->opacity - layer->opacity) < 1e-4f)
             {
                 volume_merge(goxel.render_layers->prev->volume, layer->volume,
                            MODE_OVER, NULL);

@@ -80,6 +80,8 @@ int main(int argc, char **argv) {
             printf("{\"name\":");
             print_json_string(layer->name);
             printf(",\"visible\":%s", layer->visible ? "true" : "false");
+            printf(",\"opacity\":%g", (double)layer->opacity);
+            printf(",\"volume_snap\":%s", layer->volume_snap ? "true" : "false");
             printf(",\"id\":%d", layer->id);
 
             if (layer->volume) {

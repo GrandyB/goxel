@@ -505,6 +505,9 @@ typedef struct goxel
     volume_t   *layers_volume_;
     uint32_t   layers_volume_hash;
 
+    volume_t   *layers_snap_volume_;
+    uint32_t   layers_snap_volume_hash;
+
     volume_t   *render_volume_; // All the layers + tool volume.
     uint32_t   render_volume_hash;
 
@@ -655,6 +658,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
                          bool capture_keys);
 
 const volume_t *goxel_get_layers_volume(const image_t *img);
+const volume_t *goxel_get_layers_volume_for_snap(const image_t *img);
 const volume_t *goxel_get_render_volume(const image_t *img);
 
 /*

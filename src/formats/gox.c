@@ -61,7 +61,9 @@
  *          4 bytes: y
  *          4 bytes: z
  *          4 bytes: 0
- *      [DICT]
+ *      [DICT] entries include:
+ *          opacity: float in 0..1 (default 1)
+ *          vol_snap: bool, if false the layer is skipped for snap-to-volume
  *
  *  CAMR: a camera:
  *      [DICT] containing the following entries:
@@ -396,6 +398,10 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
         }
         chunk_write_dict_value(&c, out, "visible", &layer->visible,
                                sizeof(layer->visible));
+        chunk_write_dict_value(&c, out, "opacity", &layer->opacity,
+                               sizeof(layer->opacity));
+        chunk_write_dict_value(&c, out, "vol_snap", &layer->volume_snap,
+                               sizeof(layer->volume_snap));
 
         chunk_write_finish(&c, out);
     }
@@ -674,6 +680,17 @@ int load_from_file(const char *path, bool replace)
                 DICT_CPY("marker_color", layer->marker_color);
                 DICT_CPY("color", layer->color);
                 DICT_CPY("visible", layer->visible);
+                if (strcmp(dict_key, "opacity") == 0 &&
+                    dict_value_size == sizeof(layer->opacity)) {
+                    memcpy(&layer->opacity, dict_value, sizeof(layer->opacity));
+                    if (layer->opacity < 0.f) layer->opacity = 0.f;
+                    if (layer->opacity > 1.f) layer->opacity = 1.f;
+                }
+                if (strcmp(dict_key, "vol_snap") == 0 &&
+                    dict_value_size == sizeof(layer->volume_snap)) {
+                    memcpy(&layer->volume_snap, dict_value,
+                           sizeof(layer->volume_snap));
+                }
                 if (DICT_CPY("material", material_idx))
                     layer->material = get_material(goxel.image, material_idx);
             }

@@ -66,7 +66,7 @@ bool tool_uses_map_recent_colors(const tool_t *t)
 static int pick_color_gesture(gesture3d_t *gest, void *user)
 {
     cursor_t *curs = &goxel.cursor;
-    const volume_t *volume = goxel_get_layers_volume(goxel.image);
+    const volume_t *volume = goxel_get_layers_volume_for_snap(goxel.image);
     int pi[3] = {floor(curs->pos[0]),
                  floor(curs->pos[1]),
                  floor(curs->pos[2])};

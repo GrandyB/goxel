@@ -95,7 +95,7 @@ void render_box(renderer_t *rend, const float box[4][4],
                 const uint8_t color[4], int effects);
 void render_sphere(renderer_t *rend, const float mat[4][4]);
 void render_img(renderer_t *rend, texture_t *tex, const float mat[4][4],
-                int efffects);
+                int effects, float opacity);
 
 /*
  * Function: render_img2

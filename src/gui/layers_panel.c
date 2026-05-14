@@ -18,6 +18,10 @@
 
 #include "goxel.h"
 
+/* Height reserved under the scrollable layer list (toolbar, crop, bbox,
+ * marker/opacity/snap, shape tools, material). Keep in sync when adding widgets. */
+#define LAYERS_PANEL_BOTTOM_RESERVE_PX 290
+
 static void toggle_layer_only_visible(layer_t *layer)
 {
     layer_t *other;
@@ -65,7 +69,8 @@ void gui_layers_panel_impl(bool inner_scroll)
     int bbox[2][3];
 
     if (inner_scroll) {
-        gui_scrollable_begin(gui_get_available_height() - 210);
+        gui_scrollable_begin(gui_get_available_height() -
+                              LAYERS_PANEL_BOTTOM_RESERVE_PX);
     }
     gui_list(&(gui_list_t) {
         .items = (void**)&goxel.image->layers,
@@ -128,9 +133,13 @@ void gui_layers_panel_impl(bool inner_scroll)
     if (bounded)
         gui_bbox(layer->box);
     
-    if (layer) {
-        gui_color_small("Marker color", layer->marker_color);
+    {
+        float opc = layer->opacity * 100.f;
+        slider_float("Opacity", &opc, 0.f, 100.f, "%.0f %%");
+        layer->opacity = clamp(opc / 100.f, 0.f, 1.f);
     }
+    gui_checkbox("Volume snap", &layer->volume_snap,
+                 "When off, voxels in this layer are ignored for snap to volume");
 
     if (layer->shape) {
         tool_gui_drag_mode(&goxel.tool_drag_mode);

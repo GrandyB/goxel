@@ -88,16 +88,19 @@ struct pathtracer_internal {
 };
 
 // Add a material to the scene and return its id.
-static int add_material(pathtracer_t *pt, const material_t *mat)
+static int add_material(pathtracer_t *pt, const material_t *mat,
+                        float opacity_mul = 1.f)
 {
     const material_t default_mat = MATERIAL_DEFAULT;
     if (!mat) mat = &default_mat;
+    if (opacity_mul < 0.f) opacity_mul = 0.f;
+    if (opacity_mul > 1.f) opacity_mul = 1.f;
     pt->p->scene.materials.push_back({
         .emission = {mat->emission[0], mat->emission[1], mat->emission[2]},
         .color = {mat->base_color[0], mat->base_color[1], mat->base_color[2]},
         .roughness = mat->roughness,
         .metallic = mat->metallic,
-        .opacity = mat->base_color[3],
+        .opacity = mat->base_color[3] * opacity_mul,
     });
     return pt->p->scene.materials.size() - 1;
 }
@@ -167,6 +170,7 @@ static int check_changes(pathtracer_t *pt)
         if (!layer->visible || !layer->volume) continue;
         k = volume_get_key(layer->volume);
         key = XXH32(&k, sizeof(k), key);
+        key = XXH32(&layer->opacity, sizeof(layer->opacity), key);
     }
     key = XXH32(goxel.back_color, sizeof(goxel.back_color), key);
     key = XXH32(&goxel.rend.settings.effects,
@@ -295,7 +299,7 @@ static void update_scene(pathtracer_t *pt)
                         (float)tile_pos[1],
                         (float)tile_pos[2]}),
                 .shape = (int)(p->scene.shapes.size() - 1),
-                .material = add_material(pt, layer->material),
+                .material = add_material(pt, layer->material, layer->opacity),
             });
         }
     }
