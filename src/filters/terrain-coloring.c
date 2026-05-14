@@ -20,6 +20,8 @@
  * Terrain coloring extracted from genland.cpp (Tom Dobrowolski / Ken Silverman):
  * slope-based grass tones, water tint, ambient, directional light, shadow
  * rays, shadow blur, and final merge — applied to existing voxel columns.
+ *
+ * Optional phantom height for normals; optional rugged luminance on grass albedo.
  */
 
 #include "goxel.h"
@@ -29,6 +31,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+/* Phantom height for normals: h' = z_top + k × noise3d (shadows / grass z use real tops). */
+static const float k_terrain_normal_height_noise_amp = 0.5f;
 
 /* ---- Improved Perlin-style noise (same logic as genland.cpp) ---- */
 
@@ -133,6 +138,31 @@ static double terrain_cell_hash(int x, int y, int seed)
     return (double)(u & 65535u) / 32768.0 - 1.0;
 }
 
+/* Perlin (tight in xy) + cell hash: multiplicative scale on RGB (preserves hue).
+ * strength is usually (UI × grass mask); clamped below. */
+static void terrain_apply_rugged_color(double *r, double *g, double *b, int x, int y,
+                                       int seed, double strength)
+{
+    if (strength <= 1e-9)
+        return;
+    const double st = min(max(strength, 0.0), 24.0);
+    /* ~64% Perlin / 36% uncorrelated cell noise (two hashes averaged). */
+    const double kP = 0.64;
+    /* Higher xy scale → finer Perlin variation over the voxel grid. */
+    const double ps = 0.74;
+    const double p =
+        noise3d((double)x * ps + 0.41, (double)y * ps - 0.19, 1.07, 31);
+    const double h =
+        0.5 * terrain_cell_hash(x, y, seed + 2011) +
+        0.5 * terrain_cell_hash(x + 97, y - 43, seed + 2711);
+    const double n = min(max(kP * p + (1.0 - kP) * h, -1.0), 1.0);
+    const double swing = min(0.22 * st, 0.58);
+    const double m = 1.0 + swing * n;
+    *r = min(max(*r * m, 0.0), 255.0);
+    *g = min(max(*g * m, 0.0), 255.0);
+    *b = min(max(*b * m, 0.0), 255.0);
+}
+
 /* ---- Filter state ---- */
 
 typedef struct
@@ -163,11 +193,13 @@ typedef struct
      * out (softer grass when column tops are discrete integers).
      */
     int normal_half_span;
-    /* Scales raw slope+noise grass signal before clamp; >1 restores punch with
-     * wide normal half-span. */
-    float grass_tone_strength;
     /* High-frequency Perlin + per-cell hash added to raw grass signal. */
     float grass_detail_noise;
+    /* Scales max(-normalZ,0)^exponent · gain in rawGrass (exponent 1 = Genland-like). */
+    float grass_slope_exponent;
+    float grass_slope_gain;
+    /* Voxel units in denominator for height term h0/scale (was fixed 32). */
+    float grass_height_scale;
     /* Bottom voxel rows (z = 0 .. N-1) use water albedo + lighting. */
     int water_bottom_layers;
     /* Scales Perlin + hash variation on water (tint strength + water RGB). */
@@ -175,6 +207,8 @@ typedef struct
     /* When Soften shadow map is on: symmetric box radius in cells (1 = 3×3
      * average, 2 = 5×5, …). Uses toroidal wrap like the shadow cast pass. */
     int shadow_blur_blocks;
+    /* Multiplicative rugged on grass-tinted land albedo only (0 = off). */
+    float rugged_color_noise;
 } filter_terrain_coloring_t;
 
 static const terrain_coloring_settings_t default_terrain_coloring_settings = {
@@ -183,8 +217,8 @@ static const terrain_coloring_settings_t default_terrain_coloring_settings = {
     .color_grass1 = {72, 80, 32, 255},
     .color_grass2 = {68, 78, 40, 255},
     .color_water = {60, 100, 120, 255},
-    .shadow_factor = 32.f,
-    .ambience_factor = 0.3f,
+    .shadow_factor = 33.f,
+    .ambience_factor = 0.22f,
 };
 
 static void reset_settings(filter_terrain_coloring_t *filter)
@@ -268,9 +302,12 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
                                    bool step_grass_tones, bool step_water_tint,
                                    bool step_ambient, bool step_directional,
                                    bool step_shadow_cast, bool step_shadow_smooth,
-                                   int normal_half_span, float grass_tone_strength,
-                                   float grass_detail_noise, int water_bottom_layers,
-                                   float water_noise_strength, int shadow_blur_blocks)
+                                   int normal_half_span, float grass_detail_noise,
+                                   float grass_slope_exponent, float grass_slope_gain,
+                                   float grass_height_scale,
+                                   int water_bottom_layers,
+                                   float water_noise_strength, int shadow_blur_blocks,
+                                   float rugged_color_noise)
 {
     float box[4][4];
     int dimensions[3], start_pos[3];
@@ -306,6 +343,7 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
     uint8_t *wamb_r = NULL;
     uint8_t *wamb_g = NULL;
     uint8_t *wamb_b = NULL;
+    float *h_normal = NULL;
 
     hgt = calloc((size_t)n, sizeof(float));
     amb_r = calloc((size_t)n, 1);
@@ -344,6 +382,28 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
         }
     }
 
+    const float amp = k_terrain_normal_height_noise_amp;
+    const float *h_slope = hgt;
+    if (amp > 1e-5f) {
+        h_normal = calloc((size_t)n, sizeof(float));
+        if (h_normal) {
+            for (int y = 0; y < gh; y++) {
+                for (int x = 0; x < gw; x++) {
+                    const int idx = y * gw + x;
+                    if (hgt[idx] < -500.0f) {
+                        h_normal[idx] = -1000.0f;
+                        continue;
+                    }
+                    const double n =
+                        noise3d((double)x * 0.18 + 0.03, (double)y * 0.18 - 0.07,
+                                0.71, 31);
+                    h_normal[idx] = hgt[idx] + amp * (float)n;
+                }
+            }
+            h_slope = h_normal;
+        }
+    }
+
     /* Pass 2: material + lighting terms (genland inner loop, height from mesh) */
     for (int y = 0; y < gh; y++) {
         for (int x = 0; x < gw; x++) {
@@ -352,9 +412,11 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
             if (h0 < -500.0f)
                 continue;
 
+            const float h0_slope = h_normal ? h_normal[idx] : h0;
+
             float hx, hy;
-            terrain_column_slopes(hgt, gw, gh, x, y, h0, normal_half_span, &hx,
-                                  &hy);
+            terrain_column_slopes(h_slope, gw, gh, x, y, h0_slope, normal_half_span,
+                                  &hx, &hy);
             double normalX = (double)hx;
             double normalY = (double)hy;
             double normalZ = -1.0;
@@ -367,12 +429,18 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
             double groundRed = s->color_ground[0];
             double groundGreen = s->color_ground[1];
             double groundBlue = s->color_ground[2];
+            double grass_mask = 0.0;
 
             if (step_grass_tones) {
-                const double gts =
-                    min(max((double)grass_tone_strength, 0.0), 5.0);
                 const double gdn =
                     min(max((double)grass_detail_noise, 0.0), 3.0);
+                const double slope_exp =
+                    min(max((double)grass_slope_exponent, 0.05), 8.0);
+                const double slope_g =
+                    min(max((double)grass_slope_gain, 0.0), 10.0);
+                const double h_scale =
+                    max((double)grass_height_scale, 0.5);
+
                 const double macroN =
                     noise3d(x * (1.0 / 64.0), y * (1.0 / 64.0), 0.3, 15) * 0.3;
                 const double fineN =
@@ -380,10 +448,18 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
                             1.88, 31) *
                     0.38;
                 const double cellN = terrain_cell_hash(x, y, s->seed);
-                const double rawGrass =
-                    max(-normalZ, 0.0) * 1.4 - (double)h0 / 32.0 + macroN +
+
+                const double s_up =
+                    min(max(-normalZ, 0.0), 1.0);
+                const double slope_term =
+                    slope_g * pow(s_up, slope_exp);
+                const double detail_raw =
                     gdn * (0.55 * fineN + 0.4 * cellN);
-                double grassBlend = min(max(rawGrass * gts, 0.0), 1.0);
+                const double rawGrass =
+                    slope_term - (double)h0 / h_scale + macroN +
+                    detail_raw;
+                double grassBlend = min(max(rawGrass, 0.0), 1.0);
+                grass_mask = grassBlend;
                 groundRed += (s->color_grass1[0] - groundRed) * grassBlend;
                 groundGreen += (s->color_grass1[1] - groundGreen) * grassBlend;
                 groundBlue += (s->color_grass1[2] - groundBlue) * grassBlend;
@@ -460,6 +536,10 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
                 groundGreen += (wG_t - groundGreen) * secondaryBlend;
                 groundBlue += (wB_t - groundBlue) * secondaryBlend;
             }
+
+            terrain_apply_rugged_color(&groundRed, &groundGreen, &groundBlue, x, y,
+                                       s->seed,
+                                       (double)rugged_color_noise * grass_mask);
 
             double sunLight = 1.0;
             if (step_directional) {
@@ -614,6 +694,7 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
     }
 
 cleanup:
+    free(h_normal);
     free(hgt);
     free(amb_r);
     free(amb_g);
@@ -645,17 +726,35 @@ static int gui(filter_t *filter_)
             "Slope uses (height[x+k]-height[x-k]) / (2k) with k = this value. "
             "Integer column tops make k=1 look blocky; k=2 uses neighbors two "
             "steps away for a softer normal (default 2).");
-        gui_input_float("Grass tone strength", &filter->grass_tone_strength,
-                        0.05f, 0.25f, 3.0f, "%.2f");
-        gui_tooltip_if_hovered(
-            "Multiplies slope+noise before blending to grass colours. "
-            "Use 1 for genland-like weighting; raise (e.g. 1.3–2) when a larger "
-            "normal half-span softens normals and washes colour out.");
         gui_input_float("Grass detail noise", &filter->grass_detail_noise, 0.02f,
                         0.0f, 3.0f, "%.2f");
         gui_tooltip_if_hovered(
             "Adds high-frequency Perlin plus per-cell variation on top of the "
             "smooth genland macro noise (0 = macro only).");
+        gui_input_float("Rugged grass noise", &filter->rugged_color_noise, 0.05f,
+                        0.f, 24.f, "%.2f");
+        gui_tooltip_if_hovered(
+            "After grass/water surface tint: scales land RGB (multiplicative) only "
+            "where grass tones apply — strength scales with grass blend. "
+            "Does not affect pure ground or water-bottom voxels. 0 = off.");
+        if (gui_collapsing_header("Grass slope & height", false)) {
+            gui_input_float("Slope exponent", &filter->grass_slope_exponent, 0.05f,
+                            0.2f, 8.f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Exponent on flatness max(-n_z,0) (clamped 0–1) before slope gain. "
+                "1 = linear like the old fixed formula; >1 favors ground on "
+                "steeper faces.");
+            gui_input_float("Slope gain", &filter->grass_slope_gain, 0.05f, 0.f,
+                            10.f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Multiplier on the slope term (old hardcoded 1.4). Lower = more "
+                "ground on slopes.");
+            gui_input_float("Height scale (voxels)", &filter->grass_height_scale,
+                            1.f, 1.f, 200.f, "%.1f");
+            gui_tooltip_if_hovered(
+                "Grass raw term uses h_top / scale; larger = slower falloff of "
+                "grass with height (default 32).");
+        }
         gui_checkbox("Water tint (low vs neighbors)", &filter->step_water_tint,
                      "Blend toward water colour in local bowls (lower than "
                      "neighbour average, damped by local height spread).");
@@ -717,9 +816,11 @@ static int gui(filter_t *filter_)
             layer->volume, &filter->settings, filter->step_grass_tones, filter->step_water_tint,
             filter->step_ambient, filter->step_directional, filter->step_shadow_cast,
             filter->step_shadow_smooth, filter->normal_half_span,
-            filter->grass_tone_strength, filter->grass_detail_noise,
+            filter->grass_detail_noise,
+            filter->grass_slope_exponent, filter->grass_slope_gain,
+            filter->grass_height_scale,
             filter->water_bottom_layers, filter->water_noise_strength,
-            filter->shadow_blur_blocks);
+            filter->shadow_blur_blocks, filter->rugged_color_noise);
     }
     gui_label_size_pop();
     return 0;
@@ -736,15 +837,18 @@ static void on_open(filter_t *filter_)
     filter->step_shadow_cast = true;
     filter->step_shadow_smooth = true;
     filter->normal_half_span = 3;
-    filter->grass_tone_strength = 0.75f;
-    filter->grass_detail_noise = 0.16f;
+    filter->grass_detail_noise = 0.2f;
+    filter->grass_slope_exponent = 1.65f;
+    filter->grass_slope_gain = 1.3f;
+    filter->grass_height_scale = 32.f;
     filter->water_bottom_layers = 1;
     filter->water_noise_strength = 0.32f;
     filter->shadow_blur_blocks = 1;
+    filter->rugged_color_noise = 1.7f;
 }
 
 FILTER_REGISTER(terrain_coloring, filter_terrain_coloring_t,
                 .name = "Generation - Terrain Coloring",
                 .on_open = on_open,
-                .panel_width = 360,
+                .panel_width = 400,
                 .gui_fn = gui, )
