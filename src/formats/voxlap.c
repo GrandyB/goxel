@@ -73,6 +73,13 @@ static void swap_color(uint32_t v, uint8_t ret[4])
     ret[3] = o[3];
 }
 
+/* Inverse of swap_color: on-disk KV6 dword layout read by kv6_import. */
+static uint32_t pack_kv6_color(const uint8_t v[4])
+{
+    return (uint32_t)v[2] | ((uint32_t)v[1] << 8) | ((uint32_t)v[0] << 16)
+         | ((uint32_t)v[3] << 24);
+}
+
 static int kv6_import_to_volume(const file_format_t *format, volume_t *volume,
                       const char *path)
 {
@@ -526,12 +533,152 @@ static int kvx_export(const file_format_t *format, const image_t *image,
     return 0;
 }
 
+static int kv6_export(const file_format_t *format, const image_t *image,
+                      const char *path)
+{
+    FILE *file;
+    volume_iterator_t iter;
+    volume_accessor_t acc;
+    uint8_t v[4];
+    float box[4][4];
+    int size[3], orig[3], x, y;
+    UT_array *voxels;
+    voxel_t voxel, *vox;
+    uint32_t *xoffsets;
+    uint16_t *xyoffsets;
+    size_t blklen;
+    float pivot[3];
+    const volume_t *volume = goxel_get_layers_volume(image);
+
+    UT_icd voxel_icd = {sizeof(voxel_t), NULL, NULL, NULL};
+    (void)format;
+
+    mat4_copy(image->box, box);
+    if (box_is_null(box)) volume_get_box(volume, true, box);
+
+    size[0] = box[0][0] * 2;
+    size[1] = box[1][1] * 2;
+    size[2] = box[2][2] * 2;
+    orig[0] = box[3][0] - box[0][0];
+    orig[1] = box[3][1] - box[1][1];
+    orig[2] = box[3][2] - box[2][2];
+
+    file = fopen(path, "wb");
+    if (!file)
+        return -1;
+
+    utarray_new(voxels, &voxel_icd);
+    iter = volume_get_iterator(volume,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    acc = volume_get_accessor(volume);
+
+    while (volume_iter(&iter, voxel.pos)) {
+        volume_get_at(volume, &iter, voxel.pos, v);
+        if (v[3] < 127) continue;
+
+        if (!bbox_contains_vec(box,
+                    (float[]){voxel.pos[0], voxel.pos[1], voxel.pos[2]}))
+            continue;
+
+        voxel.vis = 0;
+        #define vis_test(dx, dy, dz) \
+            (volume_get_alpha_at(volume, &acc, \
+                        (int[]){voxel.pos[0] + (dx), \
+                                voxel.pos[1] + (dy), \
+                                voxel.pos[2] + (dz)}) < 127)
+        if (vis_test(-1,  0,  0)) voxel.vis |= 1;
+        if (vis_test(+1,  0,  0)) voxel.vis |= 2;
+        if (vis_test( 0, +1,  0)) voxel.vis |= 4;
+        if (vis_test( 0, -1,  0)) voxel.vis |= 8;
+        if (vis_test( 0,  0, +1)) voxel.vis |= 16;
+        if (vis_test( 0,  0, -1)) voxel.vis |= 32;
+        #undef vis_test
+        if (!voxel.vis) continue;
+
+        voxel.color = (int)pack_kv6_color(v);
+
+        voxel.pos[0] -= orig[0];
+        voxel.pos[1] -= orig[1];
+        voxel.pos[2] -= orig[2];
+
+        voxel.pos[1] = size[1] - voxel.pos[1] - 1;
+        voxel.pos[2] = size[2] - voxel.pos[2] - 1;
+
+        assert(voxel.pos[0] >= 0 && voxel.pos[0] < size[0]);
+        assert(voxel.pos[1] >= 0 && voxel.pos[1] < size[1]);
+        assert(voxel.pos[2] >= 0 && voxel.pos[2] < size[2]);
+
+        utarray_push_back(voxels, &voxel);
+    }
+
+    utarray_sort(voxels, voxel_cmp);
+
+    xoffsets = calloc(size[0], sizeof(*xoffsets));
+    xyoffsets = calloc((size_t)size[0] * (size_t)size[1], sizeof(*xyoffsets));
+    if (!xoffsets || !xyoffsets) {
+        free(xoffsets);
+        free(xyoffsets);
+        utarray_free(voxels);
+        fclose(file);
+        return -1;
+    }
+
+    for (vox = (void*)utarray_front(voxels); vox;
+         vox = (void*)utarray_next(voxels, vox)) {
+        xyoffsets[vox->pos[0] * size[1] + vox->pos[1]]++;
+    }
+
+    for (x = 0; x < size[0]; x++) {
+        uint32_t sum = 0;
+        for (y = 0; y < size[1]; y++)
+            sum += xyoffsets[x * size[1] + y];
+        xoffsets[x] = sum;
+    }
+
+    blklen = utarray_len(voxels);
+
+    fwrite("Kvxl", 1, 4, file);
+    WRITE(uint32_t, (uint32_t)size[0], file);
+    WRITE(uint32_t, (uint32_t)size[1], file);
+    WRITE(uint32_t, (uint32_t)size[2], file);
+
+    pivot[0] = -orig[0] + (size[0] % 2) / 2.f;
+    pivot[1] = -orig[1] + (size[1] % 2) / 2.f;
+    pivot[2] = (float)size[2] - orig[2];
+
+    WRITE(float, pivot[0], file);
+    WRITE(float, pivot[1], file);
+    WRITE(float, pivot[2], file);
+
+    WRITE(uint32_t, (uint32_t)blklen, file);
+
+    for (vox = (void*)utarray_front(voxels); vox;
+         vox = (void*)utarray_next(voxels, vox)) {
+        WRITE(uint32_t, (uint32_t)vox->color, file);
+        WRITE(uint16_t, (uint16_t)vox->pos[2], file);
+        WRITE(uint8_t, (uint8_t)vox->vis, file);
+        WRITE(uint8_t, 0, file);
+    }
+
+    for (x = 0; x < size[0]; x++)
+        WRITE(uint32_t, xoffsets[x], file);
+    for (x = 0; x < size[0] * size[1]; x++)
+        WRITE(uint16_t, xyoffsets[x], file);
+
+    free(xoffsets);
+    free(xyoffsets);
+    utarray_free(voxels);
+    fclose(file);
+    return 0;
+}
+
 FILE_FORMAT_REGISTER(kv6,
     .name = "kv6",
     .exts = {"*.kv6"},
     .exts_desc = "slab",
     .import_func = kv6_import,
     .import_volume_func = kv6_import_to_volume,
+    .export_func = kv6_export,
 )
 
 FILE_FORMAT_REGISTER(kvx,
