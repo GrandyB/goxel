@@ -174,6 +174,8 @@ typedef struct
     uint8_t color_water[4];
     float shadow_factor;
     float ambience_factor;
+    /* Scales N·L after fixed sun direction (genland-style); was hardcoded 1.2. */
+    float directional_light_intensity;
 } terrain_coloring_settings_t;
 
 typedef struct
@@ -207,8 +209,12 @@ typedef struct
     /* When Soften shadow map is on: symmetric box radius in cells (1 = 3×3
      * average, 2 = 5×5, …). Uses toroidal wrap like the shadow cast pass. */
     int shadow_blur_blocks;
+    /* Voxel z per cell along the shadow ray (genland default 0.44); sun elevation. */
+    float shadow_sun_height_step;
     /* Multiplicative rugged on grass-tinted land albedo only (0 = off). */
     float rugged_color_noise;
+    /* After first-time defaults; reopening the panel does not wipe settings. */
+    bool settings_initialized;
 } filter_terrain_coloring_t;
 
 static const terrain_coloring_settings_t default_terrain_coloring_settings = {
@@ -216,14 +222,36 @@ static const terrain_coloring_settings_t default_terrain_coloring_settings = {
     .color_ground = {140, 125, 115, 255},
     .color_grass1 = {72, 80, 32, 255},
     .color_grass2 = {68, 78, 40, 255},
-    .color_water = {60, 100, 120, 255},
+    .color_water = {50, 90, 110, 255},
     .shadow_factor = 33.f,
     .ambience_factor = 0.22f,
+    .directional_light_intensity = 1.2f,
 };
 
 static void reset_settings(filter_terrain_coloring_t *filter)
 {
     filter->settings = default_terrain_coloring_settings;
+}
+
+static void terrain_coloring_reset_all_defaults(filter_terrain_coloring_t *filter)
+{
+    reset_settings(filter);
+    filter->step_grass_tones = true;
+    filter->step_water_tint = true;
+    filter->step_ambient = true;
+    filter->step_directional = true;
+    filter->step_shadow_cast = true;
+    filter->step_shadow_smooth = true;
+    filter->normal_half_span = 3;
+    filter->grass_detail_noise = 0.2f;
+    filter->grass_slope_exponent = 1.65f;
+    filter->grass_slope_gain = 1.3f;
+    filter->grass_height_scale = 32.f;
+    filter->water_bottom_layers = 1;
+    filter->water_noise_strength = 0.32f;
+    filter->shadow_blur_blocks = 1;
+    filter->shadow_sun_height_step = 0.44f;
+    filter->rugged_color_noise = 1.4f;
 }
 
 static int wrap_coord(int v, int m)
@@ -307,6 +335,7 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
                                    float grass_height_scale,
                                    int water_bottom_layers,
                                    float water_noise_strength, int shadow_blur_blocks,
+                                   float shadow_sun_height_step,
                                    float rugged_color_noise)
 {
     float box[4][4];
@@ -543,9 +572,11 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
 
             double sunLight = 1.0;
             if (step_directional) {
+                const double dirI =
+                    min(max((double)s->directional_light_intensity, 0.0), 4.0);
                 sunLight = (normalX * 0.5 + normalY * 0.25 - normalZ) /
                     sqrt(0.5 * 0.5 + 0.25 * 0.25 + 1.0 * 1.0);
-                sunLight *= 1.2;
+                sunLight *= dirI;
             }
 
             int maxAmbient = 0;
@@ -613,15 +644,16 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
     /* Shadows (genland): height field must stay float for comparison */
     if (step_shadow_cast) {
         const int shadow_range = max(8, max(gw, gh) / 4);
+        const float sun_step = max(shadow_sun_height_step, 1e-4f);
         memset(sh, 0, (size_t)n);
         for (int y = 0; y < gh; y++) {
             for (int x = 0; x < gw; x++) {
                 const int idx = y * gw + x;
                 if (hgt[idx] < -500.0f)
                     continue;
-                float shadowCheckValue = hgt[idx] + 0.44f;
+                float shadowCheckValue = hgt[idx] + sun_step;
                 for (int shadowIter = 1, octaveIndex = 1; octaveIndex < shadow_range;
-                     shadowIter++, octaveIndex++, shadowCheckValue += 0.44f) {
+                     shadowIter++, octaveIndex++, shadowCheckValue += sun_step) {
                     int sy = wrap_coord(y - (shadowIter >> 1), gh);
                     int sx = wrap_coord(x - octaveIndex, gw);
                     if (hgt[sy * gw + sx] > shadowCheckValue) {
@@ -713,87 +745,6 @@ static int gui(filter_t *filter_)
     terrain_coloring_settings_t *st = &filter->settings;
 
     gui_label_size_push(170.0f);
-    goxel_set_help_text(
-        "Re-colors solid columns using the genland material and lighting "
-        "pipeline, driven by the current top surface height.");
-
-    if (gui_collapsing_header("Steps", false)) {
-        gui_checkbox("Grass tones", &filter->step_grass_tones,
-                     "Blend ground toward grass colors using slope and 3D noise.");
-        gui_input_int("Normal half-span (voxels)", &filter->normal_half_span, 1,
-                      8);
-        gui_tooltip_if_hovered(
-            "Slope uses (height[x+k]-height[x-k]) / (2k) with k = this value. "
-            "Integer column tops make k=1 look blocky; k=2 uses neighbors two "
-            "steps away for a softer normal (default 2).");
-        gui_input_float("Grass detail noise", &filter->grass_detail_noise, 0.02f,
-                        0.0f, 3.0f, "%.2f");
-        gui_tooltip_if_hovered(
-            "Adds high-frequency Perlin plus per-cell variation on top of the "
-            "smooth genland macro noise (0 = macro only).");
-        gui_input_float("Rugged grass noise", &filter->rugged_color_noise, 0.05f,
-                        0.f, 24.f, "%.2f");
-        gui_tooltip_if_hovered(
-            "After grass/water surface tint: scales land RGB (multiplicative) only "
-            "where grass tones apply — strength scales with grass blend. "
-            "Does not affect pure ground or water-bottom voxels. 0 = off.");
-        if (gui_collapsing_header("Grass slope & height", false)) {
-            gui_input_float("Slope exponent", &filter->grass_slope_exponent, 0.05f,
-                            0.2f, 8.f, "%.2f");
-            gui_tooltip_if_hovered(
-                "Exponent on flatness max(-n_z,0) (clamped 0–1) before slope gain. "
-                "1 = linear like the old fixed formula; >1 favors ground on "
-                "steeper faces.");
-            gui_input_float("Slope gain", &filter->grass_slope_gain, 0.05f, 0.f,
-                            10.f, "%.2f");
-            gui_tooltip_if_hovered(
-                "Multiplier on the slope term (old hardcoded 1.4). Lower = more "
-                "ground on slopes.");
-            gui_input_float("Height scale (voxels)", &filter->grass_height_scale,
-                            1.f, 1.f, 200.f, "%.1f");
-            gui_tooltip_if_hovered(
-                "Grass raw term uses h_top / scale; larger = slower falloff of "
-                "grass with height (default 32).");
-        }
-        gui_checkbox("Water tint (low vs neighbors)", &filter->step_water_tint,
-                     "Blend toward water colour in local bowls (lower than "
-                     "neighbour average, damped by local height spread).");
-        gui_input_int("Water bottom layers", &filter->water_bottom_layers, 0, 16);
-        gui_tooltip_if_hovered(
-            "When water tint is on, lowest N voxels in each column use the water "
-            "colour through the same lighting (0 = surface tint only).");
-        gui_input_float("Water noise", &filter->water_noise_strength, 0.02f, 0.0f,
-                        3.0f, "%.2f");
-        gui_tooltip_if_hovered(
-            "Scales Perlin + cell hash on water: varies tint strength and "
-            "breaks up flat water colour (surface tint and bottom layers). "
-            "0 disables water noise.");
-        gui_checkbox("Ambient term", &filter->step_ambient,
-                     "Add low ambient color capped against directional light.");
-        gui_checkbox("Directional light", &filter->step_directional,
-                     "Modulate albedo using the same fixed sun direction as genland.");
-        gui_checkbox("Cast shadows", &filter->step_shadow_cast,
-                     "Ray-march along the grid using column heights.");
-        gui_checkbox("Soften shadow map", &filter->step_shadow_smooth,
-                     "Enable shadow-map blur; extent is set below.");
-        gui_input_int("Shadow blur (blocks)", &filter->shadow_blur_blocks, 0, 16);
-        gui_tooltip_if_hovered(
-            "When Soften shadow map is on: symmetric box blur radius. 0 = sharp "
-            "shadows. 1 averages a 3×3 cell region (~1 voxel), 2 uses 5×5, etc. "
-            "Toroidal wrap matches the cast pass (no diagonal shift).");
-    }
-
-    gui_group_begin("Colors");
-    gui_color_small("Ground", st->color_ground);
-    gui_color_small("Grass1", st->color_grass1);
-    gui_color_small("Grass2", st->color_grass2);
-    gui_color_small("Water", st->color_water);
-    gui_group_end();
-
-    gui_group_begin("Lighting");
-    gui_input_float("Shadow strength", &st->shadow_factor, 1.f, 0, 255, "%.0f");
-    gui_input_float("Ambient", &st->ambience_factor, 0.01f, 0, 1, "%.2f");
-    gui_group_end();
 
     gui_input_int("Noise seed", &st->seed, 0, RAND_MAX);
     if (gui_button("Randomize seed", -1, 0)) {
@@ -801,14 +752,94 @@ static int gui(filter_t *filter_)
         st->seed = rand();
     }
 
-    if (gui_button("Reset colors to defaults", -1, 0)) {
-        memcpy(st->color_ground, default_terrain_coloring_settings.color_ground, 4);
-        memcpy(st->color_grass1, default_terrain_coloring_settings.color_grass1, 4);
-        memcpy(st->color_grass2, default_terrain_coloring_settings.color_grass2, 4);
-        memcpy(st->color_water, default_terrain_coloring_settings.color_water, 4);
-        st->shadow_factor = default_terrain_coloring_settings.shadow_factor;
-        st->ambience_factor = default_terrain_coloring_settings.ambience_factor;
+    goxel_set_help_text(
+        "Re-colors solid columns using the genland material and lighting "
+        "pipeline, driven by the current top surface height.");
+
+    if (gui_collapsing_header("Colors", false)) {
+        gui_checkbox("Grass tones", &filter->step_grass_tones,
+                     "Blend ground toward grass colors using slope and 3D noise.");
+        if (filter->step_grass_tones) {
+            gui_input_int("Normal half-span (voxels)", &filter->normal_half_span, 1,
+                        8);
+            gui_tooltip_if_hovered(
+                "Slope uses (height[x+k]-height[x-k]) / (2k) with k = this value. "
+                "Integer column tops make k=1 look blocky; k=2 uses neighbors two "
+                "steps away for a softer normal (default 2).");
+            gui_input_float("Grass detail noise", &filter->grass_detail_noise, 0.02f,
+                            0.0f, 3.0f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Dithers the grass among the ground texture, default 0.2");
+            gui_input_float("Rugged grass noise", &filter->rugged_color_noise, 0.05f,
+                            0.f, 24.f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Apply a mix of random/perlin noise to the grass colour. Lower = less noise, 0 = disabled. Default 1.4");
+            gui_input_float("Ground on slopes", &filter->grass_slope_exponent, 0.05f,
+                            0.2f, 8.f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Changes bias towards 'ground' colour appearing on slopes; Smaller = less ground on slopes. Default 1.65");
+            gui_input_float("Slope gain", &filter->grass_slope_gain, 0.05f, 0.f,
+                            10.f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Multiplier on the slope term - Lower = more "
+                "ground on slopes. Default 1.3");
+            gui_input_float("Height scale (voxels)", &filter->grass_height_scale,
+                            1.f, 1.f, 200.f, "%.1f");
+            gui_tooltip_if_hovered(
+                "Grass raw term uses h_top / scale; larger = slower falloff of "
+                "grass with height. Default 32");
+            gui_color_small("Ground", st->color_ground);
+            gui_color_small("Grass1", st->color_grass1);
+            gui_color_small("Grass2", st->color_grass2);
+        }
+        gui_checkbox("Water", &filter->step_water_tint,
+                     "Apply water level");
+        if (filter->step_water_tint) {
+            gui_input_int("Water level", &filter->water_bottom_layers, 0, 512);
+            gui_tooltip_if_hovered(
+                "When water is enabled, lowest N voxels in each column use the water "
+                "colour through the same lighting (0 = grass/ground tint only).");
+            gui_input_float("Water noise", &filter->water_noise_strength, 0.02f, 0.0f,
+                            3.0f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Applies a mix of random/perlin noise to the water colour. Lower = less noise, 0 = disabled. Default 0.32");
+            gui_color_small("Water", st->color_water);
+        }
     }
+
+    if (gui_collapsing_header("Lighting", false)) {
+        gui_checkbox("Ambient", &filter->step_ambient,
+                    "Add general brightness to all blocks");
+        if (filter->step_ambient) {
+            gui_input_float("Ambient intensity", &st->ambience_factor, 0.01f, 0, 1, "%.2f");
+        }
+        gui_checkbox("Directional light", &filter->step_directional,
+                    "Add directional light/shadow directly on blocks");
+        if (filter->step_directional) {
+            gui_input_float("Directional intensity", &st->directional_light_intensity,
+                        0.05f, 0.f, 4.f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Multiplier on sun N·L (same fixed light direction as genland). Higher "
+                "brightens slopes facing the sun; 0 removes shading when directional is on.");
+        }
+        gui_checkbox("Shadows", &filter->step_shadow_cast,
+                    "Ray-marched shadows cast onto blocks");
+        if (filter->step_shadow_cast) {
+            gui_checkbox("Soften shadows", &filter->step_shadow_smooth,
+                        "Enable shadow-map blur; extent is set below.");
+            gui_input_int("Shadow blur (blocks)", &filter->shadow_blur_blocks, 0, 64);
+            gui_tooltip_if_hovered(
+                "0 = sharp, 1 = 3x3 blur, 2 = 5x5 blur, etc.");
+            gui_input_float("Shadow sun angle", &filter->shadow_sun_height_step,
+                            0.01f, 0.01f, 3.0f, "%.2f");
+            gui_tooltip_if_hovered(
+                "Larger = shorter shadows, Smaller = longer shadows. Default 0.44");
+            gui_input_float("Shadow strength", &st->shadow_factor, 1.f, 0, 255, "%.0f");
+        }
+    }
+
+    if (gui_button("Reset all settings to defaults", -1, 0))
+        terrain_coloring_reset_all_defaults(filter);
 
     if (gui_button("Apply to layer", -1, 0)) {
         image_history_push(goxel.image);
@@ -820,7 +851,8 @@ static int gui(filter_t *filter_)
             filter->grass_slope_exponent, filter->grass_slope_gain,
             filter->grass_height_scale,
             filter->water_bottom_layers, filter->water_noise_strength,
-            filter->shadow_blur_blocks, filter->rugged_color_noise);
+            filter->shadow_blur_blocks, filter->shadow_sun_height_step,
+            filter->rugged_color_noise);
     }
     gui_label_size_pop();
     return 0;
@@ -829,22 +861,10 @@ static int gui(filter_t *filter_)
 static void on_open(filter_t *filter_)
 {
     filter_terrain_coloring_t *filter = (void *)filter_;
-    reset_settings(filter);
-    filter->step_grass_tones = true;
-    filter->step_water_tint = true;
-    filter->step_ambient = true;
-    filter->step_directional = true;
-    filter->step_shadow_cast = true;
-    filter->step_shadow_smooth = true;
-    filter->normal_half_span = 3;
-    filter->grass_detail_noise = 0.2f;
-    filter->grass_slope_exponent = 1.65f;
-    filter->grass_slope_gain = 1.3f;
-    filter->grass_height_scale = 32.f;
-    filter->water_bottom_layers = 1;
-    filter->water_noise_strength = 0.32f;
-    filter->shadow_blur_blocks = 1;
-    filter->rugged_color_noise = 1.7f;
+    if (!filter->settings_initialized) {
+        terrain_coloring_reset_all_defaults(filter);
+        filter->settings_initialized = true;
+    }
 }
 
 FILTER_REGISTER(terrain_coloring, filter_terrain_coloring_t,
