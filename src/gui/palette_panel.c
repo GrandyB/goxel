@@ -192,7 +192,12 @@ void gui_palette_panel(void)
                 swatch_idx = i;
         }
         if (gui_icons_grid(psz, grid, &swatch_idx)) {
-            memcpy(goxel.painter.color, p->entries[swatch_idx].color, 4);
+            if (gui_pick_rgb_keep_alpha()) {
+                painter_color_apply_rgb_keep_alpha(
+                        goxel.painter.color, p->entries[swatch_idx].color);
+            } else {
+                memcpy(goxel.painter.color, p->entries[swatch_idx].color, 4);
+            }
         }
         free(grid);
     }

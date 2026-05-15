@@ -89,6 +89,9 @@ void gui_new_line(void);
 
 bool gui_want_capture_mouse(void);
 
+/* Ctrl+Shift held: pick RGB from a swatch/voxel but keep painter alpha. */
+bool gui_pick_rgb_keep_alpha(void);
+
 void gui_release(void);
 void gui_release_graphics(void);
 

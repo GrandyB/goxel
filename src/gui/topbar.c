@@ -154,7 +154,8 @@ void gui_map_colors_bar(void)
         }
         gui_tooltip_if_hovered(tip);
         if (click == 1) {
-            image_recent_color_apply_to_goxel_painter(goxel.image, i);
+            image_recent_color_apply_to_goxel_painter(
+                    goxel.image, i, gui_pick_rgb_keep_alpha());
         } else if (click == 2) {
             image_recent_color_remove_at(goxel.image, i);
             break;

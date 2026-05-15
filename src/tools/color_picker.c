@@ -39,7 +39,11 @@ int tool_color_picker_iter(tool_t *tool, const painter_t *painter,
     goxel_set_help_text("Click on a voxel to pick the color; TIP: You can also hold CTRL when using a placement tool to quick-switch into the picker!");
     if (!curs->snaped) return 0;
     volume_get_at(volume, NULL, pi, color);
-    color[3] = 255;
+    if ((curs->flags & CURSOR_CTRL) && (curs->flags & CURSOR_SHIFT)) {
+        color[3] = goxel.painter.color[3];
+    } else {
+        color[3] = 255;
+    }
     goxel_set_help_text("%d %d %d", color[0], color[1], color[2]);
     if (curs->flags & CURSOR_PRESSED) {
         vec4_copy(color, goxel.painter.color);

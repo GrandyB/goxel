@@ -77,7 +77,11 @@ static int pick_color_gesture(gesture3d_t *gest, void *user)
     goxel_set_help_text("Click on a voxel to pick the color");
     if (!curs->snaped) return 0;
     volume_get_at(volume, NULL, pi, color);
-    color[3] = 255;
+    if (curs->flags & CURSOR_SHIFT) {
+        color[3] = goxel.painter.color[3];
+    } else {
+        color[3] = 255;
+    }
     goxel_set_help_text("pick: %d %d %d", color[0], color[1], color[2]);
     if (curs->flags & CURSOR_PRESSED) {
         vec4_copy(color, goxel.painter.color);

@@ -238,12 +238,25 @@ void image_recent_color_push_from_painter(
     img->recent_color_count = w;
 }
 
+void painter_color_apply_rgb_keep_alpha(uint8_t dst[4], const uint8_t src[4])
+{
+    const uint8_t alpha = dst[3];
+    dst[0] = src[0];
+    dst[1] = src[1];
+    dst[2] = src[2];
+    dst[3] = alpha;
+}
+
 void image_recent_color_apply_to_goxel_painter(
-        const image_t *img, int idx)
+        const image_t *img, int idx, bool rgb_only)
 {
     const image_recent_color_t *e;
     if (!img || idx < 0 || idx >= img->recent_color_count) return;
     e = &img->recent_colors[idx];
+    if (rgb_only) {
+        painter_color_apply_rgb_keep_alpha(goxel.painter.color, e->color);
+        return;
+    }
     memcpy(goxel.painter.color, e->color, 4);
     goxel.painter.noise_enabled = e->noise_enabled;
     goxel.painter.noise_intensity = e->noise_intensity;

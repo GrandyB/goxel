@@ -2453,6 +2453,13 @@ bool gui_want_capture_mouse(void)
     return io.WantCaptureMouse;
 }
 
+bool gui_pick_rgb_keep_alpha(void)
+{
+    gui_init();
+    const ImGuiIO &io = ImGui::GetIO();
+    return io.KeyCtrl && io.KeyShift;
+}
+
 typedef struct list_item list_item_t;
 struct list_item {
     int ret;

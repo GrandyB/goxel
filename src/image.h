@@ -113,8 +113,11 @@ void image_set_image_dimensions_and_center(image_t *img, int w, int h, int d);
 
 void image_recent_color_push_from_painter(
         image_t *img, const struct painter *p);
+/* Copy src RGB into dst; leave dst alpha unchanged. */
+void painter_color_apply_rgb_keep_alpha(uint8_t dst[4], const uint8_t src[4]);
+
 void image_recent_color_apply_to_goxel_painter(
-        const image_t *img, int idx);
+        const image_t *img, int idx, bool rgb_only);
 void image_recent_color_remove_at(image_t *img, int idx);
 
 /*
