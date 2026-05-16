@@ -65,6 +65,67 @@ void on_close(GLFWwindow *win)
     gui_query_quit();
 }
 
+static GLFWmonitor *window_monitor_at(GLFWwindow *win)
+{
+    int wx, wy;
+    int i, count;
+    GLFWmonitor **mons;
+
+    glfwGetWindowPos(win, &wx, &wy);
+    mons = glfwGetMonitors(&count);
+    for (i = 0; i < count; i++) {
+        int mx, my;
+        const GLFWvidmode *mode = glfwGetVideoMode(mons[i]);
+        if (!mode) continue;
+        glfwGetMonitorPos(mons[i], &mx, &my);
+        if (wx >= mx && wx < mx + mode->width &&
+            wy >= my && wy < my + mode->height) {
+            return mons[i];
+        }
+    }
+    return glfwGetPrimaryMonitor();
+}
+
+static bool window_is_fullscreen(GLFWwindow *win)
+{
+    return glfwGetWindowMonitor(win) != NULL;
+}
+
+static void enter_fullscreen(GLFWwindow *win)
+{
+    GLFWmonitor *mon = window_monitor_at(win);
+    const GLFWvidmode *mode = glfwGetVideoMode(mon);
+
+    if (!mode) return;
+    if (glfwGetWindowAttrib(win, GLFW_MAXIMIZED))
+        glfwRestoreWindow(win);
+    glfwSetWindowMonitor(win, mon, 0, 0,
+                         mode->width, mode->height, mode->refreshRate);
+}
+
+static void exit_fullscreen(GLFWwindow *win)
+{
+    // Intermediate size is ignored; maximize fills the work area with title bar.
+    glfwSetWindowMonitor(win, NULL, 0, 0, 1920 , 1080, 0);
+    glfwMaximizeWindow(win);
+}
+
+static void toggle_fullscreen(GLFWwindow *win)
+{
+    if (window_is_fullscreen(win))
+        exit_fullscreen(win);
+    else
+        enter_fullscreen(win);
+}
+
+static void on_key(GLFWwindow *win, int key, int scancode, int action, int mods)
+{
+    (void)scancode;
+    (void)mods;
+    if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+        toggle_fullscreen(win);
+}
+
 typedef struct
 {
     char *input;
@@ -296,9 +357,7 @@ int main(int argc, char **argv)
 {
     args_t args = {.scale = 1};
     GLFWwindow *window;
-    GLFWmonitor *monitor;
-    const GLFWvidmode *mode;
-    int width = 640, height = 480, ret = 0;
+    int width = 1280, height = 720, ret = 0;
     inputs_t inputs = {};
     g_inputs = &inputs;
 
@@ -313,17 +372,12 @@ int main(int argc, char **argv)
     glfwSetErrorCallback(on_glfw_error);
     glfwInit();
     glfwWindowHint(GLFW_SAMPLES, 4);
-    monitor = glfwGetPrimaryMonitor();
-    mode = glfwGetVideoMode(monitor);
-    if (mode) {
-        width = mode->width ?: 640;
-        height = mode->height ?: 480;
-    }
-    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
+    glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
     window = glfwCreateWindow(width, height, "Goxel", NULL, NULL);
     assert(window);
     g_window = window;
     glfwMakeContextCurrent(window);
+    glfwMaximizeWindow(window);
     if (!DEFINED(EMSCRIPTEN))
         glfwSetScrollCallback(window, on_scroll);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
@@ -331,6 +385,7 @@ int main(int argc, char **argv)
     glfwSetDropCallback(window, on_drop);
     glfwSetCharCallback(window, on_char);
     glfwSetWindowCloseCallback(window, on_close);
+    glfwSetKeyCallback(window, on_key);
     glfwSetInputMode(window, GLFW_STICKY_MOUSE_BUTTONS, false);
     set_window_icon(window);
 
