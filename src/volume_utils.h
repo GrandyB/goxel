@@ -186,7 +186,8 @@ void volume_op(volume_t *volume, const painter_t *painter,
 // XXX: to cleanup.
 void volume_extrude(volume_t *volume,
                   const float plane[4][4],
-                  const float box[4][4]);
+                  const float box[4][4],
+                  const painter_t *painter);
 
 /* Function: volume_blit
  *

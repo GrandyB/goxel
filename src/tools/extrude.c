@@ -133,14 +133,14 @@ static int on_drag(gesture3d_t *gest, void *user)
     if (delta >= 1) {
         vec3_iaddk(face_plane[3], n, -0.5);
         box_move_face(box, tool->snap_face, pos, box);
-        volume_extrude(tmp_volume, face_plane, box);
+        volume_extrude(tmp_volume, face_plane, box, &goxel.painter);
         volume_merge(volume, tmp_volume, MODE_OVER, NULL);
     }
     if (delta < 0.5) {
         box_move_face(box, FACES_OPPOSITES[tool->snap_face], pos, box);
         vec3_imul(face_plane[2], -1.0);
         vec3_iaddk(face_plane[3], n, -0.5);
-        volume_extrude(tmp_volume, face_plane, box);
+        volume_extrude(tmp_volume, face_plane, box, NULL);
         volume_merge(volume, tmp_volume, MODE_SUB, NULL);
     }
     volume_delete(tmp_volume);

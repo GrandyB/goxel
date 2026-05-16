@@ -101,15 +101,19 @@ int volume_select(const volume_t *volume,
     return 0;
 }
 
+static inline int noise_tex_coord(int w);
+void apply_noise_if_applicable(const painter_t *painter, float global_p[3],
+                               uint8_t col[4]);
 
 // XXX: need to redo this function from scratch.  Even the API is a bit
 // stupid.
 void volume_extrude(volume_t *volume,
                   const float plane[4][4],
-                  const float box[4][4])
+                  const float box[4][4],
+                  const painter_t *painter)
 {
     float proj[4][4];
-    float n[3], pos[3], p[3];
+    float n[3], pos[3], p[3], global_p[3];
     volume_iterator_t iter;
     int vpos[3];
     uint8_t value[4];
@@ -144,6 +148,15 @@ void volume_extrude(volume_t *volume,
             mat4_mul_vec3(proj, p, p);
             int pi[3] = {floor(p[0]), floor(p[1]), floor(p[2])};
             volume_get_at(volume, NULL, pi, value);
+            // Only vary newly extruded voxels, not the source face.
+            if (painter && value[3] &&
+                    (pi[0] != vpos[0] || pi[1] != vpos[1] || pi[2] != vpos[2])) {
+                vec3_set(global_p,
+                         (float)noise_tex_coord(vpos[0]),
+                         (float)noise_tex_coord(vpos[1]),
+                         (float)noise_tex_coord(vpos[2]));
+                apply_noise_if_applicable(painter, global_p, value);
+            }
         }
         volume_set_at(volume, NULL, vpos, value);
     }
