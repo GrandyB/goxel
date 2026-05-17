@@ -27,10 +27,24 @@ static int g_drag_mode = 0;
 static int original_drag_mode = 0;
 
 typedef struct {
+    bool    active;
+    int     start_aabb[2][3];
+    int     last_delta[3];
+    float   start_center[3];
+    int     size[3];
+    uint8_t *buffer;
+} alt_drag_t;
+
+static alt_drag_t g_alt_drag = {};
+static bool g_was_box_editing = false;
+
+typedef struct {
     tool_t  tool;
 
     int     snap_face;
     float   start_pos[3];
+    int     move_distance;
+    bool    across_layers;
 
     struct {
         gesture3d_t hover;
@@ -38,6 +52,231 @@ typedef struct {
     } gestures;
 
 } tool_selection_t;
+
+static void volume_translate_in_aabb(volume_t *volume, int axis, int sign,
+                                   const int aabb[2][3], int distance)
+{
+    int pos[3];
+    int dst_pos[3];
+    int volume_pos[3];
+    int size[3];
+    uint8_t *buffer;
+    size_t buffer_offset;
+    int i;
+    int delta;
+
+    if (distance == 0)
+        return;
+
+    size[0] = aabb[1][0] - aabb[0][0];
+    size[1] = aabb[1][1] - aabb[0][1];
+    size[2] = aabb[1][2] - aabb[0][2];
+
+    if (size[0] <= 0 || size[1] <= 0 || size[2] <= 0)
+        return;
+
+    buffer = calloc(4 * (size_t)size[0] * size[1] * size[2], 1);
+    if (!buffer)
+        return;
+
+    delta = distance * sign;
+
+    for (pos[0] = 0; pos[0] < size[0]; pos[0]++) {
+        for (pos[1] = 0; pos[1] < size[1]; pos[1]++) {
+            for (pos[2] = 0; pos[2] < size[2]; pos[2]++) {
+                memcpy(dst_pos, pos, sizeof(pos));
+                dst_pos[axis] += delta;
+                if (dst_pos[axis] < 0 || dst_pos[axis] >= size[axis])
+                    continue;
+
+                memcpy(volume_pos, pos, sizeof(pos));
+                for (i = 0; i < 3; i++)
+                    volume_pos[i] += aabb[0][i];
+
+                buffer_offset = 4 * ((size_t)dst_pos[2] * size[0] * size[1] +
+                                     dst_pos[1] * size[0] + dst_pos[0]);
+
+                volume_get_at(volume, NULL, volume_pos, &buffer[buffer_offset]);
+            }
+        }
+    }
+
+    for (pos[0] = 0; pos[0] < size[0]; pos[0]++) {
+        for (pos[1] = 0; pos[1] < size[1]; pos[1]++) {
+            for (pos[2] = 0; pos[2] < size[2]; pos[2]++) {
+                memcpy(volume_pos, pos, sizeof(pos));
+                for (i = 0; i < 3; i++)
+                    volume_pos[i] += aabb[0][i];
+
+                buffer_offset = 4 * ((size_t)pos[2] * size[0] * size[1] +
+                                     pos[1] * size[0] + pos[0]);
+
+                volume_set_at(volume, NULL, volume_pos, &buffer[buffer_offset]);
+            }
+        }
+    }
+
+    free(buffer);
+    volume_remove_empty_tiles(volume, false);
+}
+
+static void volume_clear_aabb(volume_t *volume, const int aabb[2][3])
+{
+    int pos[3];
+    uint8_t empty[4] = {0, 0, 0, 0};
+
+    for (pos[0] = aabb[0][0]; pos[0] < aabb[1][0]; pos[0]++)
+        for (pos[1] = aabb[0][1]; pos[1] < aabb[1][1]; pos[1]++)
+            for (pos[2] = aabb[0][2]; pos[2] < aabb[1][2]; pos[2]++)
+                volume_set_at(volume, NULL, pos, empty);
+}
+
+static void aabb_shift(const int aabb[2][3], const int delta[3], int out[2][3])
+{
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        out[0][i] = aabb[0][i] + delta[i];
+        out[1][i] = aabb[1][i] + delta[i];
+    }
+}
+
+static void alt_drag_begin(const int aabb[2][3], volume_t *volume)
+{
+    int pos[3];
+    int volume_pos[3];
+    int i;
+    size_t buffer_offset;
+
+    g_alt_drag.size[0] = aabb[1][0] - aabb[0][0];
+    g_alt_drag.size[1] = aabb[1][1] - aabb[0][1];
+    g_alt_drag.size[2] = aabb[1][2] - aabb[0][2];
+    if (g_alt_drag.size[0] <= 0 || g_alt_drag.size[1] <= 0 || g_alt_drag.size[2] <= 0)
+        return;
+
+    free(g_alt_drag.buffer);
+    g_alt_drag.buffer = calloc(
+            4 * (size_t)g_alt_drag.size[0] * g_alt_drag.size[1] * g_alt_drag.size[2],
+            1);
+    if (!g_alt_drag.buffer)
+        return;
+
+    memcpy(g_alt_drag.start_aabb, aabb, sizeof(g_alt_drag.start_aabb));
+    vec3_copy(goxel.selection[3], g_alt_drag.start_center);
+    memset(g_alt_drag.last_delta, 0, sizeof(g_alt_drag.last_delta));
+    g_alt_drag.active = true;
+
+    for (pos[0] = 0; pos[0] < g_alt_drag.size[0]; pos[0]++) {
+        for (pos[1] = 0; pos[1] < g_alt_drag.size[1]; pos[1]++) {
+            for (pos[2] = 0; pos[2] < g_alt_drag.size[2]; pos[2]++) {
+                memcpy(volume_pos, pos, sizeof(pos));
+                for (i = 0; i < 3; i++)
+                    volume_pos[i] += aabb[0][i];
+
+                buffer_offset = 4 * ((size_t)pos[2] * g_alt_drag.size[0] *
+                                             g_alt_drag.size[1] +
+                                     pos[1] * g_alt_drag.size[0] + pos[0]);
+
+                volume_get_at(volume, NULL, volume_pos,
+                              &g_alt_drag.buffer[buffer_offset]);
+            }
+        }
+    }
+}
+
+static void alt_drag_apply(volume_t *volume, const float box[4][4])
+{
+    int pos[3];
+    int volume_pos[3];
+    int delta[3];
+    int shifted_aabb[2][3];
+    int i;
+    size_t buffer_offset;
+
+    if (!g_alt_drag.active || !g_alt_drag.buffer)
+        return;
+
+    for (i = 0; i < 3; i++)
+        delta[i] = (int)round(box[3][i] - g_alt_drag.start_center[i]);
+
+    if (    delta[0] == g_alt_drag.last_delta[0] &&
+            delta[1] == g_alt_drag.last_delta[1] &&
+            delta[2] == g_alt_drag.last_delta[2])
+        return;
+
+    volume_clear_aabb(volume, g_alt_drag.start_aabb);
+    if (    g_alt_drag.last_delta[0] || g_alt_drag.last_delta[1] ||
+            g_alt_drag.last_delta[2]) {
+        aabb_shift(g_alt_drag.start_aabb, g_alt_drag.last_delta, shifted_aabb);
+        volume_clear_aabb(volume, shifted_aabb);
+    }
+
+    for (pos[0] = 0; pos[0] < g_alt_drag.size[0]; pos[0]++) {
+        for (pos[1] = 0; pos[1] < g_alt_drag.size[1]; pos[1]++) {
+            for (pos[2] = 0; pos[2] < g_alt_drag.size[2]; pos[2]++) {
+                memcpy(volume_pos, pos, sizeof(pos));
+                for (i = 0; i < 3; i++)
+                    volume_pos[i] += g_alt_drag.start_aabb[0][i] + delta[i];
+
+                buffer_offset = 4 * ((size_t)pos[2] * g_alt_drag.size[0] *
+                                             g_alt_drag.size[1] +
+                                     pos[1] * g_alt_drag.size[0] + pos[0]);
+
+                volume_set_at(volume, NULL, volume_pos,
+                              &g_alt_drag.buffer[buffer_offset]);
+            }
+        }
+    }
+
+    memcpy(g_alt_drag.last_delta, delta, sizeof(delta));
+    volume_remove_empty_tiles(volume, false);
+}
+
+static void alt_drag_end(void)
+{
+    if (!g_alt_drag.active)
+        return;
+
+    if (    g_alt_drag.last_delta[0] || g_alt_drag.last_delta[1] ||
+            g_alt_drag.last_delta[2])
+        image_history_push(goxel.image);
+
+    free(g_alt_drag.buffer);
+    memset(&g_alt_drag, 0, sizeof(g_alt_drag));
+}
+
+static bool move_axis_buttons(int *out_axis, int *sign)
+{
+    char buf[8];
+    bool ret = false;
+    int axis;
+    const char *AXIS_NAMES[] = {"X", "Y", "Z"};
+
+    *out_axis = 0;
+    *sign = 1;
+
+    for (axis = 0; axis < 3; axis++) {
+        gui_row_begin(2);
+
+        snprintf(buf, sizeof(buf), "-%s", AXIS_NAMES[axis]);
+        if (gui_button(buf, 1.0, 0)) {
+            *out_axis = axis;
+            *sign = -1;
+            ret = true;
+        }
+
+        snprintf(buf, sizeof(buf), "+%s", AXIS_NAMES[axis]);
+        if (gui_button(buf, 1.0, 0)) {
+            *out_axis = axis;
+            *sign = 1;
+            ret = true;
+        }
+
+        gui_row_end();
+    }
+
+    return ret;
+}
 
 static void get_box(const float p0[3], const float p1[3], const float n[3],
                      float r, const float plane[4][4], float out[4][4])
@@ -90,7 +329,9 @@ static int on_hover(gesture3d_t *gest, void *user)
     cursor_t *curs = gest->cursor;
     uint8_t box_color[4] = {255, 255, 0, 255};
 
-    goxel_set_help_text("Click and drag to set selection; hold shift to temp toggle into selection move mode");
+    goxel_set_help_text(
+            "Click and drag to set selection; hold Shift to move the box; "
+            "hold Alt to move voxels inside the box with it");
     get_box(curs->pos, curs->pos, curs->normal, 0, goxel.plane, box);
     render_box(&goxel.rend, box, box_color, EFFECT_WIREFRAME);
     return 0;
@@ -115,6 +356,12 @@ static int iter(tool_t *tool, const painter_t *painter,
                 const float viewport[4])
 {
     float transf[4][4];
+    bool first = false;
+    int box_active;
+    bool alt_move_contents;
+    layer_t *layer = goxel.image->active_layer;
+    volume_t *volume = layer ? layer->volume : NULL;
+    int aabb[2][3];
 
     tool_selection_t *selection = (tool_selection_t*)tool;
     cursor_t *curs = &goxel.cursor;
@@ -123,11 +370,15 @@ static int iter(tool_t *tool, const painter_t *painter,
     curs->snap_offset = 0.5;
     curs->snap_mask |= SNAP_SELECTION_OUT;
 
-    if(curs->flags & CURSOR_SHIFT) {
+    if (curs->flags & (CURSOR_SHIFT | CURSOR_LEFT_ALT))
         g_drag_mode = DRAG_MOVE;
-    } else {
+    else
         g_drag_mode = original_drag_mode;
-    }
+
+    alt_move_contents = (curs->flags & CURSOR_LEFT_ALT) && !box_is_null(goxel.selection);
+
+    if (g_alt_drag.active && !alt_move_contents)
+        alt_drag_end();
 
     if (!selection->gestures.drag.type) {
         selection->gestures.hover = (gesture3d_t) {
@@ -139,11 +390,29 @@ static int iter(tool_t *tool, const painter_t *painter,
             .callback = on_drag,
         };
     }
-    if (box_edit(SNAP_SELECTION_OUT, g_drag_mode == DRAG_RESIZE ? 1 : 0,
-                 transf, NULL)) {
-        mat4_mul(transf, goxel.selection, goxel.selection);
+
+    box_active = box_edit(SNAP_SELECTION_OUT, g_drag_mode == DRAG_RESIZE ? 1 : 0,
+                          transf, &first);
+
+    if (g_was_box_editing && !box_active)
+        alt_drag_end();
+
+    if (box_active) {
+        if (alt_move_contents && g_drag_mode == DRAG_MOVE && volume) {
+            if (first) {
+                bbox_to_aabb(goxel.selection, aabb);
+                alt_drag_begin(aabb, volume);
+            }
+            mat4_mul(transf, goxel.selection, goxel.selection);
+            alt_drag_apply(volume, goxel.selection);
+        } else {
+            mat4_mul(transf, goxel.selection, goxel.selection);
+        }
+        g_was_box_editing = true;
         return 0;
     }
+
+    g_was_box_editing = false;
 
     if (gesture3d(&selection->gestures.drag, curs, selection)) goto end;
     if (gesture3d(&selection->gestures.hover, curs, selection)) goto end;
@@ -159,6 +428,7 @@ static float get_magnitude(float box[4][4], int axis_index)
 
 static int gui(tool_t *tool)
 {
+    tool_selection_t *selection = (tool_selection_t *)tool;
     float x_mag, y_mag, z_mag;
     int x, y, z, w, h, d;
     float (*box)[4][4] = &goxel.selection;
@@ -220,6 +490,48 @@ static int gui(tool_t *tool)
     bbox_from_extents(*box,
             VEC(x + w / 2., y + h / 2., z + d / 2.),
             w / 2., h / 2., d / 2.);
+
+    if (gui_section_begin("Move selection", GUI_SECTION_COLLAPSABLE)) {
+        int axis, sign;
+        int aabb[2][3];
+        bool should_move;
+        layer_t *layer;
+        static bool move_defaults_applied;
+
+        if (!move_defaults_applied) {
+            selection->move_distance = 1;
+            move_defaults_applied = true;
+        }
+
+        gui_input_int("Distance", &selection->move_distance, 0, 9999);
+
+        gui_checkbox(
+            "Across layers",
+            &selection->across_layers,
+            "If checked, voxels on all layers are moved.\n"
+            "If unchecked, only voxels on the current layer are moved.");
+
+        gui_group_begin(NULL);
+        should_move = move_axis_buttons(&axis, &sign);
+        gui_group_end();
+
+        if (should_move) {
+            int delta = selection->move_distance * sign;
+
+            bbox_to_aabb(*box, aabb);
+            DL_FOREACH(goxel.image->layers, layer) {
+                if (!selection->across_layers &&
+                    layer != goxel.image->active_layer)
+                    continue;
+                volume_translate_in_aabb(
+                        layer->volume, axis, sign, aabb,
+                        selection->move_distance);
+            }
+            (*box)[3][axis] += (float)delta;
+            image_history_push(goxel.image);
+        }
+    }
+    gui_section_end();
 
     if(gui_section_begin("Placer", true)) {
         if(gui_button("Copy to placer", -1, 0)) {
