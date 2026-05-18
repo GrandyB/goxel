@@ -73,22 +73,7 @@ static void volume_rotate_z(volume_t *volume, int direction, const int aabb[2][3
         }
     }
 
-    for (pos[0] = 0; pos[0] < size[0]; pos[0]++) {
-        for (pos[1] = 0; pos[1] < size[1]; pos[1]++) {
-            for (pos[2] = 0; pos[2] < size[2]; pos[2]++) {
-                memcpy(volume_pos, pos, sizeof(pos));
-
-                for (i = 0; i < 3; i++)
-                    volume_pos[i] += aabb[0][i];
-
-                buffer_offset = 4 * (pos[2] * size[0] * size[1] +
-                                     pos[1] * size[0] + pos[0]);
-
-                volume_set_at(volume, NULL, volume_pos, &buffer[buffer_offset]);
-            }
-        }
-    }
-
+    volume_write_aabb_from_buffer(volume, buffer, aabb);
     free(buffer);
 }
 

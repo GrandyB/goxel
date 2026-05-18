@@ -225,6 +225,37 @@ void volume_blit(volume_t *volume, const uint8_t *data,
     volume_remove_empty_tiles(volume, false);
 }
 
+void volume_write_aabb_from_buffer(volume_t *volume, const uint8_t *buffer,
+                                   const int aabb[2][3])
+{
+    int size[3];
+    int pos[3];
+    int volume_pos[3];
+    size_t buffer_offset;
+    volume_iterator_t iter = {0};
+    const uint8_t empty[4] = {0, 0, 0, 0};
+
+    size[0] = aabb[1][0] - aabb[0][0];
+    size[1] = aabb[1][1] - aabb[0][1];
+    size[2] = aabb[1][2] - aabb[0][2];
+
+    for (pos[0] = 0; pos[0] < size[0]; pos[0]++)
+    for (pos[1] = 0; pos[1] < size[1]; pos[1]++)
+    for (pos[2] = 0; pos[2] < size[2]; pos[2]++) {
+        buffer_offset = 4 * ((size_t)pos[2] * size[0] * size[1] +
+                             pos[1] * size[0] + pos[0]);
+        volume_pos[0] = aabb[0][0] + pos[0];
+        volume_pos[1] = aabb[0][1] + pos[1];
+        volume_pos[2] = aabb[0][2] + pos[2];
+        if (buffer[buffer_offset + 3]) {
+            volume_set_at(volume, &iter, volume_pos, &buffer[buffer_offset]);
+        } else if (volume_get_alpha_at(volume, &iter, volume_pos)) {
+            volume_set_at(volume, &iter, volume_pos, empty);
+        }
+    }
+    volume_remove_empty_tiles(volume, false);
+}
+
 void volume_shift_alpha(volume_t *volume, int v)
 {
     volume_iterator_t iter;

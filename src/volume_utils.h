@@ -209,6 +209,13 @@ void volume_blit(volume_t *volume, const uint8_t *data,
                int x, int y, int z, int w, int h, int d,
                volume_iterator_t *iter);
 
+/*
+ * Write RGBA buffer into an AABB without creating tiles for empty voxels.
+ * buffer must hold (aabb[1][i] - aabb[0][i]) voxels in x, y, z order.
+ */
+void volume_write_aabb_from_buffer(volume_t *volume, const uint8_t *buffer,
+                                   const int aabb[2][3]);
+
 void volume_move(volume_t *volume, const float mat[4][4]);
 
 void volume_shift_alpha(volume_t *volume, int v);
