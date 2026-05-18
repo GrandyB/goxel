@@ -236,6 +236,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return UnsafePointer(mySelf.userDirectory)
         }
         goxel_init()
+        goxel_open_most_recent_file()
     }
 
     @available(macOS 10.10, *)

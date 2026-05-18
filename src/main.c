@@ -400,6 +400,9 @@ int main(int argc, char **argv)
         goxel_reset();
     }
 
+    if (!args.input && !args.script && !args.export)
+        goxel_open_most_recent_file();
+
     if (args.input)
         goxel_import_file(args.input, NULL);
 

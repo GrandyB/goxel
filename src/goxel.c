@@ -2106,6 +2106,12 @@ static int unsaved_change_popup(void *data)
     return ret;
 }
 
+void goxel_open_most_recent_file(void)
+{
+    if (arrlen(goxel.recent_files) == 0) return;
+    goxel_open_file(goxel.recent_files[0]);
+}
+
 void goxel_open_file(const char *path)
 {
     if (image_get_key(goxel.image) == goxel.image->saved_key) {
