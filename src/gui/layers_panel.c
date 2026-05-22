@@ -96,11 +96,17 @@ void gui_layers_panel_impl(bool inner_scroll)
 
     layer = goxel.image->active_layer;
     bounded = !box_is_null(layer->box);
-    if (bounded && gui_button("Crop to box", 1, 0)) {
-        volume_crop(layer->volume, layer->box);
+    if (bounded) {
+        gui_action_button(ACTION_layer_crop_to_box, "Crop to box", 1);
+        gui_tooltip_if_hovered(
+                "Delete voxels in the active layer that lie outside this "
+                "layer's bounding box.");
     }
-    if (!box_is_null(goxel.image->box) && gui_button("Crop to image", 1, 0)) {
-        volume_crop(layer->volume, goxel.image->box);
+    if (!box_is_null(goxel.image->box)) {
+        gui_action_button(ACTION_layer_crop_to_image, "Crop to image", 1);
+        gui_tooltip_if_hovered(
+                "Delete voxels in the active layer that lie outside the "
+                "image box.");
     }
     if (layer->shape)
         gui_action_button(ACTION_img_unclone_layer, "To Volume", 1);

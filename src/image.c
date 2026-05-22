@@ -761,7 +761,52 @@ void image_set_image_dimensions_and_center(image_t *img, int w, int h, int d) {
 
 static void a_image_auto_resize_reset(void)
 {
-    image_auto_resize_reset(goxel.image);
+    image_t *img = goxel.image;
+
+    image_history_push(img);
+    image_auto_resize_reset(img);
+}
+
+void image_crop_to_box(image_t *img)
+{
+    layer_t *layer;
+
+    if (box_is_null(img->box))
+        return;
+    DL_FOREACH(img->layers, layer)
+        volume_crop(layer->volume, img->box);
+}
+
+static void a_image_crop_to_box(void)
+{
+    image_t *img = goxel.image;
+
+    if (box_is_null(img->box))
+        return;
+    image_history_push(img);
+    image_crop_to_box(img);
+}
+
+static void a_layer_crop_to_box(void)
+{
+    image_t *img = goxel.image;
+    layer_t *layer = img->active_layer;
+
+    if (!layer || box_is_null(layer->box))
+        return;
+    image_history_push(img);
+    volume_crop(layer->volume, layer->box);
+}
+
+static void a_layer_crop_to_image(void)
+{
+    image_t *img = goxel.image;
+    layer_t *layer = img->active_layer;
+
+    if (!layer || box_is_null(img->box))
+        return;
+    image_history_push(img);
+    volume_crop(layer->volume, img->box);
 }
 
 void image_set(image_t *img, image_t *other)
@@ -1229,7 +1274,25 @@ ACTION_REGISTER(ACTION_img_auto_resize,
 )
 
 ACTION_REGISTER(ACTION_img_auto_resize_reset,
-    .help = "Auto resize the image to fit visible layers and reset the origin",
+    .help = "Fit the image box to visible layers, move its origin to the "
+            "content corner, and shift visible layers to match. Does not "
+            "delete voxels.",
     .cfunc = a_image_auto_resize_reset,
-    .flags = ACTION_TOUCH_IMAGE,
+)
+
+ACTION_REGISTER(ACTION_img_crop_to_box,
+    .help = "Delete voxels outside the image box in every layer. The image "
+            "box size is unchanged.",
+    .cfunc = a_image_crop_to_box,
+)
+
+ACTION_REGISTER(ACTION_layer_crop_to_box,
+    .help = "Delete voxels in the active layer that lie outside this layer's "
+            "bounding box.",
+    .cfunc = a_layer_crop_to_box,
+)
+
+ACTION_REGISTER(ACTION_layer_crop_to_image,
+    .help = "Delete voxels in the active layer that lie outside the image box.",
+    .cfunc = a_layer_crop_to_image,
 )

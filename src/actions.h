@@ -29,6 +29,8 @@ enum
     ACTION_NULL = 0,
 
     ACTION_layer_clear,
+    ACTION_layer_crop_to_box,
+    ACTION_layer_crop_to_image,
     ACTION_img_new_layer,
     ACTION_img_del_layer,
     ACTION_img_move_layer_up,
@@ -48,6 +50,7 @@ enum
     ACTION_img_new_material,
     ACTION_img_del_material,
     ACTION_img_auto_resize,
+    ACTION_img_crop_to_box,
 
     ACTION_cut_as_new_layer,
     ACTION_reset_selection,

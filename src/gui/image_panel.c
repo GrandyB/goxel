@@ -25,5 +25,15 @@ void gui_image_panel(void)
     gui_bbox(*box);
     gui_action_button(ACTION_img_auto_resize, "Auto resize (all/original)", 0);
     gui_action_button(ACTION_img_auto_resize_reset, "Crop to visible & reset origin", 0);
+    gui_tooltip_if_hovered(
+            "Fit the image box to visible layers, move its origin to the "
+            "content corner, and shift visible layers to match. Does not "
+            "delete voxels.");
+    if (!box_is_null(*box)) {
+        gui_action_button(ACTION_img_crop_to_box, "Crop to image box", 0);
+        gui_tooltip_if_hovered(
+                "Delete voxels outside the image box in every layer. The "
+                "image box size is unchanged.");
+    }
 }
 
