@@ -2147,11 +2147,11 @@ void image_to_512() {
 }
 static void a_reset_512(void)
 {
+    post_reset_func = image_to_512;
     if (image_get_key(goxel.image) == goxel.image->saved_key) {
         goxel_reset();
         return;
     }
-    post_reset_func = image_to_512;
     gui_open_popup("Unsaved Changes", GUI_POPUP_RESIZE, NULL, unsaved_change_popup);
 }
 
