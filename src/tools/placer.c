@@ -68,7 +68,11 @@ static file_format_t *ff_import_current = NULL;
 static file_format_t *ff_export_current = NULL;
 
 static bool placer_scale_custom = false;
+static bool placer_scale_custom_all_axes = true;
 static float placer_scale_custom_pct = 100.f;
+static float placer_scale_custom_pct_x = 100.f;
+static float placer_scale_custom_pct_y = 100.f;
+static float placer_scale_custom_pct_z = 100.f;
 
 typedef struct {
     tool_t tool;
@@ -84,7 +88,7 @@ typedef struct {
     float origin[3]; // relative offset of origin from the center
     float last_curs_pos[3];
     float rot[4][4]; // current rotation applied to the doodad; modified by the GUI, applied to a copy of imported_volume_orig, which is then set back to imported_volume
-    float uniform_scale; // uniform scale relative to imported_volume_orig (1 = original size)
+    float scale[3]; // destructive scale relative to imported_volume_orig (1 = original size)
     float preview_scale; // extra uniform scale for hover/place preview only (imported_volume unchanged)
 
     // Gesture start and last pos (should we put it in the 3d gesture?)
@@ -177,6 +181,32 @@ static void placer_hover_pivot(const tool_placer_t *placer, float out[3])
     vec3_add(out, placer->origin, out);
 }
 
+static float placer_scale_from_pct(float pct)
+{
+    float s = pct / 100.f;
+    if (s < 1e-6f)
+        s = 1e-6f;
+    return s;
+}
+
+static void placer_sanitize_scale(tool_placer_t *placer)
+{
+    for (int i = 0; i < 3; i++) {
+        if (!(placer->scale[i] > 0.f))
+            placer->scale[i] = 1.f;
+    }
+}
+
+static void placer_reset_scale(tool_placer_t *placer)
+{
+    placer->scale[0] = placer->scale[1] = placer->scale[2] = 1.f;
+    placer->preview_scale = 1.f;
+    placer_scale_custom_pct = 100.f;
+    placer_scale_custom_pct_x = 100.f;
+    placer_scale_custom_pct_y = 100.f;
+    placer_scale_custom_pct_z = 100.f;
+}
+
 static void placer_stamp_preview_scale(tool_placer_t *placer, volume_t *stamp)
 {
     float m[4][4], pivot[3];
@@ -213,8 +243,7 @@ static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
         // (same mechanic as do_move)
         mat4_itranslate(m, +origin[0], +origin[1], +origin[2]);
         mat4_imul(m, placer->rot);
-        mat4_iscale(m, placer->uniform_scale, placer->uniform_scale,
-                    placer->uniform_scale);
+        mat4_iscale(m, placer->scale[0], placer->scale[1], placer->scale[2]);
         mat4_itranslate(m, -origin[0], -origin[1], -origin[2]);
         volume_t *copy = volume_copy(placer->imported_volume_orig);
         volume_move(copy, placer->mat);
@@ -226,8 +255,7 @@ static void apply_rotation(tool_placer_t *placer, float translation[4][4]) {
         mat4_copy(mat4_identity, m);
         mat4_itranslate(m, +placer->origin[0], +placer->origin[1], +placer->origin[2]);
         mat4_imul(m, placer->rot);
-        mat4_iscale(m, placer->uniform_scale, placer->uniform_scale,
-                     placer->uniform_scale);
+        mat4_iscale(m, placer->scale[0], placer->scale[1], placer->scale[2]);
         mat4_itranslate(m, -placer->origin[0], -placer->origin[1], -placer->origin[2]);
 
         float imat[4][4];
@@ -458,9 +486,7 @@ static void post_import(tool_placer_t *placer)
 {
     placer->imported_volume_orig = volume_copy(placer->imported_volume);
     center_origin(placer);
-    placer->uniform_scale = 1.f;
-    placer->preview_scale = 1.f;
-    placer_scale_custom_pct = 100.f;
+    placer_reset_scale(placer);
 }
 
 static int on_drag(gesture3d_t *gest, void *user)
@@ -532,8 +558,7 @@ static int iter(tool_t *tool, const painter_t *painter,
     goxel_set_help_text("Click to brush - there are hotkeys for changing modes etc! TIP: Holding shift will toggle line mode.");
     tool_placer_t *placer = (tool_placer_t*)tool;
 
-    if (!(placer->uniform_scale > 0.f))
-        placer->uniform_scale = 1.f;
+    placer_sanitize_scale(placer);
     if (!(placer->preview_scale > 0.f))
         placer->preview_scale = 1.f;
 
@@ -622,8 +647,7 @@ static void reset(tool_placer_t* placer) {
     vec3_set(placer->origin, 0, 0, 0);
     vec3_set(placer->last_curs_pos, 0, 0, 0);
     mat4_copy(mat4_identity, placer->rot);
-    placer->uniform_scale = 1.f;
-    placer->preview_scale = 1.f;
+    placer_reset_scale(placer);
 }
 typedef struct past_import past_import_t;
 struct past_import {
@@ -1143,8 +1167,7 @@ static int gui(tool_t *tool)
     tool_placer_t *placer = (tool_placer_t*)tool;
     int prev_cr_mode;
 
-    if (!(placer->uniform_scale > 0.f))
-        placer->uniform_scale = 1.f;
+    placer_sanitize_scale(placer);
     if (!(placer->preview_scale > 0.f))
         placer->preview_scale = 1.f;
 
@@ -1393,26 +1416,57 @@ static int gui(tool_t *tool)
                 placer->preview_scale *= 0.5f;
             }
             if (gui_button("Reset##placer_scale", -1, 0)) {
-                placer->uniform_scale = 1.f;
-                placer->preview_scale = 1.f;
-                placer_scale_custom_pct = 100.f;
+                placer_reset_scale(placer);
                 changed = true;
             }
             gui_row_end();
 
             if (gui_checkbox("Custom", &placer_scale_custom,
                              "Apply a custom, possibly destructive, scaling")) {
-                if (placer_scale_custom)
-                    placer_scale_custom_pct = placer->uniform_scale * 100.f;
+                if (placer_scale_custom) {
+                    placer_scale_custom_pct = placer->scale[0] * 100.f;
+                    placer_scale_custom_pct_x = placer->scale[0] * 100.f;
+                    placer_scale_custom_pct_y = placer->scale[1] * 100.f;
+                    placer_scale_custom_pct_z = placer->scale[2] * 100.f;
+                }
             }
             if (placer_scale_custom) {
-                if (gui_input_float("%", &placer_scale_custom_pct, -1.f, 0.f,
-                                    500.f, "%.2f")) {
-                    float s = placer_scale_custom_pct / 100.f;
-                    if (s < 1e-6f)
-                        s = 1e-6f;
-                    placer->uniform_scale = s;
-                    changed = true;
+                if (gui_checkbox("All axes", &placer_scale_custom_all_axes,
+                                 "Use the same scale on X, Y, and Z")) {
+                    if (placer_scale_custom_all_axes) {
+                        placer_scale_custom_pct = placer->scale[0] * 100.f;
+                    } else {
+                        placer_scale_custom_pct_x = placer->scale[0] * 100.f;
+                        placer_scale_custom_pct_y = placer->scale[1] * 100.f;
+                        placer_scale_custom_pct_z = placer->scale[2] * 100.f;
+                    }
+                }
+                if (placer_scale_custom_all_axes) {
+                    if (gui_input_float("%", &placer_scale_custom_pct, -1.f, 0.f,
+                                        500.f, "%.2f")) {
+                        float s = placer_scale_from_pct(placer_scale_custom_pct);
+                        placer->scale[0] = placer->scale[1] = placer->scale[2] = s;
+                        changed = true;
+                    }
+                } else {
+                    if (gui_input_float("X %", &placer_scale_custom_pct_x, -1.f, 0.f,
+                                        500.f, "%.2f")) {
+                        placer->scale[0] = placer_scale_from_pct(
+                            placer_scale_custom_pct_x);
+                        changed = true;
+                    }
+                    if (gui_input_float("Y %", &placer_scale_custom_pct_y, -1.f, 0.f,
+                                        500.f, "%.2f")) {
+                        placer->scale[1] = placer_scale_from_pct(
+                            placer_scale_custom_pct_y);
+                        changed = true;
+                    }
+                    if (gui_input_float("Z %", &placer_scale_custom_pct_z, -1.f, 0.f,
+                                        500.f, "%.2f")) {
+                        placer->scale[2] = placer_scale_from_pct(
+                            placer_scale_custom_pct_z);
+                        changed = true;
+                    }
                 }
             }
         }
