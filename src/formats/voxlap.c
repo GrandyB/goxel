@@ -332,8 +332,10 @@ static bool slab_append(slab_t *slab, voxel_t *vox)
 }
 
 
-static int kvx_export(const file_format_t *format, const image_t *image,
-                      const char *path)
+static int kvx_export_volume_box(const file_format_t *format,
+                                 const volume_t *volume,
+                                 const float box_[4][4],
+                                 const char *path)
 {
     FILE *file;
     uint8_t (*palette)[4];
@@ -351,13 +353,12 @@ static int kvx_export(const file_format_t *format, const image_t *image,
     uint32_t *xyoffsets;
     bool use_current_palette = false;
     float pivot[3];
-    const volume_t *volume = goxel_get_layers_volume(image);
+    (void)format;
+
+    mat4_copy(box_, box);
 
     UT_icd voxel_icd = {sizeof(voxel_t), NULL, NULL, NULL};
     UT_icd slab_icd = {sizeof(slab_t), NULL, NULL, NULL};
-
-    mat4_copy(image->box, box);
-    if (box_is_null(box)) volume_get_box(volume, true, box);
 
     size[0] = box[0][0] * 2;
     size[1] = box[1][1] * 2;
@@ -533,6 +534,25 @@ static int kvx_export(const file_format_t *format, const image_t *image,
     return 0;
 }
 
+static int kvx_export_volume(const file_format_t *format,
+                             const volume_t *volume, const char *path)
+{
+    float box[4][4];
+    volume_get_box(volume, true, box);
+    return kvx_export_volume_box(format, volume, box, path);
+}
+
+static int kvx_export(const file_format_t *format, const image_t *image,
+                      const char *path)
+{
+    float box[4][4];
+    const volume_t *volume = goxel_get_layers_volume(image);
+
+    mat4_copy(image->box, box);
+    if (box_is_null(box)) volume_get_box(volume, true, box);
+    return kvx_export_volume_box(format, volume, box, path);
+}
+
 static int kv6_export(const file_format_t *format, const image_t *image,
                       const char *path)
 {
@@ -688,4 +708,5 @@ FILE_FORMAT_REGISTER(kvx,
     .import_func = kvx_import,
     .import_volume_func = kvx_import_to_volume,
     .export_func = kvx_export,
+    .export_volume_func = kvx_export_volume,
 )
