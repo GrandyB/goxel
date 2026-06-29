@@ -117,6 +117,7 @@ typedef struct {
     char     *buffer;   // Used when writing.
 
     int      pos;
+    bool     error;
 } chunk_t;
 
 // Conveniance macro to call snprintf without gcc warning us about
@@ -141,57 +142,95 @@ static int32_t read_int32(FILE *in)
     return v;
 }
 
+static bool read_int32_checked(FILE *in, int32_t *v)
+{
+    if (fread(v, 4, 1, in) != 1) {
+        LOG_E("Error reading file");
+        return false;
+    }
+    return true;
+}
+
 static bool chunk_read_start(chunk_t *c, FILE *in)
 {
-    size_t r;
     memset(c, 0, sizeof(*c));
-    r = fread(c->type, 4, 1, in);
-    if (r == 0) return false; // eof.
-    if (r != 1) LOG_E("Error reading file");
-    c->length = read_int32(in);
+    if (fread(c->type, 4, 1, in) != 1) {
+        if (!feof(in)) c->error = true;
+        return false;
+    }
+    if (!read_int32_checked(in, &c->length) || c->length < 0) {
+        c->error = true;
+        return true;
+    }
     return true;
 }
 
 static void chunk_read(chunk_t *c, FILE *in, char *buff, int size, int line)
 {
-    if (size == 0) return;
-    c->pos += size;
-    assert(c->pos <= c->length);
-    if (buff) {
-        // XXX: use a better error mechanism!
-        if (fread(buff, size, 1, in) != 1) {
+    if (size == 0 || c->error) return;
+    if (c->pos + size > c->length) {
+        if (!c->error)
             LOG_E("Error reading file (line %d)", line);
+        c->error = true;
+        return;
+    }
+    c->pos += size;
+    if (buff) {
+        if (fread(buff, size, 1, in) != 1) {
+            if (!c->error)
+                LOG_E("Error reading file (line %d)", line);
+            c->error = true;
         }
-    } else {
-        fseek(in, size, SEEK_CUR);
+    } else if (fseek(in, size, SEEK_CUR) != 0) {
+        if (!c->error)
+            LOG_E("Error reading file (line %d)", line);
+        c->error = true;
     }
 }
 
 static int32_t chunk_read_int32(chunk_t *c, FILE *in, int line)
 {
-    int32_t v;
+    int32_t v = 0;
     chunk_read(c, in, (char*)&v, 4, line);
     return v;
 }
 
-static void chunk_read_finish(chunk_t *c, FILE *in)
+static bool chunk_read_finish(chunk_t *c, FILE *in)
 {
-    assert(c->pos == c->length);
-    read_int32(in); // TODO: check crc.
+    int32_t crc;
+    if (c->error || c->pos != c->length) {
+        if (!c->error)
+            LOG_E("Corrupt chunk '%.4s'", c->type);
+        return false;
+    }
+    if (!read_int32_checked(in, &crc))
+        return false;
+    return true;
 }
 
 static bool chunk_read_dict_value(chunk_t *c, FILE *in,
                                   char *key, char *value, int *value_size,
                                   int line) {
     int size;
-    assert(c->pos <= c->length);
-    if (c->pos == c->length) return 0;
+    if (c->error) return false;
+    if (c->pos == c->length) return false;
+    if (c->pos > c->length) {
+        c->error = true;
+        return false;
+    }
     size = chunk_read_int32(c, in, line);
     if (size == 0) return false;
-    assert(size < 256);
+    if (size < 0 || size >= 256) {
+        c->error = true;
+        return false;
+    }
     chunk_read(c, in, key, size, line);
     key[size] = '\0';
     size = chunk_read_int32(c, in, line);
+    if (size < 0 || size >= 256) {
+        c->error = true;
+        return false;
+    }
     chunk_read(c, in, value, size, line);
     value[size] = '\0';
     *value_size = size;
@@ -512,6 +551,7 @@ int gox_iter_infos(const char *path,
     read_int32(in);
 
     while (chunk_read_start(&c, in)) {
+        if (c.error) goto error;
         if (strncmp(c.type, "BL16", 4) == 0) break;
         if (strncmp(c.type, "LAYR", 4) == 0) break;
         if (strncmp(c.type, "PREV", 4) == 0) {
@@ -523,8 +563,9 @@ int gox_iter_infos(const char *path,
             // Ignore other blocks.
             chunk_read(&c, in, NULL, c.length, __LINE__);
         }
-        chunk_read_finish(&c, in);
+        if (!chunk_read_finish(&c, in)) goto error;
     }
+    if (c.error) goto error;
     fclose(in);
     return 0;
 
@@ -539,6 +580,7 @@ static block_hash_t *hash_find_at(block_hash_t *hash, int index)
 {
     int i;
     for (i = 0; i < index; i++) {
+        if (!hash) return NULL;
         hash = hash->hh.next;
     }
     return hash;
@@ -559,9 +601,38 @@ static block_hash_t *hash_find_at(block_hash_t *hash, int index)
     r; })
 
 
-int load_from_file(const char *path, bool replace)
+static void image_clear_gox_content(image_t *img)
 {
     layer_t *layer, *layer_tmp;
+    camera_t *camera, *camera_tmp;
+    material_t *mat, *mat_tmp;
+
+    DL_FOREACH_SAFE(img->layers, layer, layer_tmp) {
+        volume_delete(layer->volume);
+        free(layer);
+    }
+    DL_FOREACH_SAFE(img->materials, mat, mat_tmp) {
+        material_delete(mat);
+    }
+    DL_FOREACH_SAFE(img->cameras, camera, camera_tmp) {
+        camera_delete(camera);
+    }
+
+    img->layers = NULL;
+    img->materials = NULL;
+    img->active_material = NULL;
+    img->cameras = NULL;
+    img->active_camera = NULL;
+
+    memset(&img->box, 0, sizeof(img->box));
+    img->recent_color_count = 0;
+    placer_past_files_clear();
+}
+
+
+int load_from_file(const char *path, bool replace)
+{
+    layer_t *layer;
     block_hash_t *blocks_table = NULL, *data, *data_tmp;
     FILE *in;
     char magic[4] = {};
@@ -576,8 +647,8 @@ int load_from_file(const char *path, bool replace)
     char dict_value[256];
     uint64_t uid = 1;
     int aabb[2][3];
-    camera_t *camera, *camera_tmp;
-    material_t *mat, *mat_tmp;
+    camera_t *camera;
+    material_t *mat;
 
     in = fopen(path, "rb");
     if (!in) return -1;
@@ -593,37 +664,25 @@ int load_from_file(const char *path, bool replace)
     // Remove all layers, materials and camera.
     // XXX: should have a way to create a totally empty image instead.
     if (replace) {
-        DL_FOREACH_SAFE(goxel.image->layers, layer, layer_tmp) {
-            volume_delete(layer->volume);
-            free(layer);
-        }
-        DL_FOREACH_SAFE(goxel.image->materials, mat, mat_tmp) {
-            material_delete(mat);
-        }
-        DL_FOREACH_SAFE(goxel.image->cameras, camera, camera_tmp) {
-            camera_delete(camera);
-        }
-
-        goxel.image->layers = NULL;
-        goxel.image->materials = NULL;
-        goxel.image->active_material = NULL;
-        goxel.image->cameras = NULL;
-        goxel.image->active_camera = NULL;
-
-        memset(&goxel.image->box, 0, sizeof(goxel.image->box));
-
-        goxel.image->recent_color_count = 0;
-
-        placer_past_files_clear();
+        image_clear_gox_content(goxel.image);
     }
 
     while (chunk_read_start(&c, in)) {
+        if (c.error) goto error;
         if (strncmp(c.type, "BL16", 4) == 0) {
             png_file = calloc(1, c.length);
             chunk_read(&c, in, (char*)png_file, c.length, __LINE__);
+            if (c.error) {
+                free(png_file);
+                goto error;
+            }
             bpp = 4;
             voxel_data = img_read_from_mem((void*)png_file, c.length, &w, &h, &bpp);
-            assert(w == 64 && h == 64 && bpp == 4);
+            if (!voxel_data || w != 64 || h != 64 || bpp != 4) {
+                free(voxel_data);
+                free(png_file);
+                goto error;
+            }
             data = calloc(1, sizeof(*data));
             data->v = calloc(1, 64 * 64 * 4);
             memcpy(data->v, voxel_data, 64 * 64 * 4);
@@ -635,19 +694,22 @@ int load_from_file(const char *path, bool replace)
         } else if (strncmp(c.type, "LAYR", 4) == 0) {
             layer = image_add_layer(goxel.image, NULL);
             nb_blocks = chunk_read_int32(&c, in, __LINE__);
-            assert(nb_blocks >= 0);
+            if (nb_blocks < 0 || c.error) goto error;
             for (i = 0; i < nb_blocks; i++) {
+                if (c.error) goto error;
                 index = chunk_read_int32(&c, in, __LINE__);
-                assert(index >= 0);
+                if (index < 0 || c.error) goto error;
                 x = chunk_read_int32(&c, in, __LINE__);
                 y = chunk_read_int32(&c, in, __LINE__);
                 z = chunk_read_int32(&c, in, __LINE__);
+                if (c.error) goto error;
                 if (version == 1) { // Previous version blocks pos.
                     x -= 8; y -= 8; z -= 8;
                 }
                 chunk_read_int32(&c, in, __LINE__);
+                if (c.error) goto error;
                 data = hash_find_at(blocks_table, index);
-                assert(data);
+                if (!data) goto error;
                 volume_blit(layer->volume, data->v, x, y, z, 16, 16, 16, NULL);
             }
             while ((chunk_read_dict_value(&c, in, dict_key, dict_value,
@@ -694,6 +756,7 @@ int load_from_file(const char *path, bool replace)
                 if (DICT_CPY("material", material_idx))
                     layer->material = get_material(goxel.image, material_idx);
             }
+            if (c.error) goto error;
         } else if (strncmp(c.type, "CAMR", 4) == 0) {
             bool cam_got_mode = false;
             camera = camera_new("unnamed");
@@ -786,8 +849,9 @@ int load_from_file(const char *path, bool replace)
             // Ignore other blocks.
             chunk_read(&c, in, NULL, c.length, __LINE__);
         }
-        chunk_read_finish(&c, in);
+        if (!chunk_read_finish(&c, in)) goto error;
     }
+    if (c.error) goto error;
 
     // Free the block hash table.  We do not delete the block data because
     // they have been used by the volumes.
@@ -830,7 +894,14 @@ int load_from_file(const char *path, bool replace)
     return 0;
 
 error:
-    fclose(in);
+    if (in) fclose(in);
+    HASH_ITER(hh, blocks_table, data, data_tmp) {
+        HASH_DEL(blocks_table, data);
+        free(data->v);
+        free(data);
+    }
+    if (replace)
+        image_clear_gox_content(goxel.image);
     return -1;
 }
 

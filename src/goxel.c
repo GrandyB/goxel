@@ -2108,8 +2108,14 @@ static int unsaved_change_popup(void *data)
 
 void goxel_open_most_recent_file(void)
 {
+    const char *path;
+
     if (arrlen(goxel.recent_files) == 0) return;
-    goxel_open_file(goxel.recent_files[0]);
+    path = goxel.recent_files[0];
+    if (load_from_file(path, true) != 0) {
+        LOG_W("Cannot open recent file '%s', starting with a new file", path);
+        goxel_reset();
+    }
 }
 
 void goxel_open_file(const char *path)
@@ -2117,8 +2123,9 @@ void goxel_open_file(const char *path)
     if (image_get_key(goxel.image) == goxel.image->saved_key) {
         if (!path) {
             goxel_reset();
-        } else {
-            load_from_file(path, true);
+        } else if (load_from_file(path, true) != 0) {
+            LOG_W("Cannot open '%s', starting with a new file", path);
+            goxel_reset();
         }
         return;
     }
