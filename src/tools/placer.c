@@ -801,6 +801,11 @@ static void placer_past_remove(past_import_t *e) {
     free(e);
 }
 
+static bool placer_past_skip_preview(const past_import_t *i)
+{
+    return i->path && str_endswith(i->path, ".gox");
+}
+
 /* Lazily build preview for entries restored from .gox (path only, no in-memory import yet). */
 static void placer_ensure_past_preview(past_import_t *i)
 {
@@ -809,6 +814,10 @@ static void placer_ensure_past_preview(past_import_t *i)
 
     if (i->preview || i->preview_ready)
         return;
+    if (placer_past_skip_preview(i)) {
+        i->preview_ready = true;
+        return;
+    }
     i->preview_ready = true;
     v = volume_new();
     err = i->format->import_volume_func(i->format, v, i->path);
@@ -841,7 +850,8 @@ static void on_file_import(const char *path, const char *file_name, const file_f
     LOG_D("On file import: %s / %s / %s", past->path, past->file_name, past->format->name);
     DL_APPEND(past_files, past);
     past->preview_ready = true;
-    if (goxel.tool && goxel.tool->id == TOOL_PLACER) {
+    if (!placer_past_skip_preview(past) && goxel.tool
+            && goxel.tool->id == TOOL_PLACER) {
         tool_placer_t *pl = (tool_placer_t *)goxel.tool;
         past->preview = volume_preview_to_texture(pl->imported_volume,
                                                   PLACER_PAST_PREVIEW_SIZE);
