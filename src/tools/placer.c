@@ -73,6 +73,7 @@ static float placer_scale_custom_pct = 100.f;
 static float placer_scale_custom_pct_x = 100.f;
 static float placer_scale_custom_pct_y = 100.f;
 static float placer_scale_custom_pct_z = 100.f;
+static float placer_rotation_angle_deg = 22.5f;
 
 typedef struct {
     tool_t tool;
@@ -1331,35 +1332,38 @@ static int gui(tool_t *tool)
 
         if (gui_section_begin("Rotation", true)) {
             gui_group_begin(NULL);
+            gui_input_float("Angle", &placer_rotation_angle_deg, 0.5f, 0.f, 180.f,
+                            "%.1f");
+            float rot_step = placer_rotation_angle_deg * (float)(M_PI / 180.0);
             gui_row_begin(2);
             if (gui_button("-X", 0, 0)) {
-                mat4_irotate(rotation, -M_PI / 8, 1, 0, 0);
+                mat4_irotate(rotation, -rot_step, 1, 0, 0);
                 changed = true;
             }
             if (gui_button("+X", 0, 0)) {
-                mat4_irotate(rotation, +M_PI / 8, 1, 0, 0);
+                mat4_irotate(rotation, +rot_step, 1, 0, 0);
                 changed = true;
             }
             gui_row_end();
 
             gui_row_begin(2);
             if (gui_button("-Y", 0, 0)) {
-                mat4_irotate(rotation, -M_PI / 8, 0, 1, 0);
+                mat4_irotate(rotation, -rot_step, 0, 1, 0);
                 changed = true;
             }
             if (gui_button("+Y", 0, 0)) {
-                mat4_irotate(rotation, +M_PI / 8, 0, 1, 0);
+                mat4_irotate(rotation, +rot_step, 0, 1, 0);
                 changed = true;
             }
             gui_row_end();
 
             gui_row_begin(2);
             if (gui_button("-Z", 0, 0)) {
-                mat4_irotate(rotation, -M_PI / 8, 0, 0, 1);
+                mat4_irotate(rotation, -rot_step, 0, 0, 1);
                 changed = true;
             }
             if (gui_button("+Z", 0, 0)) {
-                mat4_irotate(rotation, +M_PI / 8, 0, 0, 1);
+                mat4_irotate(rotation, +rot_step, 0, 0, 1);
                 changed = true;
             }
             gui_row_end();
