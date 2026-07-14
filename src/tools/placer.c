@@ -24,6 +24,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#   include <sys/stat.h>
+#   define placer_past_stat _stat64i32
+    typedef struct _stat64i32 placer_past_stat_t;
+#else
+#   include <sys/stat.h>
+#   define placer_past_stat stat
+    typedef struct stat placer_past_stat_t;
+#endif
 
 #ifdef _WIN32
 #   define past_strcasecmp _stricmp
@@ -33,6 +42,9 @@
 
 #ifndef PLACER_PAST_PREVIEW_SIZE
 #   define PLACER_PAST_PREVIEW_SIZE 128
+#endif
+#ifndef PLACER_PAST_PREVIEW_MAX_FILE_BYTES
+#   define PLACER_PAST_PREVIEW_MAX_FILE_BYTES (500 * 1024)
 #endif
 #define BOOL_STR(b) ((b) ? "true" : "false")
 
@@ -804,7 +816,16 @@ static void placer_past_remove(past_import_t *e) {
 
 static bool placer_past_skip_preview(const past_import_t *i)
 {
-    return i->path && str_endswith(i->path, ".gox");
+    placer_past_stat_t st;
+
+    if (!i->path)
+        return false;
+    if (str_endswith(i->path, ".gox"))
+        return true;
+    if (placer_past_stat(i->path, &st) == 0
+            && st.st_size > PLACER_PAST_PREVIEW_MAX_FILE_BYTES)
+        return true;
+    return false;
 }
 
 /* Lazily build preview for entries restored from .gox (path only, no in-memory import yet). */
