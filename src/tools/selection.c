@@ -33,6 +33,7 @@ typedef struct {
     float   start_center[3];
     int     size[3];
     uint8_t *buffer;
+    volume_t *volume_orig; // Layer snapshot for the duration of the drag.
 } alt_drag_t;
 
 static alt_drag_t g_alt_drag = {};
@@ -131,36 +132,46 @@ static void volume_clear_aabb(volume_t *volume, const int aabb[2][3])
                 volume_set_at(volume, NULL, pos, empty);
 }
 
-static void aabb_shift(const int aabb[2][3], const int delta[3], int out[2][3])
+static void alt_drag_reset(void)
 {
-    int i;
-
-    for (i = 0; i < 3; i++) {
-        out[0][i] = aabb[0][i] + delta[i];
-        out[1][i] = aabb[1][i] + delta[i];
+    if (g_alt_drag.volume_orig) {
+        volume_delete(g_alt_drag.volume_orig);
+        g_alt_drag.volume_orig = NULL;
     }
+    free(g_alt_drag.buffer);
+    g_alt_drag.buffer = NULL;
+    memset(&g_alt_drag, 0, sizeof(g_alt_drag));
 }
 
 static void alt_drag_begin(const int aabb[2][3], volume_t *volume)
 {
     int pos[3];
     int volume_pos[3];
+    int size[3];
     int i;
     size_t buffer_offset;
 
-    g_alt_drag.size[0] = aabb[1][0] - aabb[0][0];
-    g_alt_drag.size[1] = aabb[1][1] - aabb[0][1];
-    g_alt_drag.size[2] = aabb[1][2] - aabb[0][2];
-    if (g_alt_drag.size[0] <= 0 || g_alt_drag.size[1] <= 0 || g_alt_drag.size[2] <= 0)
+    size[0] = aabb[1][0] - aabb[0][0];
+    size[1] = aabb[1][1] - aabb[0][1];
+    size[2] = aabb[1][2] - aabb[0][2];
+    if (size[0] <= 0 || size[1] <= 0 || size[2] <= 0)
         return;
 
-    free(g_alt_drag.buffer);
+    alt_drag_reset();
+
     g_alt_drag.buffer = calloc(
-            4 * (size_t)g_alt_drag.size[0] * g_alt_drag.size[1] * g_alt_drag.size[2],
-            1);
+            4 * (size_t)size[0] * size[1] * size[2], 1);
     if (!g_alt_drag.buffer)
         return;
 
+    g_alt_drag.volume_orig = volume_copy(volume);
+    if (!g_alt_drag.volume_orig) {
+        free(g_alt_drag.buffer);
+        g_alt_drag.buffer = NULL;
+        return;
+    }
+
+    memcpy(g_alt_drag.size, size, sizeof(size));
     memcpy(g_alt_drag.start_aabb, aabb, sizeof(g_alt_drag.start_aabb));
     vec3_copy(goxel.selection[3], g_alt_drag.start_center);
     memset(g_alt_drag.last_delta, 0, sizeof(g_alt_drag.last_delta));
@@ -182,18 +193,22 @@ static void alt_drag_begin(const int aabb[2][3], volume_t *volume)
             }
         }
     }
+
+    // Preview on a separate volume; the layer stays unchanged until release.
+    if (!goxel.tool_volume)
+        goxel.tool_volume = volume_new();
+    volume_set(goxel.tool_volume, g_alt_drag.volume_orig);
 }
 
-static void alt_drag_apply(volume_t *volume, const float box[4][4])
+static void alt_drag_apply(const float box[4][4])
 {
     int pos[3];
     int volume_pos[3];
     int delta[3];
-    int shifted_aabb[2][3];
     int i;
     size_t buffer_offset;
 
-    if (!g_alt_drag.active || !g_alt_drag.buffer)
+    if (!g_alt_drag.active || !g_alt_drag.buffer || !g_alt_drag.volume_orig)
         return;
 
     for (i = 0; i < 3; i++)
@@ -204,12 +219,10 @@ static void alt_drag_apply(volume_t *volume, const float box[4][4])
             delta[2] == g_alt_drag.last_delta[2])
         return;
 
-    volume_clear_aabb(volume, g_alt_drag.start_aabb);
-    if (    g_alt_drag.last_delta[0] || g_alt_drag.last_delta[1] ||
-            g_alt_drag.last_delta[2]) {
-        aabb_shift(g_alt_drag.start_aabb, g_alt_drag.last_delta, shifted_aabb);
-        volume_clear_aabb(volume, shifted_aabb);
-    }
+    if (!goxel.tool_volume)
+        goxel.tool_volume = volume_new();
+    volume_set(goxel.tool_volume, g_alt_drag.volume_orig);
+    volume_clear_aabb(goxel.tool_volume, g_alt_drag.start_aabb);
 
     for (pos[0] = 0; pos[0] < g_alt_drag.size[0]; pos[0]++) {
         for (pos[1] = 0; pos[1] < g_alt_drag.size[1]; pos[1]++) {
@@ -222,27 +235,39 @@ static void alt_drag_apply(volume_t *volume, const float box[4][4])
                                              g_alt_drag.size[1] +
                                      pos[1] * g_alt_drag.size[0] + pos[0]);
 
-                volume_set_at(volume, NULL, volume_pos,
+                volume_set_at(goxel.tool_volume, NULL, volume_pos,
                               &g_alt_drag.buffer[buffer_offset]);
             }
         }
     }
 
     memcpy(g_alt_drag.last_delta, delta, sizeof(delta));
-    volume_remove_empty_tiles(volume, false);
+    volume_remove_empty_tiles(goxel.tool_volume, false);
 }
 
 static void alt_drag_end(void)
 {
+    layer_t *layer;
+    bool has_delta;
+
     if (!g_alt_drag.active)
         return;
 
-    if (    g_alt_drag.last_delta[0] || g_alt_drag.last_delta[1] ||
-            g_alt_drag.last_delta[2])
-        image_history_push(goxel.image);
+    has_delta = g_alt_drag.last_delta[0] || g_alt_drag.last_delta[1] ||
+                g_alt_drag.last_delta[2];
+    layer = goxel.image ? goxel.image->active_layer : NULL;
 
-    free(g_alt_drag.buffer);
-    memset(&g_alt_drag, 0, sizeof(g_alt_drag));
+    // Commit the preview into the layer and snapshot history once, on release.
+    if (has_delta && goxel.tool_volume && layer && layer->volume) {
+        image_history_push(goxel.image);
+        volume_set(layer->volume, goxel.tool_volume);
+    }
+
+    if (goxel.tool_volume) {
+        volume_delete(goxel.tool_volume);
+        goxel.tool_volume = NULL;
+    }
+    alt_drag_reset();
 }
 
 static bool move_axis_buttons(int *out_axis, int *sign)
@@ -404,7 +429,7 @@ static int iter(tool_t *tool, const painter_t *painter,
                 alt_drag_begin(aabb, volume);
             }
             mat4_mul(transf, goxel.selection, goxel.selection);
-            alt_drag_apply(volume, goxel.selection);
+            alt_drag_apply(goxel.selection);
         } else {
             mat4_mul(transf, goxel.selection, goxel.selection);
         }
