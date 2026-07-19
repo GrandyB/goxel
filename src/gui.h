@@ -213,6 +213,11 @@ void gui_pop_id(void);
 bool _model_item(int idx, bool *_selected, const char *name, int len);
 bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);
+/* Like gui_condensed_layer_item, but leaves trailing_w px free on the right
+ * for same-line action buttons. */
+bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icons,
+    bool *visible, bool *selected, char *name, int len, float trailing_w);
+float gui_icon_height(bool condensed);
 bool gui_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);
 

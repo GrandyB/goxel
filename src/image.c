@@ -17,6 +17,7 @@
  */
 
 #include "goxel.h"
+#include "custom_objects.h"
 #include "xxhash.h"
 
 /* History
@@ -189,6 +190,8 @@ image_t *image_new(void)
     image_t *img = calloc(1, sizeof(*img));
     img->ref = 1;
     img->recent_color_count = 0;
+    img->custom_objects = NULL;
+    img->custom_objects_show = true;
     const int aabb[2][3] = {{-16, -16, 0}, {16, 16, 32}};
     bbox_from_aabb(img->box, aabb);
     img->export_width = 1024;
@@ -290,6 +293,9 @@ static image_t *image_snap(image_t *other)
     img = calloc(1, sizeof(*img));
     *img = *other;
 
+    /* Break shared pointer immediately — do not free the live list. */
+    img->custom_objects = NULL;
+
     img->layers = NULL;
     img->active_layer = NULL;
     DL_FOREACH(other->layers, other_layer) {
@@ -322,6 +328,8 @@ static image_t *image_snap(image_t *other)
         }
     }
 
+    custom_objects_copy_list(&img->custom_objects, other->custom_objects);
+
     img->history = img->history_next = img->history_prev = NULL;
     return img;
 }
@@ -349,6 +357,7 @@ void image_delete(image_t *img)
         DL_DELETE(img->materials, mat);
         material_delete(mat);
     }
+    custom_objects_free_list(&img->custom_objects);
 
     // Path is shared between images and snaps!
     // XXX: find a better way.
@@ -840,8 +849,10 @@ static void debug_print_history(image_t *img) {}
 
 void image_history_push(image_t *img)
 {
-    image_t *snap = image_snap(img);
+    image_t *snap;
     image_t *hist;
+
+    snap = image_snap(img);
 
     // Discard previous undo.
     while ((hist = img->history_next)) {
@@ -992,6 +1003,19 @@ uint32_t image_get_key(const image_t *img)
     DL_FOREACH(img->materials, material) {
         k = material_get_hash(material);
         key = XXH32(&k, sizeof(k), key);
+    }
+    {
+        custom_object_t *obj;
+        uint8_t show = img->custom_objects_show ? 1 : 0;
+        key = XXH32(&show, sizeof(show), key);
+        DL_FOREACH(img->custom_objects, obj) {
+            key = XXH32(obj->name, sizeof(obj->name), key);
+            key = XXH32(&obj->type, sizeof(obj->type), key);
+            key = XXH32(obj->color, sizeof(obj->color), key);
+            key = XXH32(&obj->visible, sizeof(obj->visible), key);
+            key = XXH32(obj->p0, sizeof(obj->p0), key);
+            key = XXH32(obj->p1, sizeof(obj->p1), key);
+        }
     }
     return key;
 }

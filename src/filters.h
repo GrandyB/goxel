@@ -16,41 +16,49 @@
  * goxel.  If not, see <http://www.gnu.org/licenses/>.
  */
 
- #ifndef FILTERS_H
- #define FILTERS_H
- 
- #include <stdbool.h>
- 
- typedef struct filter filter_t;
- 
- struct filter {
-     int (*gui_fn)(filter_t *filter);
-     void (*on_open)(filter_t *filter);
-     void (*on_close)(filter_t *filter);
-     const char *name;
-     const char *action_id;
-     const char *default_shortcut;
-     const float panel_width;
-     bool is_open;
- };
- 
- #define FILTER_REGISTER(id_, klass_, ...) \
-     static klass_ GOX_filter_##id_ = {\
-             .filter = { \
-                 .action_id = "filter_open_" #id_, __VA_ARGS__ \
-             } \
-         }; \
-     __attribute__((constructor)) \
-     static void GOX_register_filter_##id_(void) { \
-         filter_register_(&GOX_filter_##id_.filter); \
-     }
- 
- void filter_register_(filter_t *filter);
- 
- /**
-  * Iter all the registered filters
-  */
- void filters_iter_all(
-         void *arg, void (*f)(void *arg, filter_t *filter));
- 
- #endif // FILTERS_H
+#ifndef FILTERS_H
+#define FILTERS_H
+
+#include <stdbool.h>
+
+typedef struct filter filter_t;
+
+struct filter {
+    int (*gui_fn)(filter_t *filter);
+    void (*on_open)(filter_t *filter);
+    void (*on_close)(filter_t *filter);
+    /* If true and the filter is open, view mouse is not sent to tools.
+     * Optional mouse_fn receives the viewport each frame instead. */
+    bool override_mouse;
+    void (*mouse_fn)(filter_t *filter, const float viewport[4]);
+    const char *name;
+    const char *action_id;
+    const char *default_shortcut;
+    const float panel_width;
+    bool is_open;
+};
+
+#define FILTER_REGISTER(id_, klass_, ...) \
+    static klass_ GOX_filter_##id_ = {\
+            .filter = { \
+                .action_id = "filter_open_" #id_, __VA_ARGS__ \
+            } \
+        }; \
+    __attribute__((constructor)) \
+    static void GOX_register_filter_##id_(void) { \
+        filter_register_(&GOX_filter_##id_.filter); \
+    }
+
+void filter_register_(filter_t *filter);
+
+/**
+ * Iter all the registered filters
+ */
+void filters_iter_all(
+        void *arg, void (*f)(void *arg, filter_t *filter));
+
+/* If any open filter has override_mouse, call its mouse_fn (if set) and
+ * return true so the caller can skip tool_iter. */
+bool filters_mouse_overlay(const float viewport[4]);
+
+#endif // FILTERS_H

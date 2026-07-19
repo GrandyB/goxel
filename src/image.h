@@ -39,6 +39,28 @@ typedef struct {
     int     noise_coverage;
 } image_recent_color_t;
 
+typedef enum {
+    CUSTOM_OBJ_POINT_2D = 0,
+    CUSTOM_OBJ_POINT_3D,
+    CUSTOM_OBJ_ZONE_2D,
+    CUSTOM_OBJ_ZONE_3D,
+} custom_object_type_t;
+
+typedef struct custom_object custom_object_t;
+struct custom_object {
+    /* Leading int required: gui_list casts items to {int; next; prev;}. */
+    int ref;
+    custom_object_t *next, *prev;
+    char name[128];
+    custom_object_type_t type;
+    uint8_t color[4];
+    bool visible;
+    /* World coords in goxel space (X/Y floor, Z height).
+     * Points: p0 used; p1 unused.
+     * Zones: p0 / p1 = inclusive AABB corners. */
+    int p0[3], p1[3];
+};
+
 typedef struct history history_t;
 
 struct painter; /* see volume_utils.h (painter_t) */
@@ -69,6 +91,9 @@ struct image {
 
     int recent_color_count;
     image_recent_color_t recent_colors[GOXEL_RECENT_COLOR_HISTORY_MAX];
+
+    custom_object_t *custom_objects;
+    bool custom_objects_show;
 
     image_t *history;
     image_t *history_next, *history_prev;

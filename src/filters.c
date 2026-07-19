@@ -80,3 +80,19 @@ void filters_iter_all(void *arg, void (*f)(void *arg, filter_t *filter)) {
         f(arg, g_filters[i]);
     }
 }
+
+bool filters_mouse_overlay(const float viewport[4])
+{
+    int i;
+    bool handled = false;
+
+    for (i = 0; i < arrlen(g_filters); i++) {
+        filter_t *filter = g_filters[i];
+        if (!filter->is_open || !filter->override_mouse)
+            continue;
+        handled = true;
+        if (filter->mouse_fn)
+            filter->mouse_fn(filter, viewport);
+    }
+    return handled;
+}

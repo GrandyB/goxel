@@ -2166,7 +2166,7 @@ bool _model_item(int idx, bool *selected, const char *name, int len)
 
 bool _layer_item(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
-                    char *name, int len, bool condensed)
+                    char *name, int len, bool condensed, float trailing_w)
 {
     bool ret = false;
     bool selected_ = *selected;
@@ -2180,6 +2180,8 @@ bool _layer_item(int idx, int icons_count, const int *icons,
     ImVec2 padding;
     ImDrawList *draw_list = ImGui::GetWindowDrawList();
     ImGuiStyle &style = ImGui::GetStyle();
+    float btn_h = GUI_ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1);
+    float name_w;
 
     ImGui::PushID(idx);
     ImGui::PushStyleColor(ImGuiCol_Button, COLOR(WIDGET, INNER, *selected));
@@ -2204,7 +2206,9 @@ bool _layer_item(int idx, int icons_count, const int *icons,
         padding = style.FramePadding;
         padding.x += GUI_ICON_HEIGHT * 0.75 * icons_count;
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, padding);
-        if (ImGui::Button(name, ImVec2(-1, GUI_ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1))))
+        name_w = ImGui::GetContentRegionAvail().x - trailing_w;
+        if (name_w < btn_h) name_w = btn_h;
+        if (ImGui::Button(name, ImVec2(name_w, btn_h)))
         {
             *selected = true;
             ret = true;
@@ -2249,15 +2253,34 @@ bool _layer_item(int idx, int icons_count, const int *icons,
     ImGui::PopID();
     return ret;
 }
+
+float gui_icon_height(bool condensed)
+{
+    return ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1.f);
+}
+
 bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
-                    char *name, int len) {
-    return _layer_item(idx, icons_count, icons, visible, selected, name, len, true);
-};
+                    char *name, int len)
+{
+    return _layer_item(idx, icons_count, icons, visible, selected, name, len,
+                       true, 0);
+}
+
+bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icons,
+                    bool *visible, bool *selected,
+                    char *name, int len, float trailing_w)
+{
+    return _layer_item(idx, icons_count, icons, visible, selected, name, len,
+                       true, trailing_w);
+}
+
 bool gui_layer_item(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
-                    char *name, int len) {
-    return _layer_item(idx, icons_count, icons, visible, selected, name, len, false);
+                    char *name, int len)
+{
+    return _layer_item(idx, icons_count, icons, visible, selected, name, len,
+                       false, 0);
 }
 
 bool gui_is_key_down(int key)

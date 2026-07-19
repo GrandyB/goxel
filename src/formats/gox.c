@@ -19,6 +19,7 @@
 
 #include "goxel.h"
 #include "file_format.h"
+#include "custom_objects.h"
 #include <errno.h>
 
 #define VERSION 2 // Current version of the file format.
@@ -90,6 +91,18 @@
  *          4 bytes: color RGBA
  *          4 x int32: noise_enabled, noise_intensity, noise_saturation,
  *                     noise_coverage
+ *
+ *   CUST: custom objects (points/zones) list, binary:
+ *      1 byte: global show flag
+ *      4 bytes: count (int32)
+ *      for each object:
+ *          1 byte: name length
+ *          n bytes: name (UTF-8, no NUL)
+ *          1 byte: type (0=2D point, 1=3D point, 2=2D zone, 3=3D zone)
+ *          4 bytes: color RGBA
+ *          1 byte: visible
+ *          3 x int32: p0 (x,y,z)
+ *          3 x int32: p1 (x,y,z; unused for points)
  */
 
 // We create a hash table of all the blocks, so that blocks with the same
@@ -524,6 +537,15 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
         }
     }
 
+    {
+        int cust_len = 0;
+        uint8_t *cust_buf = custom_objects_serialize(img, &cust_len);
+        if (cust_buf && cust_len > 0) {
+            chunk_write_all(out, "CUST", (char *)cust_buf, cust_len);
+            free(cust_buf);
+        }
+    }
+
     HASH_ITER(hh, blocks_table, data, data_tmp) {
         HASH_DEL(blocks_table, data);
         free(data);
@@ -626,6 +648,8 @@ static void image_clear_gox_content(image_t *img)
 
     memset(&img->box, 0, sizeof(img->box));
     img->recent_color_count = 0;
+    custom_objects_free_list(&img->custom_objects);
+    img->custom_objects_show = true;
     placer_past_files_clear();
 }
 
@@ -845,6 +869,16 @@ int load_from_file(const char *path, bool replace)
             goxel.image->recent_color_count = ent;
             if (c.pos < c.length)
                 chunk_read(&c, in, NULL, c.length - c.pos, __LINE__);
+        } else if (strncmp(c.type, "CUST", 4) == 0) {
+            char *cust_buf = malloc(c.length);
+            if (cust_buf) {
+                chunk_read(&c, in, cust_buf, c.length, __LINE__);
+                custom_objects_deserialize(goxel.image,
+                                           (const uint8_t *)cust_buf, c.length);
+                free(cust_buf);
+            } else {
+                chunk_read(&c, in, NULL, c.length, __LINE__);
+            }
         } else {
             // Ignore other blocks.
             chunk_read(&c, in, NULL, c.length, __LINE__);

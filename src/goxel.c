@@ -817,6 +817,8 @@ static int on_drag(const gesture_t *gest, void *user)
         c->flags |= CURSOR_PRESSED;
     if (gest->state == GESTURE_END)
         c->flags &= ~CURSOR_PRESSED;
+    /* Keep screen coords current — hover is not called during LMB drag. */
+    vec2_copy(gest->pos, c->xy);
     c->snaped = goxel_unproject(
             gest->viewport, gest->pos, c->snap_mask,
             c->snap_offset, c->pos, c->normal);
@@ -1027,7 +1029,8 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     if (painter.mode != MODE_PAINT) painter.smoothness = 0;
 
     if (!goxel.pathtrace) {
-        tool_iter(goxel.tool, &painter, viewport);
+        if (!filters_mouse_overlay(viewport))
+            tool_iter(goxel.tool, &painter, viewport);
     }
 
     if (inputs->mouse_wheel && !camera_is_firstperson(camera)) {
@@ -1398,6 +1401,8 @@ void goxel_render_view(const float viewport[4], bool render_mode)
     }
 
     render_box(rend, goxel.selection, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
+
+    custom_objects_render(rend, goxel.image);
 
     if (goxel.tool->flags & TOOL_SHOW_MASK)
         render_volume(rend, goxel.mask, NULL, EFFECT_GRID_ONLY);
