@@ -462,6 +462,137 @@ static int voxel_cmp(const void *a_, const void *b_)
     return 0;
 }
 
+// MagicaVoxel max object size (coords fit in uint8_t).
+#define VOX_TILE 256
+
+typedef struct {
+    int ox, oy, oz;     // World-space origin of the tile.
+    int sx, sy, sz;     // Model size (<= VOX_TILE).
+    int nb_vox;
+    int filled;         // Voxels written so far while packing.
+    uint8_t *voxels;    // nb_vox * 4: x, y, z, color index.
+} vox_tile_t;
+
+static void write_vox_string(FILE *file, const char *s)
+{
+    int32_t len = (int32_t)strlen(s);
+    WRITE(int32_t, len, file);
+    fwrite(s, 1, len, file);
+}
+
+static void write_vox_dict_entry(FILE *file, const char *key, const char *value)
+{
+    write_vox_string(file, key);
+    write_vox_string(file, value);
+}
+
+static void write_size_xyzi(FILE *file, int sx, int sy, int sz,
+                            const uint8_t *voxels, int nb_vox)
+{
+    int i;
+
+    fprintf(file, "SIZE");
+    WRITE(uint32_t, 4 * 3, file);
+    WRITE(uint32_t, 0, file);
+    WRITE(uint32_t, sx, file);
+    WRITE(uint32_t, sy, file);
+    WRITE(uint32_t, sz, file);
+
+    fprintf(file, "XYZI");
+    WRITE(uint32_t, 4 * nb_vox + 4, file);
+    WRITE(uint32_t, 0, file);
+    WRITE(uint32_t, nb_vox, file);
+    for (i = 0; i < nb_vox; i++)
+        fwrite(voxels + i * 4, 4, 1, file);
+}
+
+static void write_rgba(FILE *file, uint8_t (*palette)[4])
+{
+    int i;
+
+    fprintf(file, "RGBA");
+    WRITE(uint32_t, 4 * 256, file);
+    WRITE(uint32_t, 0, file);
+    for (i = 1; i < 256; i++) {
+        WRITE(uint8_t, palette[i][0], file);
+        WRITE(uint8_t, palette[i][1], file);
+        WRITE(uint8_t, palette[i][2], file);
+        WRITE(uint8_t, palette[i][3], file);
+    }
+    WRITE(uint32_t, 0, file);
+}
+
+// nTRN content size (excluding the 12-byte chunk header).
+static int ntrn_content_size(const char *trans)
+{
+    int size = 4 + 4 + 4 + 4 + 4 + 4; // id, empty dict, child, reserved, layer, frames
+    if (trans) {
+        size += 4; // one frame-dict entry
+        size += 4 + 2; // key "_t"
+        size += 4 + (int)strlen(trans);
+    } else {
+        size += 4; // empty frame dict
+    }
+    return size;
+}
+
+static void write_ntrn(FILE *file, int node_id, int child_id, const char *trans)
+{
+    WRITE(uint32_t, ntrn_content_size(trans), file);
+    WRITE(uint32_t, 0, file);
+    WRITE(int32_t, node_id, file);
+    WRITE(int32_t, 0, file); // empty node dict
+    WRITE(int32_t, child_id, file);
+    WRITE(int32_t, -1, file); // reserved
+    WRITE(int32_t, 0, file);  // layer id
+    WRITE(int32_t, 1, file);  // num frames
+    if (trans) {
+        WRITE(int32_t, 1, file);
+        write_vox_dict_entry(file, "_t", trans);
+    } else {
+        WRITE(int32_t, 0, file);
+    }
+}
+
+static int ngrp_content_size(int nb_children)
+{
+    return 4 + 4 + 4 + 4 * nb_children; // id, empty dict, count, child ids
+}
+
+static void write_ngrp(FILE *file, int node_id, const int *children, int nb)
+{
+    int i;
+
+    WRITE(uint32_t, ngrp_content_size(nb), file);
+    WRITE(uint32_t, 0, file);
+    WRITE(int32_t, node_id, file);
+    WRITE(int32_t, 0, file); // empty dict
+    WRITE(int32_t, nb, file);
+    for (i = 0; i < nb; i++)
+        WRITE(int32_t, children[i], file);
+}
+
+static int nshp_content_size(void)
+{
+    return 4 + 4 + 4 + 4 + 4; // id, empty dict, num models, model id, empty model dict
+}
+
+static void write_nshp(FILE *file, int node_id, int model_id)
+{
+    WRITE(uint32_t, nshp_content_size(), file);
+    WRITE(uint32_t, 0, file);
+    WRITE(int32_t, node_id, file);
+    WRITE(int32_t, 0, file); // empty dict
+    WRITE(int32_t, 1, file); // num models
+    WRITE(int32_t, model_id, file);
+    WRITE(int32_t, 0, file); // empty model dict
+}
+
+static int size_xyzi_chunk_bytes(int nb_vox)
+{
+    return (12 + 12) + (12 + 4 + 4 * nb_vox); // SIZE + XYZI including headers
+}
+
 static int vox_export(const file_format_t *format, const image_t *image,
                       const char *path)
 {
@@ -469,19 +600,24 @@ static int vox_export(const file_format_t *format, const image_t *image,
     int children_size, nb_vox = 0, i, pos[3];
     int xmin = INT_MAX, ymin = INT_MAX, zmin = INT_MAX;
     int xmax = INT_MIN, ymax = INT_MIN, zmax = INT_MIN;
+    int sx, sy, sz, nx, ny, nz, tx, ty, tz, ti, nb_tiles, model_i;
+    int *tile_child_ids = NULL;
     uint8_t (*palette)[4];
     bool use_default_palette = true;
-    uint8_t *voxels;
+    bool need_tiles;
+    uint8_t *voxels = NULL;
     uint8_t v[4];
     volume_iterator_t iter;
     const volume_t *volume;
+    vox_tile_t *tiles = NULL;
+    char trans[64];
 
     volume = goxel_get_layers_volume(image);
     palette = calloc(256, sizeof(*palette));
     for (i = 0; i < 256; i++)
         hexcolor(VOX_DEFAULT_PALETTE[i], palette[i]);
 
-    // Iter all the voxels to get the count and the size.
+    // First pass: count voxels, AABB, and whether the default palette fits.
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
     while (volume_iter(&iter, pos)) {
         volume_get_at(volume, &iter, pos, v);
@@ -497,70 +633,198 @@ static int vox_export(const file_format_t *format, const image_t *image,
         ymax = max(ymax, pos[1] + 1);
         zmax = max(zmax, pos[2] + 1);
     }
+    if (nb_vox == 0) {
+        free(palette);
+        return -1;
+    }
     if (!use_default_palette)
         quantization_gen_palette(volume, 255, (void*)(palette + 1));
 
-    children_size = 12 + 4 * 3 +      // SIZE chunk
-                    12 + 4 + 4 * nb_vox + // XYZI chunk
-                    (use_default_palette ? 0 : (12 + 4 * 256)); // RGBA chunk.
+    sx = xmax - xmin;
+    sy = ymax - ymin;
+    sz = zmax - zmin;
+    need_tiles = sx > VOX_TILE || sy > VOX_TILE || sz > VOX_TILE;
 
     file = fopen(path, "wb");
-    fprintf(file, "VOX ");
-    WRITE(uint32_t, 150, file);     // Version
-    fprintf(file, "MAIN");
-    WRITE(uint32_t, 0, file);       // Main chunck size.
-    WRITE(uint32_t, children_size, file);
+    if (!file) {
+        free(palette);
+        return -1;
+    }
 
-    fprintf(file, "SIZE");
-    WRITE(uint32_t, 4 * 3, file);
-    WRITE(uint32_t, 0, file);
-    WRITE(uint32_t, xmax - xmin, file);
-    WRITE(uint32_t, ymax - ymin, file);
-    WRITE(uint32_t, zmax - zmin, file);
+    if (!need_tiles) {
+        // Single model: fits in MagicaVoxel's 256³ object limit.
+        children_size = size_xyzi_chunk_bytes(nb_vox) +
+                        (use_default_palette ? 0 : (12 + 4 * 256));
 
-    fprintf(file, "XYZI");
-    WRITE(uint32_t, 4 * nb_vox + 4, file);
-    WRITE(uint32_t, 0, file);
-    WRITE(uint32_t, nb_vox, file);
+        fprintf(file, "VOX ");
+        WRITE(uint32_t, 150, file);
+        fprintf(file, "MAIN");
+        WRITE(uint32_t, 0, file);
+        WRITE(uint32_t, children_size, file);
 
-    voxels = calloc(nb_vox, 4);
-    i = 0;
+        voxels = calloc(nb_vox, 4);
+        i = 0;
+        iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
+        while (volume_iter(&iter, pos)) {
+            volume_get_at(volume, &iter, pos, v);
+            if (v[3] < 127) continue;
+            pos[0] -= xmin;
+            pos[1] -= ymin;
+            pos[2] -= zmin;
+            assert(pos[0] >= 0 && pos[0] < VOX_TILE);
+            assert(pos[1] >= 0 && pos[1] < VOX_TILE);
+            assert(pos[2] >= 0 && pos[2] < VOX_TILE);
+            voxels[i * 4 + 0] = pos[0];
+            voxels[i * 4 + 1] = pos[1];
+            voxels[i * 4 + 2] = pos[2];
+            voxels[i * 4 + 3] = get_color_index(v, palette, false);
+            i++;
+        }
+        qsort(voxels, nb_vox, 4, voxel_cmp);
+        write_size_xyzi(file, sx, sy, sz, voxels, nb_vox);
+        free(voxels);
+        if (!use_default_palette)
+            write_rgba(file, palette);
+        fclose(file);
+        free(palette);
+        return 0;
+    }
+
+    // Tile the AABB into VOX_TILE³ chunks; skip empty tiles later.
+    nx = (sx + VOX_TILE - 1) / VOX_TILE;
+    ny = (sy + VOX_TILE - 1) / VOX_TILE;
+    nz = (sz + VOX_TILE - 1) / VOX_TILE;
+    tiles = calloc(nx * ny * nz, sizeof(*tiles));
+
+    for (tz = 0; tz < nz; tz++)
+    for (ty = 0; ty < ny; ty++)
+    for (tx = 0; tx < nx; tx++) {
+        ti = tx + ty * nx + tz * nx * ny;
+        tiles[ti].ox = xmin + tx * VOX_TILE;
+        tiles[ti].oy = ymin + ty * VOX_TILE;
+        tiles[ti].oz = zmin + tz * VOX_TILE;
+        tiles[ti].sx = min(VOX_TILE, xmax - tiles[ti].ox);
+        tiles[ti].sy = min(VOX_TILE, ymax - tiles[ti].oy);
+        tiles[ti].sz = min(VOX_TILE, zmax - tiles[ti].oz);
+    }
+
+    // Count voxels per tile.
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
     while (volume_iter(&iter, pos)) {
         volume_get_at(volume, &iter, pos, v);
         if (v[3] < 127) continue;
-        pos[0] -= xmin;
-        pos[1] -= ymin;
-        pos[2] -= zmin;
-        assert(pos[0] >= 0 && pos[0] < 255);
-        assert(pos[1] >= 0 && pos[1] < 255);
-        assert(pos[2] >= 0 && pos[2] < 255);
+        tx = (pos[0] - xmin) / VOX_TILE;
+        ty = (pos[1] - ymin) / VOX_TILE;
+        tz = (pos[2] - zmin) / VOX_TILE;
+        tiles[tx + ty * nx + tz * nx * ny].nb_vox++;
+    }
 
-        voxels[i * 4 + 0] = pos[0];
-        voxels[i * 4 + 1] = pos[1];
-        voxels[i * 4 + 2] = pos[2];
+    nb_tiles = 0;
+    for (i = 0; i < nx * ny * nz; i++) {
+        if (!tiles[i].nb_vox) continue;
+        tiles[i].voxels = calloc(tiles[i].nb_vox, 4);
+        nb_tiles++;
+    }
+
+    // Pack local coords into each tile.
+    iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(volume, &iter, pos, v);
+        if (v[3] < 127) continue;
+        tx = (pos[0] - xmin) / VOX_TILE;
+        ty = (pos[1] - ymin) / VOX_TILE;
+        tz = (pos[2] - zmin) / VOX_TILE;
+        ti = tx + ty * nx + tz * nx * ny;
+        i = tiles[ti].filled++;
+        voxels = tiles[ti].voxels;
+        assert(pos[0] - tiles[ti].ox >= 0 && pos[0] - tiles[ti].ox < VOX_TILE);
+        assert(pos[1] - tiles[ti].oy >= 0 && pos[1] - tiles[ti].oy < VOX_TILE);
+        assert(pos[2] - tiles[ti].oz >= 0 && pos[2] - tiles[ti].oz < VOX_TILE);
+        voxels[i * 4 + 0] = pos[0] - tiles[ti].ox;
+        voxels[i * 4 + 1] = pos[1] - tiles[ti].oy;
+        voxels[i * 4 + 2] = pos[2] - tiles[ti].oz;
         voxels[i * 4 + 3] = get_color_index(v, palette, false);
-        i++;
     }
-    qsort(voxels, nb_vox, 4, voxel_cmp);
-    for (i = 0; i < nb_vox; i++)
-        fwrite(voxels + i * 4, 4, 1, file);
-    free(voxels);
 
-    if (!use_default_palette) {
-        fprintf(file, "RGBA");
-        WRITE(uint32_t, 4 * 256, file);
-        WRITE(uint32_t, 0, file);
-        for (i = 1; i < 256; i++) {
-            WRITE(uint8_t, palette[i][0], file);
-            WRITE(uint8_t, palette[i][1], file);
-            WRITE(uint8_t, palette[i][2], file);
-            WRITE(uint8_t, palette[i][3], file);
-        }
-        WRITE(uint32_t, 0, file);
+    for (i = 0; i < nx * ny * nz; i++) {
+        if (!tiles[i].nb_vox) continue;
+        qsort(tiles[i].voxels, tiles[i].nb_vox, 4, voxel_cmp);
     }
+
+    // MAIN children: models + scene graph + optional RGBA.
+    children_size = 0;
+    for (i = 0; i < nx * ny * nz; i++) {
+        if (!tiles[i].nb_vox) continue;
+        children_size += size_xyzi_chunk_bytes(tiles[i].nb_vox);
+    }
+    // Root nTRN + nGRP + per-tile (nTRN with _t + nSHP).
+    children_size += 12 + ntrn_content_size(NULL);
+    children_size += 12 + ngrp_content_size(nb_tiles);
+    for (i = 0; i < nx * ny * nz; i++) {
+        if (!tiles[i].nb_vox) continue;
+        // Worst-case translation string length for size accounting.
+        snprintf(trans, sizeof(trans), "%d %d %d",
+                 tiles[i].ox + tiles[i].sx / 2,
+                 tiles[i].oy + tiles[i].sy / 2,
+                 tiles[i].oz + tiles[i].sz / 2);
+        children_size += 12 + ntrn_content_size(trans);
+        children_size += 12 + nshp_content_size();
+    }
+    if (!use_default_palette)
+        children_size += 12 + 4 * 256;
+
+    fprintf(file, "VOX ");
+    WRITE(uint32_t, 150, file);
+    fprintf(file, "MAIN");
+    WRITE(uint32_t, 0, file);
+    WRITE(uint32_t, children_size, file);
+
+    model_i = 0;
+    for (i = 0; i < nx * ny * nz; i++) {
+        if (!tiles[i].nb_vox) continue;
+        write_size_xyzi(file, tiles[i].sx, tiles[i].sy, tiles[i].sz,
+                        tiles[i].voxels, tiles[i].nb_vox);
+        model_i++;
+    }
+
+    // Scene graph: root nTRN -> nGRP -> (nTRN -> nSHP)* per tile.
+    // Node ids: 0=root TRN, 1=GRP, 2+2k=tile TRN, 3+2k=tile SHP.
+    tile_child_ids = calloc(nb_tiles, sizeof(*tile_child_ids));
+    model_i = 0;
+    for (i = 0; i < nx * ny * nz; i++) {
+        if (!tiles[i].nb_vox) continue;
+        tile_child_ids[model_i] = 2 + 2 * model_i;
+        model_i++;
+    }
+
+    fprintf(file, "nTRN");
+    write_ntrn(file, 0, 1, NULL);
+
+    fprintf(file, "nGRP");
+    write_ngrp(file, 1, tile_child_ids, nb_tiles);
+
+    model_i = 0;
+    for (i = 0; i < nx * ny * nz; i++) {
+        if (!tiles[i].nb_vox) continue;
+        snprintf(trans, sizeof(trans), "%d %d %d",
+                 tiles[i].ox + tiles[i].sx / 2,
+                 tiles[i].oy + tiles[i].sy / 2,
+                 tiles[i].oz + tiles[i].sz / 2);
+        fprintf(file, "nTRN");
+        write_ntrn(file, 2 + 2 * model_i, 3 + 2 * model_i, trans);
+        fprintf(file, "nSHP");
+        write_nshp(file, 3 + 2 * model_i, model_i);
+        model_i++;
+    }
+
+    if (!use_default_palette)
+        write_rgba(file, palette);
 
     fclose(file);
+    free(tile_child_ids);
+    for (i = 0; i < nx * ny * nz; i++)
+        free(tiles[i].voxels);
+    free(tiles);
     free(palette);
     return 0;
 }
