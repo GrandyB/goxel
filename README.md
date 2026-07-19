@@ -1,15 +1,14 @@
-
-Goxel
+Goxel (fork)
 =====
 
-Version 0.12.0
+Original author: Guillaume Chereau <guillaume@noctua-software.com>
 
-By Guillaume Chereau <guillaume@noctua-software.com>
+This fork is maintained by Mark 'Grandy' Bishop —
+https://github.com/GrandyB/goxel
 
-[![Build Status](https://github.com/guillaumechereau/goxel/actions/workflows/ci.yml/badge.svg)](https://github.com/guillaumechereau/goxel/actions/workflows/ci.yml)
-[![DebianBadge](https://badges.debian.net/badges/debian/unstable/goxel/version.svg)](https://packages.debian.org/unstable/goxel)
+Upstream / original project: https://goxel.xyz ·
+https://github.com/guillaumechereau/goxel
 
-Official webpage: https://goxel.xyz
 
 About
 -----
@@ -17,34 +16,40 @@ About
 You can use goxel to create voxel graphics (3D images formed of cubes).  It
 works on Linux, BSD, Windows and macOS.
 
+**This fork** builds on that foundation for **voxel map making for games** —
+large layered maps, doodad placement, terrain generation, game-oriented
+cameras, and export paths useful for titles such as Ace of Spades and similar
+voxel engines. Upstream Goxel remains a general-purpose voxel editor; the
+additions below are specific to this fork.
+
 
 Download
 --------
 
-The last release files can be downloaded from [there](
-https://github.com/guillaumechereau/goxel/releases/latest).
+The latest release of **this fork** (currently **0_2o**) can be downloaded from:
 
-Goxel is also available for [iOS](
-https://itunes.apple.com/us/app/goxel-3d-voxel-editor/id1259097826) and
-[Android](
-https://play.google.com/store/apps/details?id=com.noctuasoftware.goxel).
+https://github.com/GrandyB/goxel/releases/latest
+
+Releases are typically available as a Windows `.exe`.
 
 
-![goxel screenshot 0](https://goxel.xyz/gallery/thibault-fisherman-house.jpg)
-Fisherman house, made with Goxel by
-[Thibault Simar](https://www.artstation.com/exm)
+![Lantern Ridge](.github/images/lantern_ridge_grandy.png)
+
+*Lantern Ridge*, made with this fork by Mark 'Grandy' Bishop.
 
 
 Licence
 -------
 
 Goxel is released under the GNU GPL3 licence.  If you want to use the code
-with a commercial project please contact me: I am willing to provide a
-version of the code under a commercial license.
+with a commercial project please contact the original author: he is willing
+to provide a version of the code under a commercial license.
 
 
-Features
---------
+Features (upstream Goxel)
+-------------------------
+
+These come from the original project:
 
 - 24 bits RGB colors.
 - Unlimited scene size.
@@ -55,65 +60,75 @@ Features
 - Export to obj, pyl, png, magica voxel, qubicle.
 - Ray tracing.
 
-Changes in this fork
---------
 
-    - Tools
-        - New doodad placer tool - select a file and place it at will
-            - Can rotate the imported voxels non-destructively, offset from an origin point
-            - Copy the current selection into the placer
-            - Cut the current selection into the placer
-            - History pane with previews of models
-            - Options for randomised flip/rotates
-            - Options for colour replacement within models to a fixed or random colour
-        - New fill tool - floodfills current z with a colour, until it hits a boundary
-        - Palettes can be added/removed/edited
-        - Colour history bar stores 20 recent colours (and any noise settings), stored in the .gox file
-        - Selection tool
-            - Holding 'shift' temporarily switches to 'move' rather than 'resize' mode
-            - 'Select entire layer' button
-            - Copy the current selection into the placer
-            - Cut the current selection into the placer
-        - Brush can set width/height/depth separately
-        - Move tool can do 'destructive rotation'
-        - Fuzzy select can select layer-wide and fill with noise
-    - Layers
-        - Layers panel permanently on right and scrolls internally
-        - Merge layer down
-    - Colours
-        - Colour picker also integrated directly into the tools panel for tools like the brush
-        - Blend mode added
-            - User = the user's chosen color
-            - Inherited = the colour of the block beneath
-            - Interpolated = USER <> INHERITED, the midpoint
-        - Noise panel added - can add random noise to texture the brush
-    - Camera
-        - First person camera (#)
-            - Arrow keys for forward/back/left/right, Page Up/Down for up/down, RMB or MMB for look
-            - Speed
-            - FOV
-            - Manual X/Y/Z
-        - Player camera - with gravity and collisions
-            - WASD to move, Space to jump, Ctrl to crouch, hold Alt for noclip fly
-        - Rotational camera (default) FOV setting (and its base value is higher than it was before); it also pivots around the block under the cursor
-    - Image
-        - "Crop to visible & reset origin", uses only visible layers, crops to the size of those layers, resets the origin
-    - Import/Export
-        - Heightmap export .bmp file in greyscale, z0 = black, (zN = 8 + ((zN-1) * 4) = max 64 height
-        - Colourmap export .bmp file
-        - voxlap import (e.g. kvx) no longer retains bounding box bg on import
-        - Imports now automatically add to a new layer, which is named after the file
-        - hmap + cmap import - combines a black and white heightmap with a colourmap into a layer
-        - colourmap import - applies image to current layer down z
-    - Hotkeys
-        - Move plane up/down = < >
-        - Plane visibility = /
-        - FPV/Player Camera = #
-        - Select layer under cursor = '
-    - UI
-        - Always add arrows to number fields < >
-        - Layer pane docked to the right
-        - Snap panel visible in top bar for tools that are affected by it
+What's new in this fork
+-----------------------
+
+Designed for **voxel map making for games**. Highlights relative to upstream:
+
+### Tools
+
+- **Doodad / placer tool** — select a file (or multi-file import) and place it at will
+    - Non-destructive rotate; offset from an origin; scaling before place
+    - Flip options; randomised flip/rotate per placement
+    - Colour replacement (fixed or random) for variation on repeated objects
+    - Copy / cut / acquire selection into the placer; export placer content to a file
+    - History pane with model previews (persisted in the `.gox` file)
+- **Fill tool** — flood-fill with current colour settings (works well with plane snap)
+- **Box select** — after drawing a box, hold **Alt** and drag a face to move the box contents
+- Palettes can be added / removed / edited (globally saved); filter to pull colours from layers
+- Colour history bar — 20 recent colours (and noise settings), stored in the `.gox` file
+- Selection tool
+    - Holding **Shift** temporarily switches to move rather than resize
+    - Select entire layer; copy / cut selection into the placer
+- Brush can set width / height / depth separately; optional origin at base
+- Move tool can do destructive rotation
+- Fuzzy select can select layer-wide and fill with noise
+- Holding **Shift** on brush/shape still draws lines (dedicated line tool removed)
+
+### Layers
+
+- Layers panel permanently on the right and scrolls internally
+- Marker colours; merge layer down; shorter layer rows for denser lists
+- Per-layer **opacity** and **volume snap** (see a layer without snapping to it)
+
+### Colours
+
+- Colour picker integrated into the tools panel
+- Blend modes: User / Inherited / Interpolated
+- Noise panel — random noise to texture brush / paint / place / extrude
+- Opacity as 0–100% integers; Ctrl+Shift colour-pick retains previous alpha
+
+### Cameras
+
+- First-person camera (`#`) — arrows / Page Up-Down, RMB or MMB look, speed / FOV / XYZ
+- **Player camera** — gravity and collisions; WASD, Space jump, Ctrl crouch, Alt noclip
+- Orbit camera pivots around the block under the cursor; adjustable FOV
+
+### Filters & generation
+
+- Generation: Genland terrain, terrain coloring, doodad placement on heights
+- Bulk: fill upwards by colour, remove by colour
+- Transform: squash, rotate 90°, wrap / mirror (plus View > Wrap edge preview)
+- Simple shadows from other visible layers; coords dump for the selection box
+- Colour H/S/L/C for layer (from upstream filter system)
+
+### Image & import / export
+
+- Crop to visible & reset origin; crop to image box
+- Heightmap / colourmap export (`.bmp`); hmap + cmap import; colourmap-onto-layer import
+- Voxlap / kvx import without bounding-box background; imports go to a new named layer
+- Export as **kv6**; export **gox (visible layers only)**; export panel remembers last path
+- New map presets: 32³ (Ctrl+N) and 512×512×64 (Ctrl+M)
+
+### Hotkeys & UI
+
+- Plane up/down `<` `>`; plane visibility `/`; FPV/player `#`; select layer under cursor `'`
+- Snap panel in the top bar for tools that use it; number fields always show arrows
+- F11 fullscreen; FPS in the bottom-left; open recent file on startup
+
+Full release notes for each version are on
+https://github.com/GrandyB/goxel/releases
 
 
 Usage
@@ -169,16 +184,20 @@ Then to build:
 Contributing
 ------------
 
-In order for your contribution to Goxel to be accepted, you have to sign the
-[Goxel Contributor License Agreement (CLA)](doc/cla/sign-cla.md).  This is
-mostly to allow me to distribute the mobile branch goxel under a non GPL
-licence.
+In order for your contribution to Goxel to be accepted upstream, you have to
+sign the [Goxel Contributor License Agreement (CLA)](doc/cla/sign-cla.md).
+This is mostly to allow the original author to distribute the mobile branch
+of goxel under a non GPL licence.
 
 Also, please read the [contributing document](CONTRIBUTING.md).
+
+For this fork, issues and PRs are welcome at
+https://github.com/GrandyB/goxel
 
 
 Donations
 ---------
 
-I you feel like it, you can support the development of Goxel with a donation at
-the following bitcoin address: 1QCQeWTi6Xnh3UJbwhLMgSZQAypAouTVrY
+If you feel like it, you can support the development of upstream Goxel with a
+donation at the following bitcoin address:
+1QCQeWTi6Xnh3UJbwhLMgSZQAypAouTVrY
