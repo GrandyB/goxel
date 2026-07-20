@@ -281,10 +281,13 @@ bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
     float box[4][4] = MAT4_IDENTITY;
     volume_get_box(new_vol, true, box);
     int existing_mode = goxel.painter.mode;
+    const shape_t *existing_shape = goxel.painter.shape;
     goxel.painter.mode = MODE_PAINT;
+    goxel.painter.shape = &shape_cube;
     volume_op(new_vol, &goxel.painter, box);
     volume_merge(paint_volume, new_vol, MODE_OVER, NULL);
     goxel.painter.mode = existing_mode;
+    goxel.painter.shape = existing_shape;
     if (volume_get_key(paint_volume) != layer_key0)
         image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     volume_delete(new_vol);
