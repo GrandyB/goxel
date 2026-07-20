@@ -784,14 +784,26 @@ void placer_past_files_load_gox(const char *data, size_t len) {
                     return;
                 }
                 past = calloc(1, sizeof(*past));
+                if (!past) {
+                    free(name);
+                    free(tofree);
+                    return;
+                }
                 *past = (past_import_t) {
                     .path = strdup(path),
                     .file_name = name,
                     .format = ff,
                     .imported_at = imported_at,
                 };
+                if (!past->path || !past->file_name) {
+                    free((void *)past->path);
+                    free((void *)past->file_name);
+                    free(past);
+                    free(tofree);
+                    return;
+                }
                 DL_FOREACH_SAFE(past_files, f, tmp) {
-                    if (strcmp(f->file_name, name) != 0) continue;
+                    if (strcmp(f->path, past->path) != 0) continue;
                     free((void *)f->path);
                     free((void *)f->file_name);
                     texture_delete(f->preview);
@@ -850,17 +862,34 @@ static void placer_ensure_past_preview(past_import_t *i)
 
 static void on_file_import(const char *path, const char *file_name, const file_format_t *format) {
     past_import_t *past;
+    char *path_copy;
+    char *name_copy;
+
+    if (!path || !file_name || !format)
+        return;
+    path_copy = strdup(path);
+    name_copy = strdup(file_name);
+    if (!path_copy || !name_copy) {
+        free(path_copy);
+        free(name_copy);
+        return;
+    }
     past = calloc(1, sizeof(*past));
+    if (!past) {
+        free(path_copy);
+        free(name_copy);
+        return;
+    }
     *past = (past_import_t) {
-        .path = path,
-        .file_name = strdup(file_name),
+        .path = path_copy,
+        .file_name = name_copy,
         .format = format,
         .imported_at = (int64_t)time(NULL),
     };
 
     past_import_t *f, *tmp;
     DL_FOREACH_SAFE(past_files, f, tmp) {
-        if (strcmp(f->file_name, file_name) != 0) continue;
+        if (strcmp(f->path, past->path) != 0) continue;
         LOG_D("Delete %s", f->file_name);
         free((void *)f->path);
         free((void *)f->file_name);
@@ -904,7 +933,7 @@ static void placer_import_selected_paths(tool_placer_t *placer, char *paths_mut)
         if (err)
             continue;
         file_name = get_file_name_from_path(token);
-        on_file_import(strdup(token), file_name, f);
+        on_file_import(token, file_name, f);
         free((void *)file_name);
         post_import(placer);
     }
