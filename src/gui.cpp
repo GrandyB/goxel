@@ -1954,7 +1954,18 @@ bool gui_button_right(const char *label, int icon)
 
 bool gui_input_text(const char *label, char *txt, int size)
 {
-    return ImGui::InputText(label, txt, size);
+    bool ret;
+
+    if (!label || label[0] == '\0' || label[0] == '#')
+        return ImGui::InputText(label, txt, size);
+
+    ImGui::PushID(label);
+    label_aligned(label, gui_label_size_get());
+    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+    ret = ImGui::InputText("##input", txt, size);
+    ImGui::PopItemWidth();
+    ImGui::PopID();
+    return ret;
 }
 
 bool gui_input_text_multiline(const char *label, char *buf, int size,

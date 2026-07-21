@@ -48,6 +48,7 @@ typedef enum {
     CUSTOM_OBJ_TEXT,
     CUSTOM_OBJ_COLOR,
     CUSTOM_OBJ_ENUM,
+    CUSTOM_OBJ_GROUP,
 } custom_object_type_t;
 
 #define CUSTOM_OBJ_ENUM_OPTIONS_MAX 32
@@ -58,6 +59,7 @@ struct custom_object {
     /* Leading int required: gui_list casts items to {int; next; prev;}. */
     int ref;
     custom_object_t *next, *prev;
+    custom_object_t *group; /* Parent group, or NULL if top-level. */
     char name[128];
     custom_object_type_t type;
     uint8_t color[4];

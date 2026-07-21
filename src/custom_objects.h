@@ -21,6 +21,8 @@
 void custom_objects_free_list(custom_object_t **list);
 void custom_objects_copy_list(custom_object_t **dst, const custom_object_t *src);
 custom_object_t *custom_object_add(image_t *img, custom_object_type_t type);
+custom_object_t *custom_object_add_to_group(image_t *img, custom_object_t *group,
+                                          custom_object_type_t type);
 custom_object_t *custom_object_duplicate(image_t *img, custom_object_t *src);
 void custom_object_delete(image_t *img, custom_object_t *obj);
 void custom_object_set_type(image_t *img, custom_object_t *obj,
@@ -44,5 +46,9 @@ void custom_objects_export_log(const image_t *img);
 
 const char *custom_object_type_name(custom_object_type_t type);
 bool custom_object_is_spatial(custom_object_type_t type);
+bool custom_object_is_group(custom_object_type_t type);
+int custom_object_depth(const custom_object_t *obj);
+bool custom_object_effectively_visible(const custom_object_t *obj);
+void custom_object_effective_color(const custom_object_t *obj, uint8_t color[4]);
 
 #endif /* CUSTOM_OBJECTS_H */

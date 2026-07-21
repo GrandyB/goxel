@@ -23,13 +23,36 @@ static const char *TYPE_NAMES[] = {
     "Float",
     "Text",
     "Colour",
+    "Group",
 };
-#define TYPE_NAMES_COUNT ((int)(sizeof(TYPE_NAMES) / sizeof(TYPE_NAMES[0])))
+static const custom_object_type_t PICKER_TYPES[] = {
+    CUSTOM_OBJ_POINT_2D,
+    CUSTOM_OBJ_POINT_3D,
+    CUSTOM_OBJ_ZONE_2D,
+    CUSTOM_OBJ_ZONE_3D,
+    CUSTOM_OBJ_FLOAT,
+    CUSTOM_OBJ_TEXT,
+    CUSTOM_OBJ_COLOR,
+    CUSTOM_OBJ_GROUP,
+};
+#define PICKER_TYPES_COUNT ((int)(sizeof(PICKER_TYPES) / sizeof(PICKER_TYPES[0])))
+#define PICKER_CHILD_COUNT ((int)CUSTOM_OBJ_COLOR + 1)
+
+static int type_to_picker_index(custom_object_type_t type)
+{
+    int i;
+    for (i = 0; i < PICKER_TYPES_COUNT; i++) {
+        if (PICKER_TYPES[i] == type)
+            return i;
+    }
+    return 0;
+}
 
 /* List highlight only (gizmos are hover-based, not list selection). */
 static custom_object_t *g_list_current = NULL;
 static custom_object_t *g_pending_delete = NULL;
 static custom_object_t *g_pending_dup = NULL;
+static custom_object_t *g_pending_add_to_group = NULL;
 static bool g_pending_add = false;
 
 static void on_open(filter_t *filter_)
@@ -72,17 +95,31 @@ static bool render_list_item(void *item, int idx, bool current)
     bool selected = current;
     bool ret = false;
     bool press = false;
+    bool is_group = custom_object_is_group(obj->type);
+    bool in_group = obj->group != NULL;
     char id[32];
     float icon_h = gui_icon_height(true);
     float spacing = gui_style_item_spacing_x();
-    /* Reserve room for duplicate + delete on the same row. */
-    float trailing = 2 * icon_h + 2 * spacing;
+    float indent_w = gui_icon_height(true) * 0.75f;
+    int depth = custom_object_depth(obj);
+    /* Room for optional group-add + duplicate + delete on the same row. */
+    float trailing = (2 + (is_group ? 1 : 0)) * icon_h + (2 + (is_group ? 1 : 0)) * spacing;
 
     snprintf(id, sizeof(id), "%d", idx);
     gui_push_id(id);
 
-    gui_color_small_no_label(id, obj->color);
-    gui_same_line();
+    if (depth > 0)
+        gui_spacing((int)(depth * indent_w));
+
+    if (!in_group) {
+        if (gui_color_small_no_label(id, obj->color))
+            ret = true;
+        gui_same_line();
+    } else {
+        gui_spacing((int)icon_h);
+        gui_same_line();
+    }
+
     if (gui_condensed_layer_item_trailing(idx, 0, NULL, &visible, &selected,
                                           obj->name, sizeof(obj->name),
                                           trailing))
@@ -91,6 +128,12 @@ static bool render_list_item(void *item, int idx, bool current)
         obj->visible = visible;
 
     gui_same_line();
+    if (is_group) {
+        press = false;
+        if (gui_condensed_selectable_icon("##Add child", &press, ICON_ADD))
+            g_pending_add_to_group = obj;
+        gui_same_line();
+    }
     press = false;
     if (gui_condensed_selectable_icon("##dup", &press, ICON_COPY))
         g_pending_dup = obj;
@@ -101,6 +144,25 @@ static bool render_list_item(void *item, int idx, bool current)
 
     gui_pop_id();
     return ret;
+}
+
+static void render_metadata_list(image_t *img)
+{
+    custom_object_t *obj;
+    bool is_current;
+    int i, count;
+
+    DL_COUNT(img->custom_objects, obj, count);
+    gui_group_begin(NULL);
+    i = 0;
+    DL_FOREACH(img->custom_objects, obj) {
+        is_current = g_list_current == obj;
+        if (render_list_item(obj, i, is_current)) {
+            g_list_current = obj;
+        }
+        i++;
+    }
+    gui_group_end();
 }
 
 /* Edit one int vec; show_z false hides Z (2D objects). Returns true if changed. */
@@ -216,16 +278,20 @@ static int gui(filter_t *filter_)
 
     g_pending_delete = NULL;
     g_pending_dup = NULL;
-    gui_list(&(gui_list_t){
-        .items = (void **)&img->custom_objects,
-        .current = (void **)&g_list_current,
-        .render = render_list_item,
-    });
+    g_pending_add_to_group = NULL;
+    render_metadata_list(img);
 
     if (g_pending_add) {
         g_pending_add = false;
         image_history_push(img);
         g_list_current = custom_object_add(img, CUSTOM_OBJ_POINT_3D);
+    }
+
+    if (g_pending_add_to_group) {
+        custom_object_t *group = g_pending_add_to_group;
+        g_pending_add_to_group = NULL;
+        image_history_push(img);
+        g_list_current = custom_object_add_to_group(img, group, CUSTOM_OBJ_POINT_3D);
     }
 
     if (g_pending_dup) {
@@ -250,21 +316,20 @@ static int gui(filter_t *filter_)
         if (obj->type == CUSTOM_OBJ_ENUM) {
             gui_text("Enum");
         } else {
-            type = (int)obj->type;
-            if (type > (int)CUSTOM_OBJ_COLOR)
-                type = (int)CUSTOM_OBJ_COLOR;
-            if (gui_combo("##obj_type", &type, TYPE_NAMES, TYPE_NAMES_COUNT)) {
-                if (type >= 0 && type <= (int)CUSTOM_OBJ_COLOR &&
-                    type != (int)obj->type) {
+            type = type_to_picker_index(obj->type);
+            if (gui_combo("##obj_type", &type, TYPE_NAMES,
+                          obj->group ? PICKER_CHILD_COUNT : PICKER_TYPES_COUNT)) {
+                custom_object_type_t new_type = PICKER_TYPES[type];
+                if (new_type != obj->type) {
                     image_history_push(img);
-                    custom_object_set_type(img, obj,
-                                           (custom_object_type_t)type);
+                    custom_object_set_type(img, obj, new_type);
                 }
             }
         }
         if (custom_object_is_spatial(obj->type))
             gui_object_coords(img, obj);
-        else if (obj->type != CUSTOM_OBJ_COLOR)
+        else if (obj->type != CUSTOM_OBJ_COLOR &&
+                 obj->type != CUSTOM_OBJ_GROUP)
             gui_object_values(img, obj);
     }
 

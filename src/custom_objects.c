@@ -59,8 +59,65 @@ const char *custom_object_type_name(custom_object_type_t type)
     case CUSTOM_OBJ_TEXT:     return "Text";
     case CUSTOM_OBJ_COLOR:    return "Colour";
     case CUSTOM_OBJ_ENUM:     return "Enum";
+    case CUSTOM_OBJ_GROUP:    return "Group";
     default: return "Unknown";
     }
+}
+
+bool custom_object_is_group(custom_object_type_t type)
+{
+    return type == CUSTOM_OBJ_GROUP;
+}
+
+int custom_object_depth(const custom_object_t *obj)
+{
+    int depth = 0;
+    const custom_object_t *g;
+    if (!obj) return 0;
+    for (g = obj->group; g; g = g->group)
+        depth++;
+    return depth;
+}
+
+bool custom_object_effectively_visible(const custom_object_t *obj)
+{
+    const custom_object_t *g;
+    if (!obj || !obj->visible) return false;
+    for (g = obj->group; g; g = g->group) {
+        if (!g->visible) return false;
+    }
+    return true;
+}
+
+void custom_object_effective_color(const custom_object_t *obj, uint8_t color[4])
+{
+    if (!obj) return;
+    if (obj->group)
+        memcpy(color, obj->group->color, 4);
+    else
+        memcpy(color, obj->color, 4);
+}
+
+static bool is_descendant_of(const custom_object_t *obj,
+                             const custom_object_t *ancestor)
+{
+    const custom_object_t *g;
+    if (!obj || !ancestor) return false;
+    for (g = obj; g; g = g->group) {
+        if (g == ancestor) return true;
+    }
+    return false;
+}
+
+static custom_object_t *last_in_group_subtree(custom_object_t *list,
+                                              const custom_object_t *group)
+{
+    custom_object_t *obj, *last = (custom_object_t *)group;
+    DL_FOREACH(list, obj) {
+        if (obj == group || is_descendant_of(obj, group))
+            last = obj;
+    }
+    return last;
 }
 
 bool custom_object_is_spatial(custom_object_type_t type)
@@ -198,14 +255,42 @@ void custom_objects_free_list(custom_object_t **list)
 void custom_objects_copy_list(custom_object_t **dst, const custom_object_t *src)
 {
     const custom_object_t *obj;
-    custom_object_t *copy;
+    custom_object_t *copy, **copies = NULL;
+    int count = 0, i, j;
+
     custom_objects_free_list(dst);
+    DL_COUNT(src, obj, count);
+    if (count <= 0) return;
+
+    copies = calloc(count, sizeof(*copies));
+    if (!copies) return;
+
+    i = 0;
     DL_FOREACH(src, obj) {
         copy = calloc(1, sizeof(*copy));
         *copy = *obj;
         copy->next = copy->prev = NULL;
+        copy->group = NULL;
+        copies[i++] = copy;
         DL_APPEND(*dst, copy);
     }
+
+    i = 0;
+    DL_FOREACH(src, obj) {
+        if (obj->group) {
+            const custom_object_t *g;
+            j = 0;
+            DL_FOREACH(src, g) {
+                if (g == obj->group) {
+                    copies[i]->group = copies[j];
+                    break;
+                }
+                j++;
+            }
+        }
+        i++;
+    }
+    free(copies);
 }
 
 static void init_enum_defaults(custom_object_t *obj)
@@ -289,21 +374,43 @@ static void random_object_color(uint8_t color[4])
 
 custom_object_t *custom_object_add(image_t *img, custom_object_type_t type)
 {
-    custom_object_t *obj;
+    return custom_object_add_to_group(img, NULL, type);
+}
+
+custom_object_t *custom_object_add_to_group(image_t *img, custom_object_t *group,
+                                           custom_object_type_t type)
+{
+    custom_object_t *obj, *after;
     if (!img) return NULL;
+    if (group && group->type != CUSTOM_OBJ_GROUP) return NULL;
+    if (group && type == CUSTOM_OBJ_GROUP) return NULL;
     obj = calloc(1, sizeof(*obj));
     if (!obj) return NULL;
     obj->ref = 1;
     obj->type = type;
     obj->visible = true;
-    random_object_color(obj->color);
-    make_uniq_name(obj->name, sizeof(obj->name), "Object", img,
-                   custom_object_name_exists);
+    obj->group = group;
+    if (group)
+        memcpy(obj->color, group->color, 4);
+    else
+        random_object_color(obj->color);
+    make_uniq_name(obj->name, sizeof(obj->name),
+                   group ? group->name :
+                   (type == CUSTOM_OBJ_GROUP ? "Group" : "Object"),
+                   img, custom_object_name_exists);
     if (custom_object_is_spatial(type))
         init_object_coords(img, obj);
-    else
+    else if (type != CUSTOM_OBJ_GROUP)
         init_value_fields(obj);
-    DL_APPEND(img->custom_objects, obj);
+    if (group) {
+        after = last_in_group_subtree(img->custom_objects, group);
+        if (after)
+            DL_APPEND_ELEM(img->custom_objects, after, obj);
+        else
+            DL_APPEND(img->custom_objects, obj);
+    } else {
+        DL_APPEND(img->custom_objects, obj);
+    }
     return obj;
 }
 
@@ -318,13 +425,24 @@ custom_object_t *custom_object_duplicate(image_t *img, custom_object_t *src)
     obj->next = obj->prev = NULL;
     make_uniq_name(obj->name, sizeof(obj->name), src->name, img,
                    custom_object_name_exists);
-    DL_APPEND(img->custom_objects, obj);
+    DL_APPEND_ELEM(img->custom_objects, src, obj);
     return obj;
 }
 
 void custom_object_delete(image_t *img, custom_object_t *obj)
 {
+    custom_object_t *other, *tmp;
     if (!img || !obj) return;
+    if (obj->type == CUSTOM_OBJ_GROUP) {
+        DL_FOREACH_SAFE(img->custom_objects, other, tmp) {
+            if (other != obj && is_descendant_of(other, obj)) {
+                if (g_edit.obj == other)
+                    edit_reset();
+                DL_DELETE(img->custom_objects, other);
+                free(other);
+            }
+        }
+    }
     if (g_edit.obj == obj)
         edit_reset();
     DL_DELETE(img->custom_objects, obj);
@@ -338,10 +456,14 @@ void custom_object_set_type(image_t *img, custom_object_t *obj,
     custom_object_type_t old;
     bool old_spatial, new_spatial;
     if (!obj || obj->type == type) return;
+    if (obj->group && type == CUSTOM_OBJ_GROUP) return;
     old = obj->type;
     old_spatial = custom_object_is_spatial(old);
     new_spatial = custom_object_is_spatial(type);
     obj->type = type;
+
+    if (type == CUSTOM_OBJ_GROUP)
+        return;
 
     if (!old_spatial && new_spatial) {
         init_object_coords(img, obj);
@@ -352,6 +474,14 @@ void custom_object_set_type(image_t *img, custom_object_t *obj,
         return;
     }
     if (!old_spatial && !new_spatial) {
+        init_value_fields(obj);
+        return;
+    }
+    if (old == CUSTOM_OBJ_GROUP && new_spatial) {
+        init_object_coords(img, obj);
+        return;
+    }
+    if (old == CUSTOM_OBJ_GROUP && !new_spatial) {
         init_value_fields(obj);
         return;
     }
@@ -391,6 +521,7 @@ void custom_object_set_type(image_t *img, custom_object_t *obj,
 /* ---------- Serialization ---------- */
 
 #define CUST_FORMAT_V2 2
+#define CUST_FORMAT_V3 3
 
 static int object_serialized_size(const custom_object_t *obj)
 {
@@ -423,6 +554,11 @@ static int object_serialized_size(const custom_object_t *obj)
         break;
     }
     return size;
+}
+
+static int object_serialized_size_v3(const custom_object_t *obj)
+{
+    return object_serialized_size(obj) + 4;
 }
 
 static int write_object(uint8_t *buf, int cap, int w, const custom_object_t *obj)
@@ -485,6 +621,15 @@ static int write_object(uint8_t *buf, int cap, int w, const custom_object_t *obj
         break;
     }
     return w;
+}
+
+static int write_object_v3(uint8_t *buf, int cap, int w, const custom_object_t *obj,
+                           int32_t group_index)
+{
+    w = write_object(buf, cap, w, obj);
+    if (w + 4 > cap) return w;
+    memcpy(buf + w, &group_index, 4);
+    return w + 4;
 }
 
 static bool read_object_base(const uint8_t *data, int len, int *pos,
@@ -589,44 +734,68 @@ static bool read_object_v2(const uint8_t *data, int len, int *pos,
 
 uint8_t *custom_objects_serialize(const image_t *img, int *out_len)
 {
-    custom_object_t *obj;
-    int count = 0, cap, w = 0;
+    custom_object_t *obj, **objs = NULL;
+    int count = 0, cap, w = 0, i, j;
     uint8_t *buf;
-    int32_t n;
+    int32_t n, group_index;
 
     if (!img || !out_len) return NULL;
     DL_COUNT(img->custom_objects, obj, count);
     cap = 6;
     DL_FOREACH(img->custom_objects, obj)
-        cap += object_serialized_size(obj);
+        cap += object_serialized_size_v3(obj);
     cap += 16;
     buf = calloc(1, cap);
     if (!buf) return NULL;
 
-    buf[w++] = CUST_FORMAT_V2;
+    if (count > 0) {
+        objs = calloc(count, sizeof(*objs));
+        if (!objs) {
+            free(buf);
+            return NULL;
+        }
+        i = 0;
+        DL_FOREACH(img->custom_objects, obj)
+            objs[i++] = obj;
+    }
+
+    buf[w++] = CUST_FORMAT_V3;
     buf[w++] = img->custom_objects_show ? 1 : 0;
     n = count;
     memcpy(buf + w, &n, 4);
     w += 4;
 
-    DL_FOREACH(img->custom_objects, obj)
-        w = write_object(buf, cap, w, obj);
+    for (i = 0; i < count; i++) {
+        group_index = -1;
+        if (objs[i]->group) {
+            for (j = 0; j < count; j++) {
+                if (objs[j] == objs[i]->group) {
+                    group_index = j;
+                    break;
+                }
+            }
+        }
+        w = write_object_v3(buf, cap, w, objs[i], group_index);
+    }
 
+    free(objs);
     *out_len = w;
     return buf;
 }
 
 void custom_objects_deserialize(image_t *img, const uint8_t *data, int len)
 {
-    int pos = 0, i, count;
+    int pos = 0, i, j, count;
     int32_t n;
-    bool is_v2;
+    int version;
+    custom_object_t **loaded = NULL;
+    int32_t *group_indices = NULL;
 
     if (!img || !data || len < 5) return;
     custom_objects_free_list(&img->custom_objects);
 
-    is_v2 = (data[0] == CUST_FORMAT_V2);
-    if (is_v2) {
+    version = data[0];
+    if (version == CUST_FORMAT_V2 || version == CUST_FORMAT_V3) {
         if (len < 6) return;
         pos = 1;
         img->custom_objects_show = data[pos++] != 0;
@@ -638,22 +807,60 @@ void custom_objects_deserialize(image_t *img, const uint8_t *data, int len)
     count = n;
     if (count < 0) count = 0;
 
+    if (count > 0) {
+        loaded = calloc(count, sizeof(*loaded));
+        group_indices = calloc(count, sizeof(*group_indices));
+        if (!loaded || !group_indices) {
+            free(loaded);
+            free(group_indices);
+            return;
+        }
+    }
+
     for (i = 0; i < count; i++) {
         custom_object_t *obj = calloc(1, sizeof(*obj));
         obj->ref = 1;
-        if (is_v2) {
+        if (version == CUST_FORMAT_V3) {
             if (!read_object_v2(data, len, &pos, obj)) {
                 free(obj);
+                count = i;
                 break;
             }
+            if (pos + 4 > len) {
+                free(obj);
+                count = i;
+                break;
+            }
+            memcpy(&group_indices[i], data + pos, 4);
+            pos += 4;
+        } else if (version == CUST_FORMAT_V2) {
+            if (!read_object_v2(data, len, &pos, obj)) {
+                free(obj);
+                count = i;
+                break;
+            }
+            group_indices[i] = -1;
         } else {
             if (!read_object_legacy(data, len, &pos, obj)) {
                 free(obj);
+                count = i;
                 break;
             }
+            group_indices[i] = -1;
         }
-        DL_APPEND(img->custom_objects, obj);
+        loaded[i] = obj;
     }
+
+    for (i = 0; i < count; i++) {
+        if (!loaded[i]) continue;
+        j = group_indices[i];
+        if (version == CUST_FORMAT_V3 && j >= 0 && j < count && loaded[j])
+            loaded[i]->group = loaded[j];
+        DL_APPEND(img->custom_objects, loaded[i]);
+    }
+
+    free(loaded);
+    free(group_indices);
 }
 
 void custom_objects_export_log(const image_t *img)
@@ -714,6 +921,11 @@ void custom_objects_export_log(const image_t *img)
                 LOG_I("%s [%s] value=(none)", obj->name,
                       custom_object_type_name(obj->type));
             break;
+        case CUSTOM_OBJ_GROUP:
+            LOG_I("%s [%s] visible=%d color=#%02X%02X%02X",
+                  obj->name, custom_object_type_name(obj->type),
+                  (int)obj->visible, obj->color[0], obj->color[1], obj->color[2]);
+            break;
         }
     }
     LOG_I("=== End custom objects ===");
@@ -722,14 +934,14 @@ void custom_objects_export_log(const image_t *img)
 /* ---------- Rendering ---------- */
 
 static void render_2d_point(renderer_t *rend, const image_t *img,
-                            const custom_object_t *obj)
+                            const custom_object_t *obj, const uint8_t rcolor[4])
 {
     int z0, z1;
     float a[3], b[3];
     uint8_t color[4];
 
     image_z_range(img, &z0, &z1);
-    memcpy(color, obj->color, 4);
+    memcpy(color, rcolor, 4);
     color[3] = 255;
     a[0] = obj->p0[0] + 0.5f;
     a[1] = obj->p0[1] + 0.5f;
@@ -745,17 +957,18 @@ static void render_2d_point(renderer_t *rend, const image_t *img,
     render_line(rend, a, b, color, 0);
 }
 
-static void render_3d_point(renderer_t *rend, const custom_object_t *obj)
+static void render_3d_point(renderer_t *rend, const custom_object_t *obj,
+                            const uint8_t color[4])
 {
     float box[4][4];
     float pos[3] = {obj->p0[0] + 0.5f, obj->p0[1] + 0.5f, obj->p0[2] + 0.5f};
     /* Same style as selection / move origin markers. */
     bbox_from_extents(box, pos, 0.5f, 0.5f, 0.5f);
-    render_box(rend, box, obj->color, EFFECT_STRIP | EFFECT_WIREFRAME);
+    render_box(rend, box, color, EFFECT_STRIP | EFFECT_WIREFRAME);
 }
 
 static void render_2d_zone(renderer_t *rend, const image_t *img,
-                           const custom_object_t *obj)
+                           const custom_object_t *obj, const uint8_t rcolor[4])
 {
     int z0, z1, x0, y0, x1, y1, i;
     float a[3], b[3], box[4][4], face_plane[4][4];
@@ -768,7 +981,7 @@ static void render_2d_zone(renderer_t *rend, const image_t *img,
     y0 = obj->p0[1] < obj->p1[1] ? obj->p0[1] : obj->p1[1];
     x1 = obj->p0[0] > obj->p1[0] ? obj->p0[0] : obj->p1[0];
     y1 = obj->p0[1] > obj->p1[1] ? obj->p0[1] : obj->p1[1];
-    memcpy(color, obj->color, 4);
+    memcpy(color, rcolor, 4);
 
     /* Translucent square on each vertical side. */
     custom_object_get_box(img, obj, box);
@@ -794,25 +1007,29 @@ static void render_2d_zone(renderer_t *rend, const image_t *img,
 }
 
 static void render_3d_zone(renderer_t *rend, const image_t *img,
-                           const custom_object_t *obj)
+                           const custom_object_t *obj, const uint8_t color[4])
 {
     float box[4][4];
+    (void)img;
     custom_object_get_box(img, obj, box);
-    render_box(rend, box, obj->color, EFFECT_STRIP | EFFECT_WIREFRAME);
+    render_box(rend, box, color, EFFECT_STRIP | EFFECT_WIREFRAME);
 }
 
 void custom_objects_render(renderer_t *rend, const image_t *img)
 {
     custom_object_t *obj;
+    uint8_t color[4];
 
     if (!rend || !img || !img->custom_objects_show) return;
     DL_FOREACH(img->custom_objects, obj) {
-        if (!obj->visible) continue;
+        if (!custom_object_effectively_visible(obj)) continue;
+        if (!custom_object_is_spatial(obj->type)) continue;
+        custom_object_effective_color(obj, color);
         switch (obj->type) {
-        case CUSTOM_OBJ_POINT_2D: render_2d_point(rend, img, obj); break;
-        case CUSTOM_OBJ_POINT_3D: render_3d_point(rend, obj); break;
-        case CUSTOM_OBJ_ZONE_2D:  render_2d_zone(rend, img, obj); break;
-        case CUSTOM_OBJ_ZONE_3D:  render_3d_zone(rend, img, obj); break;
+        case CUSTOM_OBJ_POINT_2D: render_2d_point(rend, img, obj, color); break;
+        case CUSTOM_OBJ_POINT_3D: render_3d_point(rend, obj, color); break;
+        case CUSTOM_OBJ_ZONE_2D:  render_2d_zone(rend, img, obj, color); break;
+        case CUSTOM_OBJ_ZONE_3D:  render_3d_zone(rend, img, obj, color); break;
         default: break;
         }
     }
@@ -1037,7 +1254,7 @@ drag_end_check:
      * Walk newest-first so clones / later objects win ties (on top). */
     DL_FOREACH_REVERSE(img->custom_objects, obj) {
         float vol;
-        if (!obj->visible) continue;
+        if (!custom_object_effectively_visible(obj)) continue;
         if (!custom_object_is_spatial(obj->type)) continue;
         custom_object_get_box(img, obj, box);
         if (!unproject_on_box(viewport, curs->xy, box, false, hit, n, &face))
