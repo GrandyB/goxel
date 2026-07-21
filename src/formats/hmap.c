@@ -76,7 +76,8 @@ static int export_as_heightmap(const file_format_t *format, const image_t *image
                     //      (3,1,3) = index 8, at the end of the second row of 4, etc
                     // In a heightmap's case we're overlaying stuff on top of each other so z
                     // doesn't matter other than making sure we are increasing z as we loop through
-                    int img_index = ((y * dimensions[0]) + x);
+                    int img_y = dimensions[1] - 1 - y;
+                    int img_index = ((img_y * dimensions[0]) + x);
                     img[img_index * 4 + 0] = c[0];
                     img[img_index * 4 + 1] = c[1];
                     img[img_index * 4 + 2] = c[2];
@@ -120,7 +121,8 @@ static int import_hmap(const file_format_t *format, image_t *image, const char *
     for (x = 0; x < max_x; x++) {
         for (y = 0; y < max_y; y++) {
             // Calculate the index into the image array (row-major order)
-            int img_index = y * file_w + x;
+            int img_y = file_h - 1 - y;
+            int img_index = img_y * file_w + x;
             c[0] = img[img_index * bpp + 0];
             c[1] = img[img_index * bpp + 1];
             c[2] = img[img_index * bpp + 2];

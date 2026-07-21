@@ -59,8 +59,8 @@ static int import_vxl(const file_format_t *format, image_t* image, const char* p
 					uint32_t color = libvxl_map_get(&map, x, y, z);
 
 					volume_set_at(image->active_layer->volume, &it,
-								(int[3]) {map_size / 2 - 1 - x,
-										  y - map_size / 2,
+								(int[3]) {x - map_size / 2,
+										  map_size / 2 - 1 - y,
 										  map_depth / 2 - 1 - z},
 								(uint8_t[4]) {BLUE(color), GREEN(color),
 											  RED(color), 0xFF});
@@ -105,7 +105,8 @@ static int export_as_vxl(const file_format_t *format, const image_t* image, cons
 		volume_get_at(volume, &it, pos, color);
 
 		if(color[3] > 0)
-			libvxl_map_set(&map, bbox[1][0] - 1 - pos[0], pos[1] - bbox[0][1],
+			libvxl_map_set(&map, pos[0] - bbox[0][0],
+						   bbox[1][1] - 1 - pos[1],
 						   bbox[1][2] - 1 - pos[2],
 						   RGB(color[2], color[1], color[0]));
 	}
