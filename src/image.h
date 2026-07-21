@@ -44,7 +44,14 @@ typedef enum {
     CUSTOM_OBJ_POINT_3D,
     CUSTOM_OBJ_ZONE_2D,
     CUSTOM_OBJ_ZONE_3D,
+    CUSTOM_OBJ_FLOAT,
+    CUSTOM_OBJ_TEXT,
+    CUSTOM_OBJ_COLOR,
+    CUSTOM_OBJ_ENUM,
 } custom_object_type_t;
+
+#define CUSTOM_OBJ_ENUM_OPTIONS_MAX 32
+#define CUSTOM_OBJ_ENUM_OPTION_LEN  64
 
 typedef struct custom_object custom_object_t;
 struct custom_object {
@@ -59,6 +66,12 @@ struct custom_object {
      * Points: p0 used; p1 unused.
      * Zones: p0 / p1 = inclusive AABB corners. */
     int p0[3], p1[3];
+    /* Non-spatial value fields (type selects which is used). */
+    float fvalue;
+    char text_value[256];
+    int enum_index;
+    int enum_option_count;
+    char enum_options[CUSTOM_OBJ_ENUM_OPTIONS_MAX][CUSTOM_OBJ_ENUM_OPTION_LEN];
 };
 
 typedef struct history history_t;

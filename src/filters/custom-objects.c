@@ -20,7 +20,11 @@ static const char *TYPE_NAMES[] = {
     "3D Point",
     "2D Zone",
     "3D Zone",
+    "Float",
+    "Text",
+    "Colour",
 };
+#define TYPE_NAMES_COUNT ((int)(sizeof(TYPE_NAMES) / sizeof(TYPE_NAMES[0])))
 
 /* List highlight only (gizmos are hover-based, not list selection). */
 static custom_object_t *g_list_current = NULL;
@@ -128,6 +132,8 @@ static void gui_object_coords(image_t *img, custom_object_t *obj)
                     obj->type == CUSTOM_OBJ_ZONE_3D);
     bool changed = false;
 
+    if (!custom_object_is_spatial(obj->type)) return;
+
     memcpy(p0, obj->p0, sizeof(p0));
     memcpy(p1, obj->p1, sizeof(p1));
 
@@ -152,6 +158,44 @@ static void gui_object_coords(image_t *img, custom_object_t *obj)
     memcpy(obj->p0, p0, sizeof(obj->p0));
     if (is_zone)
         memcpy(obj->p1, p1, sizeof(obj->p1));
+}
+
+static void gui_object_values(image_t *img, custom_object_t *obj)
+{
+    float fvalue;
+    int enum_index;
+    const char *enum_names[CUSTOM_OBJ_ENUM_OPTIONS_MAX];
+    int i;
+
+    switch (obj->type) {
+    case CUSTOM_OBJ_FLOAT:
+        fvalue = obj->fvalue;
+        if (gui_input_float("Value", &fvalue, 0.1f, 0, 0, NULL)) {
+            image_history_push(img);
+            obj->fvalue = fvalue;
+        }
+        break;
+    case CUSTOM_OBJ_TEXT:
+        if (gui_input_text("Value", obj->text_value, sizeof(obj->text_value)))
+            image_history_push(img);
+        break;
+    case CUSTOM_OBJ_ENUM:
+        if (obj->enum_option_count <= 0) return;
+        enum_index = obj->enum_index;
+        if (enum_index < 0) enum_index = 0;
+        if (enum_index >= obj->enum_option_count)
+            enum_index = obj->enum_option_count - 1;
+        for (i = 0; i < obj->enum_option_count; i++)
+            enum_names[i] = obj->enum_options[i];
+        if (gui_combo("Value", &enum_index, enum_names,
+                      obj->enum_option_count)) {
+            image_history_push(img);
+            obj->enum_index = enum_index;
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 static int gui(filter_t *filter_)
@@ -202,16 +246,26 @@ static int gui(filter_t *filter_)
 
     obj = g_list_current;
     if (obj) {
-        type = (int)obj->type;
         gui_text("Type");
-        if (gui_combo("##obj_type", &type, TYPE_NAMES, 4)) {
-            if (type >= 0 && type <= (int)CUSTOM_OBJ_ZONE_3D &&
-                type != (int)obj->type) {
-                image_history_push(img);
-                custom_object_set_type(img, obj, (custom_object_type_t)type);
+        if (obj->type == CUSTOM_OBJ_ENUM) {
+            gui_text("Enum");
+        } else {
+            type = (int)obj->type;
+            if (type > (int)CUSTOM_OBJ_COLOR)
+                type = (int)CUSTOM_OBJ_COLOR;
+            if (gui_combo("##obj_type", &type, TYPE_NAMES, TYPE_NAMES_COUNT)) {
+                if (type >= 0 && type <= (int)CUSTOM_OBJ_COLOR &&
+                    type != (int)obj->type) {
+                    image_history_push(img);
+                    custom_object_set_type(img, obj,
+                                           (custom_object_type_t)type);
+                }
             }
         }
-        gui_object_coords(img, obj);
+        if (custom_object_is_spatial(obj->type))
+            gui_object_coords(img, obj);
+        else if (obj->type != CUSTOM_OBJ_COLOR)
+            gui_object_values(img, obj);
     }
 
     if (gui_button("Export", 1.0, 0))

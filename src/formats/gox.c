@@ -92,17 +92,25 @@
  *          4 x int32: noise_enabled, noise_intensity, noise_saturation,
  *                     noise_coverage
  *
- *   CUST: custom objects (points/zones) list, binary:
- *      1 byte: global show flag
- *      4 bytes: count (int32)
- *      for each object:
- *          1 byte: name length
- *          n bytes: name (UTF-8, no NUL)
- *          1 byte: type (0=2D point, 1=3D point, 2=2D zone, 3=3D zone)
- *          4 bytes: color RGBA
- *          1 byte: visible
- *          3 x int32: p0 (x,y,z)
- *          3 x int32: p1 (x,y,z; unused for points)
+ *   CUST: custom objects (metadata) list, binary:
+ *      legacy (version absent, first byte 0/1 = show flag):
+ *          1 byte: global show flag
+ *          4 bytes: count (int32)
+ *          for each object: name + type(0-3) + color + visible + p0 + p1
+ *      v2 (first byte = 2):
+ *          1 byte: format version (2)
+ *          1 byte: global show flag
+ *          4 bytes: count (int32)
+ *          for each object:
+ *              1 byte: name length, n bytes: name
+ *              1 byte: type (0-7)
+ *              4 bytes: color RGBA, 1 byte: visible
+ *              3 x int32: p0, 3 x int32: p1
+ *              type-specific payload:
+ *                  Float: 4 bytes float
+ *                  Text: 2 bytes length + UTF-8
+ *                  Enum: int32 index, int32 option count,
+ *                        per option: 1 byte len + string
  */
 
 // We create a hash table of all the blocks, so that blocks with the same

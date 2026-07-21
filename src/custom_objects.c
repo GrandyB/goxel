@@ -55,8 +55,17 @@ const char *custom_object_type_name(custom_object_type_t type)
     case CUSTOM_OBJ_POINT_3D: return "3D Point";
     case CUSTOM_OBJ_ZONE_2D:  return "2D Zone";
     case CUSTOM_OBJ_ZONE_3D:  return "3D Zone";
+    case CUSTOM_OBJ_FLOAT:    return "Float";
+    case CUSTOM_OBJ_TEXT:     return "Text";
+    case CUSTOM_OBJ_COLOR:    return "Colour";
+    case CUSTOM_OBJ_ENUM:     return "Enum";
     default: return "Unknown";
     }
+}
+
+bool custom_object_is_spatial(custom_object_type_t type)
+{
+    return type <= CUSTOM_OBJ_ZONE_3D;
 }
 
 static void image_z_range(const image_t *img, int *z0, int *z1)
@@ -111,6 +120,11 @@ void custom_object_get_box(const image_t *img, const custom_object_t *obj,
     int aabb[2][3];
     int z0, z1;
     int x0, y0, x1, y1, zz0, zz1;
+
+    if (!custom_object_is_spatial(obj->type)) {
+        mat4_copy(mat4_zero, box);
+        return;
+    }
 
     image_z_range(img, &z0, &z1);
 
@@ -194,6 +208,32 @@ void custom_objects_copy_list(custom_object_t **dst, const custom_object_t *src)
     }
 }
 
+static void init_enum_defaults(custom_object_t *obj)
+{
+    obj->enum_index = 0;
+    obj->enum_option_count = 3;
+    snprintf(obj->enum_options[0], CUSTOM_OBJ_ENUM_OPTION_LEN, "Option 1");
+    snprintf(obj->enum_options[1], CUSTOM_OBJ_ENUM_OPTION_LEN, "Option 2");
+    snprintf(obj->enum_options[2], CUSTOM_OBJ_ENUM_OPTION_LEN, "Option 3");
+}
+
+static void init_value_fields(custom_object_t *obj)
+{
+    switch (obj->type) {
+    case CUSTOM_OBJ_FLOAT:
+        obj->fvalue = 0.f;
+        break;
+    case CUSTOM_OBJ_TEXT:
+        obj->text_value[0] = '\0';
+        break;
+    case CUSTOM_OBJ_ENUM:
+        init_enum_defaults(obj);
+        break;
+    default:
+        break;
+    }
+}
+
 static void init_object_coords(image_t *img, custom_object_t *obj)
 {
     int c[3], z0, z1;
@@ -259,7 +299,10 @@ custom_object_t *custom_object_add(image_t *img, custom_object_type_t type)
     random_object_color(obj->color);
     make_uniq_name(obj->name, sizeof(obj->name), "Object", img,
                    custom_object_name_exists);
-    init_object_coords(img, obj);
+    if (custom_object_is_spatial(type))
+        init_object_coords(img, obj);
+    else
+        init_value_fields(obj);
     DL_APPEND(img->custom_objects, obj);
     return obj;
 }
@@ -293,9 +336,26 @@ void custom_object_set_type(image_t *img, custom_object_t *obj,
 {
     int z0, z1, c[3];
     custom_object_type_t old;
+    bool old_spatial, new_spatial;
     if (!obj || obj->type == type) return;
     old = obj->type;
+    old_spatial = custom_object_is_spatial(old);
+    new_spatial = custom_object_is_spatial(type);
     obj->type = type;
+
+    if (!old_spatial && new_spatial) {
+        init_object_coords(img, obj);
+        return;
+    }
+    if (old_spatial && !new_spatial) {
+        init_value_fields(obj);
+        return;
+    }
+    if (!old_spatial && !new_spatial) {
+        init_value_fields(obj);
+        return;
+    }
+
     image_z_range(img, &z0, &z1);
     image_center(img, c);
 
@@ -330,6 +390,203 @@ void custom_object_set_type(image_t *img, custom_object_t *obj,
 
 /* ---------- Serialization ---------- */
 
+#define CUST_FORMAT_V2 2
+
+static int object_serialized_size(const custom_object_t *obj)
+{
+    int namelen = (int)strlen(obj->name);
+    int textlen;
+    int i, size;
+
+    if (namelen > 127) namelen = 127;
+    size = 1 + namelen + 1 + 4 + 1 + 12 + 12;
+    switch (obj->type) {
+    case CUSTOM_OBJ_FLOAT:
+        size += 4;
+        break;
+    case CUSTOM_OBJ_TEXT:
+        textlen = (int)strlen(obj->text_value);
+        if (textlen > (int)sizeof(obj->text_value) - 1)
+            textlen = (int)sizeof(obj->text_value) - 1;
+        size += 2 + textlen;
+        break;
+    case CUSTOM_OBJ_ENUM:
+        size += 4 + 4;
+        for (i = 0; i < obj->enum_option_count; i++) {
+            int olen = (int)strlen(obj->enum_options[i]);
+            if (olen > CUSTOM_OBJ_ENUM_OPTION_LEN - 1)
+                olen = CUSTOM_OBJ_ENUM_OPTION_LEN - 1;
+            size += 1 + olen;
+        }
+        break;
+    default:
+        break;
+    }
+    return size;
+}
+
+static int write_object(uint8_t *buf, int cap, int w, const custom_object_t *obj)
+{
+    uint8_t namelen = (uint8_t)strlen(obj->name);
+    int textlen, i, olen;
+    int32_t n;
+
+    if (namelen > 127) namelen = 127;
+    if (w + object_serialized_size(obj) > cap) return w;
+
+    buf[w++] = namelen;
+    memcpy(buf + w, obj->name, namelen);
+    w += namelen;
+    buf[w++] = (uint8_t)obj->type;
+    memcpy(buf + w, obj->color, 4);
+    w += 4;
+    buf[w++] = obj->visible ? 1 : 0;
+    memcpy(buf + w, obj->p0, 12);
+    w += 12;
+    memcpy(buf + w, obj->p1, 12);
+    w += 12;
+
+    switch (obj->type) {
+    case CUSTOM_OBJ_FLOAT:
+        memcpy(buf + w, &obj->fvalue, 4);
+        w += 4;
+        break;
+    case CUSTOM_OBJ_TEXT:
+        textlen = (int)strlen(obj->text_value);
+        if (textlen > (int)sizeof(obj->text_value) - 1)
+            textlen = (int)sizeof(obj->text_value) - 1;
+        n = textlen;
+        memcpy(buf + w, &n, 2);
+        w += 2;
+        if (textlen > 0) {
+            memcpy(buf + w, obj->text_value, textlen);
+            w += textlen;
+        }
+        break;
+    case CUSTOM_OBJ_ENUM:
+        n = obj->enum_index;
+        memcpy(buf + w, &n, 4);
+        w += 4;
+        n = obj->enum_option_count;
+        memcpy(buf + w, &n, 4);
+        w += 4;
+        for (i = 0; i < obj->enum_option_count; i++) {
+            olen = (int)strlen(obj->enum_options[i]);
+            if (olen > CUSTOM_OBJ_ENUM_OPTION_LEN - 1)
+                olen = CUSTOM_OBJ_ENUM_OPTION_LEN - 1;
+            buf[w++] = (uint8_t)olen;
+            if (olen > 0) {
+                memcpy(buf + w, obj->enum_options[i], olen);
+                w += olen;
+            }
+        }
+        break;
+    default:
+        break;
+    }
+    return w;
+}
+
+static bool read_object_base(const uint8_t *data, int len, int *pos,
+                             custom_object_t *obj, bool clamp_spatial_only)
+{
+    uint8_t namelen;
+
+    if (*pos + 1 > len) return false;
+    namelen = data[(*pos)++];
+    if (*pos + namelen + 1 + 4 + 1 + 24 > len) return false;
+    if (namelen >= sizeof(obj->name)) namelen = sizeof(obj->name) - 1;
+    memcpy(obj->name, data + *pos, namelen);
+    obj->name[namelen] = '\0';
+    *pos += namelen;
+    obj->type = (custom_object_type_t)data[(*pos)++];
+    if (clamp_spatial_only && obj->type > CUSTOM_OBJ_ZONE_3D)
+        obj->type = CUSTOM_OBJ_POINT_3D;
+    memcpy(obj->color, data + *pos, 4);
+    *pos += 4;
+    obj->visible = data[(*pos)++] != 0;
+    memcpy(obj->p0, data + *pos, 12);
+    *pos += 12;
+    memcpy(obj->p1, data + *pos, 12);
+    *pos += 12;
+    return true;
+}
+
+static bool read_object_legacy(const uint8_t *data, int len, int *pos,
+                               custom_object_t *obj)
+{
+    return read_object_base(data, len, pos, obj, true);
+}
+
+static bool read_object_v2(const uint8_t *data, int len, int *pos,
+                           custom_object_t *obj)
+{
+    int16_t textlen;
+    int32_t n;
+    int i, olen;
+
+    if (!read_object_base(data, len, pos, obj, false)) return false;
+    if (!custom_object_is_spatial(obj->type)) {
+        switch (obj->type) {
+        case CUSTOM_OBJ_FLOAT:
+            if (*pos + 4 > len) return false;
+            memcpy(&obj->fvalue, data + *pos, 4);
+            *pos += 4;
+            break;
+        case CUSTOM_OBJ_TEXT:
+            if (*pos + 2 > len) return false;
+            memcpy(&textlen, data + *pos, 2);
+            *pos += 2;
+            if (textlen < 0) textlen = 0;
+            if (textlen >= (int)sizeof(obj->text_value))
+                textlen = (int)sizeof(obj->text_value) - 1;
+            if (*pos + textlen > len) return false;
+            if (textlen > 0) {
+                memcpy(obj->text_value, data + *pos, textlen);
+                *pos += textlen;
+            }
+            obj->text_value[textlen] = '\0';
+            break;
+        case CUSTOM_OBJ_COLOR:
+            /* Legacy v2: skip separate rgba payload; value is color[4]. */
+            if (*pos + 16 <= len)
+                *pos += 16;
+            break;
+        case CUSTOM_OBJ_ENUM:
+            if (*pos + 8 > len) return false;
+            memcpy(&n, data + *pos, 4);
+            *pos += 4;
+            obj->enum_index = n;
+            memcpy(&n, data + *pos, 4);
+            *pos += 4;
+            obj->enum_option_count = n;
+            if (obj->enum_option_count < 0)
+                obj->enum_option_count = 0;
+            if (obj->enum_option_count > CUSTOM_OBJ_ENUM_OPTIONS_MAX)
+                obj->enum_option_count = CUSTOM_OBJ_ENUM_OPTIONS_MAX;
+            for (i = 0; i < obj->enum_option_count; i++) {
+                if (*pos + 1 > len) return false;
+                olen = data[(*pos)++];
+                if (olen >= CUSTOM_OBJ_ENUM_OPTION_LEN)
+                    olen = CUSTOM_OBJ_ENUM_OPTION_LEN - 1;
+                if (*pos + olen > len) return false;
+                if (olen > 0) {
+                    memcpy(obj->enum_options[i], data + *pos, olen);
+                    *pos += olen;
+                }
+                obj->enum_options[i][olen] = '\0';
+            }
+            if (obj->enum_index < 0 ||
+                obj->enum_index >= obj->enum_option_count)
+                obj->enum_index = 0;
+            break;
+        default:
+            break;
+        }
+    }
+    return true;
+}
+
 uint8_t *custom_objects_serialize(const image_t *img, int *out_len)
 {
     custom_object_t *obj;
@@ -339,32 +596,22 @@ uint8_t *custom_objects_serialize(const image_t *img, int *out_len)
 
     if (!img || !out_len) return NULL;
     DL_COUNT(img->custom_objects, obj, count);
-    /* show(1) + count(4) + per obj: namelen(1)+name(128)+type+color4+vis+p0*3+p1*3 */
-    cap = 5 + count * (1 + 128 + 1 + 4 + 1 + 12 + 12) + 16;
+    cap = 6;
+    DL_FOREACH(img->custom_objects, obj)
+        cap += object_serialized_size(obj);
+    cap += 16;
     buf = calloc(1, cap);
     if (!buf) return NULL;
 
+    buf[w++] = CUST_FORMAT_V2;
     buf[w++] = img->custom_objects_show ? 1 : 0;
     n = count;
     memcpy(buf + w, &n, 4);
     w += 4;
 
-    DL_FOREACH(img->custom_objects, obj) {
-        uint8_t namelen = (uint8_t)strlen(obj->name);
-        if (namelen > 127) namelen = 127;
-        if (w + 1 + namelen + 1 + 4 + 1 + 24 > cap) break;
-        buf[w++] = namelen;
-        memcpy(buf + w, obj->name, namelen);
-        w += namelen;
-        buf[w++] = (uint8_t)obj->type;
-        memcpy(buf + w, obj->color, 4);
-        w += 4;
-        buf[w++] = obj->visible ? 1 : 0;
-        memcpy(buf + w, obj->p0, 12);
-        w += 12;
-        memcpy(buf + w, obj->p1, 12);
-        w += 12;
-    }
+    DL_FOREACH(img->custom_objects, obj)
+        w = write_object(buf, cap, w, obj);
+
     *out_len = w;
     return buf;
 }
@@ -373,37 +620,38 @@ void custom_objects_deserialize(image_t *img, const uint8_t *data, int len)
 {
     int pos = 0, i, count;
     int32_t n;
+    bool is_v2;
 
     if (!img || !data || len < 5) return;
     custom_objects_free_list(&img->custom_objects);
-    img->custom_objects_show = data[pos++] != 0;
+
+    is_v2 = (data[0] == CUST_FORMAT_V2);
+    if (is_v2) {
+        if (len < 6) return;
+        pos = 1;
+        img->custom_objects_show = data[pos++] != 0;
+    } else {
+        img->custom_objects_show = data[pos++] != 0;
+    }
     memcpy(&n, data + pos, 4);
     pos += 4;
     count = n;
     if (count < 0) count = 0;
 
     for (i = 0; i < count; i++) {
-        custom_object_t *obj;
-        uint8_t namelen;
-        if (pos + 1 > len) break;
-        namelen = data[pos++];
-        if (pos + namelen + 1 + 4 + 1 + 24 > len) break;
-        obj = calloc(1, sizeof(*obj));
+        custom_object_t *obj = calloc(1, sizeof(*obj));
         obj->ref = 1;
-        if (namelen >= sizeof(obj->name)) namelen = sizeof(obj->name) - 1;
-        memcpy(obj->name, data + pos, namelen);
-        obj->name[namelen] = '\0';
-        pos += namelen;
-        obj->type = (custom_object_type_t)data[pos++];
-        if (obj->type > CUSTOM_OBJ_ZONE_3D)
-            obj->type = CUSTOM_OBJ_POINT_3D;
-        memcpy(obj->color, data + pos, 4);
-        pos += 4;
-        obj->visible = data[pos++] != 0;
-        memcpy(obj->p0, data + pos, 12);
-        pos += 12;
-        memcpy(obj->p1, data + pos, 12);
-        pos += 12;
+        if (is_v2) {
+            if (!read_object_v2(data, len, &pos, obj)) {
+                free(obj);
+                break;
+            }
+        } else {
+            if (!read_object_legacy(data, len, &pos, obj)) {
+                free(obj);
+                break;
+            }
+        }
         DL_APPEND(img->custom_objects, obj);
     }
 }
@@ -441,6 +689,30 @@ void custom_objects_export_log(const image_t *img)
                   (int)obj->visible, obj->color[0], obj->color[1], obj->color[2],
                   obj->p0[0], obj->p0[1], obj->p0[2],
                   obj->p1[0], obj->p1[1], obj->p1[2]);
+            break;
+        case CUSTOM_OBJ_FLOAT:
+            LOG_I("%s [%s] value=%g", obj->name,
+                  custom_object_type_name(obj->type), obj->fvalue);
+            break;
+        case CUSTOM_OBJ_TEXT:
+            LOG_I("%s [%s] value=\"%s\"", obj->name,
+                  custom_object_type_name(obj->type), obj->text_value);
+            break;
+        case CUSTOM_OBJ_COLOR:
+            LOG_I("%s [%s] value=#%02X%02X%02X%02X",
+                  obj->name, custom_object_type_name(obj->type),
+                  obj->color[0], obj->color[1], obj->color[2], obj->color[3]);
+            break;
+        case CUSTOM_OBJ_ENUM:
+            if (obj->enum_option_count > 0 &&
+                obj->enum_index >= 0 &&
+                obj->enum_index < obj->enum_option_count)
+                LOG_I("%s [%s] value=\"%s\" (index %d)",
+                      obj->name, custom_object_type_name(obj->type),
+                      obj->enum_options[obj->enum_index], obj->enum_index);
+            else
+                LOG_I("%s [%s] value=(none)", obj->name,
+                      custom_object_type_name(obj->type));
             break;
         }
     }
@@ -541,6 +813,7 @@ void custom_objects_render(renderer_t *rend, const image_t *img)
         case CUSTOM_OBJ_POINT_3D: render_3d_point(rend, obj); break;
         case CUSTOM_OBJ_ZONE_2D:  render_2d_zone(rend, img, obj); break;
         case CUSTOM_OBJ_ZONE_3D:  render_3d_zone(rend, img, obj); break;
+        default: break;
         }
     }
 }
@@ -765,6 +1038,7 @@ drag_end_check:
     DL_FOREACH_REVERSE(img->custom_objects, obj) {
         float vol;
         if (!obj->visible) continue;
+        if (!custom_object_is_spatial(obj->type)) continue;
         custom_object_get_box(img, obj, box);
         if (!unproject_on_box(viewport, curs->xy, box, false, hit, n, &face))
             continue;
