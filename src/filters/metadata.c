@@ -63,7 +63,7 @@ static int type_to_picker_index(custom_object_type_t type)
     return 0;
 }
 
-/* List highlight; synced to map gizmos via custom_objects_set_list_selected. */
+/* List selection for detail panel; does not drive map gizmos. */
 static custom_object_t *g_pending_delete = NULL;
 static custom_object_t *g_pending_dup = NULL;
 static custom_object_t *g_pending_add_to_group = NULL;
@@ -169,6 +169,18 @@ static void ensure_list_current_valid(image_t *img)
     if (!found) custom_objects_set_list_selected(NULL);
 }
 
+static bool type_has_list_color(custom_object_type_t type)
+{
+    return type != CUSTOM_OBJ_TEXT &&
+           type != CUSTOM_OBJ_FLOAT &&
+           type != CUSTOM_OBJ_ENUM;
+}
+
+static bool type_has_list_visibility(custom_object_type_t type)
+{
+    return custom_object_is_spatial(type) || custom_object_is_group(type);
+}
+
 static bool render_list_item(void *item, int idx, bool current)
 {
     custom_object_t *obj = item;
@@ -180,6 +192,9 @@ static bool render_list_item(void *item, int idx, bool current)
     bool press = false;
     bool is_group = custom_object_is_group(obj->type);
     bool in_group = obj->group != NULL;
+    bool show_color = !in_group && type_has_list_color(obj->type);
+    bool show_visibility = type_has_list_visibility(obj->type);
+    bool show_solo = show_visibility;
     char id[32];
     float icon_h = gui_icon_height(true);
     float spacing = gui_style_item_spacing_x();
@@ -194,25 +209,28 @@ static bool render_list_item(void *item, int idx, bool current)
     if (depth > 0)
         gui_spacing((int)(depth * indent_w));
 
-    if (!in_group) {
+    if (show_color) {
         if (gui_color_small_no_label(id, obj->color))
             ret = true;
         gui_same_line();
     } else {
-        gui_spacing((int)icon_h);
-        gui_same_line();
+        /* Match ColorEdit4 width (GetFrameHeight), not condensed icon size. */
+        gui_spacing_f(gui_frame_height());
     }
 
-    if (gui_condensed_layer_item_trailing(idx, 0, NULL, &visible, &selected,
+    if (gui_condensed_layer_item_trailing(idx, 0, NULL,
+                                          show_visibility ? &visible : NULL,
+                                          &selected,
                                           obj->name, sizeof(obj->name),
                                           trailing, true, solo_active,
-                                          &solo_press))
+                                          show_solo ? &solo_press : NULL,
+                                          !show_visibility, !show_solo, true))
         ret = true;
-    if (solo_press)
+    if (show_solo && solo_press)
         custom_objects_toggle_solo(obj);
     if (selected != current)
         custom_objects_set_list_selected(selected ? obj : NULL);
-    if (visible != obj->visible)
+    if (show_visibility && visible != obj->visible)
         obj->visible = visible;
 
     gui_same_line();
@@ -356,6 +374,11 @@ static int gui(filter_t *filter_)
 
     ensure_list_current_valid(img);
 
+    gui_text_wrapped(
+        "Create and manage metadata about the map.\n"
+        "Use the 'Group' type to collect multiple items under one parent.\n"
+        "Use the 'S' button to temporarily solo the visibility to the chosen item.");
+
     if (gui_button("Load template", 1.0, 0))
         g_open_template_popup = true;
 
@@ -366,7 +389,9 @@ static int gui(filter_t *filter_)
                              NULL, template_popup_gui);
     }
 
-    gui_checkbox("Show", &img->custom_objects_show, NULL);
+    gui_checkbox("Show/hide all", &img->custom_objects_show,
+                 "Enable/disable the showing of any of the map metadata items "
+                 "in the viewport");
 
     if (gui_button("+ Add new", 1.0, ICON_ADD))
         g_pending_add = true;

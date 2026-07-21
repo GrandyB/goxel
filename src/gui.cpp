@@ -1718,6 +1718,17 @@ void gui_spacing(int w)
     ImGui::SameLine();
 }
 
+void gui_spacing_f(float w)
+{
+    ImGui::Dummy(ImVec2(w, 0));
+    ImGui::SameLine();
+}
+
+float gui_frame_height(void)
+{
+    return ImGui::GetFrameHeight();
+}
+
 static bool color_picker(const char *label, uint8_t color[4], bool show_diff)
 {
     float colorf[4] = {color[0] / 255.f,
@@ -2217,10 +2228,13 @@ bool _model_item(int idx, bool *selected, const char *name, int len)
 bool _layer_item(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
                     char *name, int len, bool condensed, float trailing_w,
-                    bool allow_deselect, bool solo_active, bool *solo_pressed)
+                    bool allow_deselect, bool solo_active, bool *solo_pressed,
+                    bool reserve_visibility_space, bool reserve_solo_space,
+                    bool selectable)
 {
     bool ret = false;
     bool selected_ = *selected;
+    bool highlighted = selectable && *selected;
     static char *edit_name = NULL;
     static bool start_edit;
     float font_size = ImGui::GetFontSize();
@@ -2235,9 +2249,9 @@ bool _layer_item(int idx, int icons_count, const int *icons,
     float name_w;
 
     ImGui::PushID(idx);
-    ImGui::PushStyleColor(ImGuiCol_Button, COLOR(WIDGET, INNER, *selected));
+    ImGui::PushStyleColor(ImGuiCol_Button, COLOR(WIDGET, INNER, highlighted));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                          color_lighten(COLOR(WIDGET, INNER, *selected)));
+                          color_lighten(COLOR(WIDGET, INNER, highlighted)));
     if (visible)
     {
         bool visibility = condensed
@@ -2248,6 +2262,11 @@ bool _layer_item(int idx, int icons_count, const int *icons,
             *visible = !*visible;
             ret = true;
         }
+        ImGui::SameLine();
+    }
+    else if (reserve_visibility_space)
+    {
+        ImGui::InvisibleButton("##visible_reserve", ImVec2(btn_h, btn_h));
         ImGui::SameLine();
     }
 
@@ -2269,6 +2288,11 @@ bool _layer_item(int idx, int icons_count, const int *icons,
         ImGui::PopStyleColor(2);
         ImGui::SameLine();
     }
+    else if (reserve_solo_space)
+    {
+        ImGui::InvisibleButton("##solo_reserve", ImVec2(btn_h, btn_h));
+        ImGui::SameLine();
+    }
 
     if (edit_name != name)
     {
@@ -2280,11 +2304,13 @@ bool _layer_item(int idx, int icons_count, const int *icons,
         if (name_w < btn_h) name_w = btn_h;
         if (ImGui::Button(name, ImVec2(name_w, btn_h)))
         {
-            if (allow_deselect && *selected)
-                *selected = false;
-            else
-                *selected = true;
-            ret = true;
+            if (selectable) {
+                if (allow_deselect && *selected)
+                    *selected = false;
+                else
+                    *selected = true;
+                ret = true;
+            }
         }
         ImGui::PopStyleVar();
 
@@ -2337,17 +2363,20 @@ bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
                     char *name, int len)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
-                       true, 0, false, false, NULL);
+                       true, 0, false, false, NULL, false, false, true);
 }
 
 bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
                     char *name, int len, float trailing_w,
-                    bool allow_deselect, bool solo_active, bool *solo_pressed)
+                    bool allow_deselect, bool solo_active, bool *solo_pressed,
+                    bool reserve_visibility_space, bool reserve_solo_space,
+                    bool selectable)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
                        true, trailing_w, allow_deselect, solo_active,
-                       solo_pressed);
+                       solo_pressed, reserve_visibility_space,
+                       reserve_solo_space, selectable);
 }
 
 bool gui_layer_item(int idx, int icons_count, const int *icons,
@@ -2355,7 +2384,7 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
                     char *name, int len)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
-                       false, 0, false, false, NULL);
+                       false, 0, false, false, NULL, false, false, true);
 }
 
 bool gui_is_key_down(int key)

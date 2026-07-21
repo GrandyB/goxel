@@ -1013,6 +1013,83 @@ static bool json_read_u8_color(json_value *v, uint8_t color[4])
     return v->u.array.length >= 3;
 }
 
+static bool apply_template_default(image_t *img, custom_object_t *obj,
+                                   json_value *jv)
+{
+    unsigned int i;
+    int z0, z1;
+
+    if (!jv || !obj) return false;
+
+    switch (obj->type) {
+    case CUSTOM_OBJ_TEXT:
+        if (jv->type != json_string) return false;
+        snprintf(obj->text_value, sizeof(obj->text_value),
+                 "%s", jv->u.string.ptr);
+        return true;
+    case CUSTOM_OBJ_FLOAT:
+        if (jv->type == json_double)
+            obj->fvalue = (float)jv->u.dbl;
+        else if (jv->type == json_integer)
+            obj->fvalue = (float)jv->u.integer;
+        else
+            return false;
+        return true;
+    case CUSTOM_OBJ_COLOR:
+        return json_read_u8_color(jv, obj->color);
+    case CUSTOM_OBJ_ENUM:
+        if (jv->type == json_string) {
+            for (i = 0; i < (unsigned int)obj->enum_option_count; i++) {
+                if (strcmp(obj->enum_options[i], jv->u.string.ptr) == 0) {
+                    obj->enum_index = (int)i;
+                    return true;
+                }
+            }
+            LOG_W("Unknown enum default \"%s\" for %s",
+                  jv->u.string.ptr, obj->name);
+            return false;
+        }
+        if (jv->type == json_integer &&
+            jv->u.integer >= 0 &&
+            jv->u.integer < obj->enum_option_count) {
+            obj->enum_index = (int)jv->u.integer;
+            return true;
+        }
+        return false;
+    case CUSTOM_OBJ_POINT_2D:
+    case CUSTOM_OBJ_POINT_3D:
+        if (jv->type != json_array) return false;
+        if (jv->u.array.length >= 1) {
+            json_value *e = jv->u.array.values[0];
+            if (e->type == json_integer)
+                obj->p0[0] = (int)e->u.integer;
+            else if (e->type == json_double)
+                obj->p0[0] = (int)e->u.dbl;
+        }
+        if (jv->u.array.length >= 2) {
+            json_value *e = jv->u.array.values[1];
+            if (e->type == json_integer)
+                obj->p0[1] = (int)e->u.integer;
+            else if (e->type == json_double)
+                obj->p0[1] = (int)e->u.dbl;
+        }
+        if (obj->type == CUSTOM_OBJ_POINT_3D && jv->u.array.length >= 3) {
+            json_value *e = jv->u.array.values[2];
+            if (e->type == json_integer)
+                obj->p0[2] = (int)e->u.integer;
+            else if (e->type == json_double)
+                obj->p0[2] = (int)e->u.dbl;
+        } else if (obj->type == CUSTOM_OBJ_POINT_2D) {
+            image_z_range(img, &z0, &z1);
+            obj->p0[2] = z0;
+        }
+        return jv->u.array.length >=
+               (obj->type == CUSTOM_OBJ_POINT_3D ? 3u : 2u);
+    default:
+        return false;
+    }
+}
+
 static custom_object_t *append_template_object(image_t *img,
                                                const char *name,
                                                custom_object_type_t type,
@@ -1071,6 +1148,7 @@ static bool parse_template_entry(json_value *entry, image_t *img)
 {
     json_value *jv;
     custom_object_type_t type;
+    custom_object_t *obj;
     const char *name, *type_str;
     uint8_t color[4];
     bool has_color = false;
@@ -1110,10 +1188,14 @@ static bool parse_template_entry(json_value *entry, image_t *img)
             option_count++;
         }
     }
-    if (!append_template_object(img, name, type, color, has_color, NULL,
-                                child_type, has_child_type,
-                                options, option_count))
-        return false;
+    obj = append_template_object(img, name, type, color,
+                                                  has_color, NULL,
+                                                  child_type, has_child_type,
+                                                  options, option_count);
+    if (!obj) return false;
+    jv = json_obj_get(entry, "default");
+    if (jv && !apply_template_default(img, obj, jv))
+        LOG_W("Invalid default value for %s", name);
     return true;
 }
 
@@ -1300,18 +1382,10 @@ static json_value *export_object_value(const image_t *img,
     }
 }
 
-static json_value *export_named_entry(const custom_object_t *obj,
-                                      json_value *value)
-{
-    json_value *entry = json_object_new(1);
-    json_object_push(entry, obj->name, value);
-    return entry;
-}
-
 bool custom_objects_export_json(const image_t *img, const char *path)
 {
     custom_object_t *obj;
-    json_value *root, *metadata, *entry;
+    json_value *root, *metadata;
     json_serialize_opts opts = {
         .mode = json_serialize_mode_multiline,
         .opts = 0,
@@ -1325,13 +1399,13 @@ bool custom_objects_export_json(const image_t *img, const char *path)
     if (!img || !path) return false;
 
     root = json_object_new(1);
-    metadata = json_array_new(0);
+    metadata = json_object_new(0);
     json_object_push(root, "metadata", metadata);
 
     DL_FOREACH(img->custom_objects, obj) {
         if (obj->group) continue;
-        entry = export_named_entry(obj, export_object_value(img, obj));
-        json_array_push(metadata, entry);
+        json_object_push(metadata, obj->name,
+                         export_object_value(img, obj));
     }
 
     len = json_measure_ex(root, opts);
@@ -1731,12 +1805,6 @@ drag_end_check:
     if (!best) {
         g_edit.state = 0;
         g_edit.obj = NULL;
-        if (g_list_selected &&
-            custom_object_is_spatial(g_list_selected->type) &&
-            custom_object_effectively_visible(g_list_selected)) {
-            custom_object_get_box(img, g_list_selected, box);
-            render_face_gizmo(box, 0);
-        }
         return;
     }
 
@@ -1744,14 +1812,6 @@ drag_end_check:
     g_edit.face = best_face;
     g_edit.state = 1;
     render_face_gizmo(g_edit.box, best_face);
-
-    if (g_list_selected && g_list_selected != best &&
-        custom_object_is_spatial(g_list_selected->type) &&
-        custom_object_effectively_visible(g_list_selected)) {
-        float sel_box[4][4];
-        custom_object_get_box(img, g_list_selected, sel_box);
-        render_face_gizmo(sel_box, 0);
-    }
 
     if (best->type == CUSTOM_OBJ_ZONE_2D || best->type == CUSTOM_OBJ_ZONE_3D)
         goxel_set_help_text(shift ? "Drag to move (Shift)" : "Drag to resize");

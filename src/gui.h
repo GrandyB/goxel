@@ -199,6 +199,8 @@ bool gui_placer_past_entry(
 bool gui_placer_past_details_row(
         const char *file_name, const char *path_tooltip, bool *out_remove);
 void gui_spacing(int w);
+void gui_spacing_f(float w);
+float gui_frame_height(void);
 void gui_same_line(void);
 
 void gui_alert(const char *title, const char *msg);
@@ -217,7 +219,8 @@ bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
  * for same-line action buttons. */
 bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len, float trailing_w,
-    bool allow_deselect, bool solo_active, bool *solo_pressed);
+    bool allow_deselect, bool solo_active, bool *solo_pressed,
+    bool reserve_visibility_space, bool reserve_solo_space, bool selectable);
 float gui_icon_height(bool condensed);
 bool gui_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);
