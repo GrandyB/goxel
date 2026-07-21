@@ -11,9 +11,24 @@
 #include "goxel.h"
 #include "custom_objects.h"
 
+#include <stdlib.h>
+#include <string.h>
+
 typedef struct {
     filter_t filter;
 } filter_custom_objects_t;
+
+#define TEMPLATE_MAX 64
+
+typedef struct {
+    char paths[TEMPLATE_MAX][1024];
+    char names[TEMPLATE_MAX][256];
+    int count;
+    int selected;
+} template_popup_t;
+
+static template_popup_t g_template_popup;
+static bool g_open_template_popup = false;
 
 static const char *TYPE_NAMES[] = {
     "2D Point",
@@ -66,6 +81,75 @@ static void on_close(filter_t *filter_)
     (void)filter_;
     custom_objects_set_editor_active(false);
     g_list_current = NULL;
+}
+
+static int on_template_file(const char *dirpath, const char *name, void *user)
+{
+    template_popup_t *popup = user;
+    char display[256];
+    size_t len;
+
+    if (!str_endswith(name, ".json")) return 0;
+    if (popup->count >= TEMPLATE_MAX) return 0;
+    snprintf(popup->paths[popup->count], sizeof(popup->paths[0]),
+             "%s/%s", dirpath, name);
+    snprintf(display, sizeof(display), "%s", name);
+    len = strlen(display);
+    if (len > 5 && strcasecmp(display + len - 5, ".json") == 0)
+        display[len - 5] = '\0';
+    snprintf(popup->names[popup->count], sizeof(popup->names[0]), "%s", display);
+    popup->count++;
+    return 0;
+}
+
+static void refresh_template_list(template_popup_t *popup)
+{
+    char dir[1024];
+
+    popup->count = 0;
+    popup->selected = 0;
+    if (!sys_get_user_dir()) return;
+    snprintf(dir, sizeof(dir), "%s/metadata-templates", sys_get_user_dir());
+    sys_make_dir(dir);
+    sys_list_dir(dir, on_template_file, popup);
+}
+
+static int template_popup_gui(void *data)
+{
+    template_popup_t *popup = data;
+    image_t *img = goxel.image;
+    const char *names[TEMPLATE_MAX];
+    int i, has_items;
+
+    has_items = popup->count > 0;
+    if (has_items) {
+        if (popup->selected < 0) popup->selected = 0;
+        if (popup->selected >= popup->count)
+            popup->selected = popup->count - 1;
+        for (i = 0; i < popup->count; i++)
+            names[i] = popup->names[i];
+        gui_combo("Template", &popup->selected, names, popup->count);
+    } else {
+        gui_text("No templates found.");
+        if (sys_get_user_dir())
+            gui_text_wrapped("Install JSON templates in:\n%s/metadata-templates/",
+                             sys_get_user_dir());
+    }
+
+    if (img && img->custom_objects)
+        gui_text_wrapped("Loading a template replaces all current metadata items.");
+
+    gui_row_begin(0);
+    if (has_items && gui_button("Load template", 0, 0)) {
+        image_history_push(img);
+        if (custom_objects_load_template_json(popup->paths[popup->selected], img))
+            g_list_current = NULL;
+        return 1;
+    }
+    if (gui_button("Cancel", 0, 0))
+        return 2;
+    gui_row_end();
+    return 0;
 }
 
 static void on_mouse(filter_t *filter_, const float viewport[4])
@@ -271,6 +355,16 @@ static int gui(filter_t *filter_)
 
     ensure_list_current_valid(img);
 
+    if (gui_button("Load template", 1.0, 0))
+        g_open_template_popup = true;
+
+    if (g_open_template_popup) {
+        g_open_template_popup = false;
+        refresh_template_list(&g_template_popup);
+        gui_open_popup("Load template", GUI_POPUP_RESIZE,
+                       &g_template_popup, template_popup_gui);
+    }
+
     gui_checkbox("Show", &img->custom_objects_show, NULL);
 
     if (gui_button("+ Add new", 1.0, ICON_ADD))
@@ -289,9 +383,12 @@ static int gui(filter_t *filter_)
 
     if (g_pending_add_to_group) {
         custom_object_t *group = g_pending_add_to_group;
+        custom_object_type_t child_type = group->default_child_type;
         g_pending_add_to_group = NULL;
+        if (child_type == CUSTOM_OBJ_GROUP)
+            child_type = CUSTOM_OBJ_POINT_3D;
         image_history_push(img);
-        g_list_current = custom_object_add_to_group(img, group, CUSTOM_OBJ_POINT_3D);
+        g_list_current = custom_object_add_to_group(img, group, child_type);
     }
 
     if (g_pending_dup) {

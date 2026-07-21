@@ -11,11 +11,13 @@
 #include "goxel.h"
 #include "custom_objects.h"
 #include "utils/json.h"
+#include "../../ext_src/json/json.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <ctype.h>
 
 static bool g_editor_active = false;
 
@@ -391,6 +393,8 @@ custom_object_t *custom_object_add_to_group(image_t *img, custom_object_t *group
     obj->type = type;
     obj->visible = true;
     obj->group = group;
+    if (type == CUSTOM_OBJ_GROUP)
+        obj->default_child_type = CUSTOM_OBJ_POINT_3D;
     if (group)
         memcpy(obj->color, group->color, 4);
     else
@@ -523,6 +527,8 @@ void custom_object_set_type(image_t *img, custom_object_t *obj,
 
 #define CUST_FORMAT_V2 2
 #define CUST_FORMAT_V3 3
+#define CUST_FORMAT_V4 4
+#define CUST_DEFAULT_CHILD_NONE 255
 
 static int object_serialized_size(const custom_object_t *obj)
 {
@@ -557,9 +563,9 @@ static int object_serialized_size(const custom_object_t *obj)
     return size;
 }
 
-static int object_serialized_size_v3(const custom_object_t *obj)
+static int object_serialized_size_v4(const custom_object_t *obj)
 {
-    return object_serialized_size(obj) + 4;
+    return object_serialized_size(obj) + 4 + 1;
 }
 
 static int write_object(uint8_t *buf, int cap, int w, const custom_object_t *obj)
@@ -624,13 +630,19 @@ static int write_object(uint8_t *buf, int cap, int w, const custom_object_t *obj
     return w;
 }
 
-static int write_object_v3(uint8_t *buf, int cap, int w, const custom_object_t *obj,
+static int write_object_v4(uint8_t *buf, int cap, int w, const custom_object_t *obj,
                            int32_t group_index)
 {
+    uint8_t child_type = CUST_DEFAULT_CHILD_NONE;
     w = write_object(buf, cap, w, obj);
-    if (w + 4 > cap) return w;
+    if (w + 5 > cap) return w;
     memcpy(buf + w, &group_index, 4);
-    return w + 4;
+    w += 4;
+    if (obj->type == CUSTOM_OBJ_GROUP &&
+        obj->default_child_type <= CUSTOM_OBJ_GROUP)
+        child_type = (uint8_t)obj->default_child_type;
+    buf[w++] = child_type;
+    return w;
 }
 
 static bool read_object_base(const uint8_t *data, int len, int *pos,
@@ -744,7 +756,7 @@ uint8_t *custom_objects_serialize(const image_t *img, int *out_len)
     DL_COUNT(img->custom_objects, obj, count);
     cap = 6;
     DL_FOREACH(img->custom_objects, obj)
-        cap += object_serialized_size_v3(obj);
+        cap += object_serialized_size_v4(obj);
     cap += 16;
     buf = calloc(1, cap);
     if (!buf) return NULL;
@@ -760,7 +772,7 @@ uint8_t *custom_objects_serialize(const image_t *img, int *out_len)
             objs[i++] = obj;
     }
 
-    buf[w++] = CUST_FORMAT_V3;
+    buf[w++] = CUST_FORMAT_V4;
     buf[w++] = img->custom_objects_show ? 1 : 0;
     n = count;
     memcpy(buf + w, &n, 4);
@@ -776,7 +788,7 @@ uint8_t *custom_objects_serialize(const image_t *img, int *out_len)
                 }
             }
         }
-        w = write_object_v3(buf, cap, w, objs[i], group_index);
+        w = write_object_v4(buf, cap, w, objs[i], group_index);
     }
 
     free(objs);
@@ -796,7 +808,8 @@ void custom_objects_deserialize(image_t *img, const uint8_t *data, int len)
     custom_objects_free_list(&img->custom_objects);
 
     version = data[0];
-    if (version == CUST_FORMAT_V2 || version == CUST_FORMAT_V3) {
+    if (version == CUST_FORMAT_V2 || version == CUST_FORMAT_V3 ||
+        version == CUST_FORMAT_V4) {
         if (len < 6) return;
         pos = 1;
         img->custom_objects_show = data[pos++] != 0;
@@ -821,7 +834,28 @@ void custom_objects_deserialize(image_t *img, const uint8_t *data, int len)
     for (i = 0; i < count; i++) {
         custom_object_t *obj = calloc(1, sizeof(*obj));
         obj->ref = 1;
-        if (version == CUST_FORMAT_V3) {
+        if (version == CUST_FORMAT_V4) {
+            if (!read_object_v2(data, len, &pos, obj)) {
+                free(obj);
+                count = i;
+                break;
+            }
+            if (pos + 5 > len) {
+                free(obj);
+                count = i;
+                break;
+            }
+            memcpy(&group_indices[i], data + pos, 4);
+            pos += 4;
+            if (obj->type == CUSTOM_OBJ_GROUP &&
+                data[pos] != CUST_DEFAULT_CHILD_NONE &&
+                data[pos] <= CUSTOM_OBJ_GROUP)
+                obj->default_child_type =
+                    (custom_object_type_t)data[pos];
+            else if (obj->type == CUSTOM_OBJ_GROUP)
+                obj->default_child_type = CUSTOM_OBJ_POINT_3D;
+            pos += 1;
+        } else if (version == CUST_FORMAT_V3) {
             if (!read_object_v2(data, len, &pos, obj)) {
                 free(obj);
                 count = i;
@@ -834,6 +868,8 @@ void custom_objects_deserialize(image_t *img, const uint8_t *data, int len)
             }
             memcpy(&group_indices[i], data + pos, 4);
             pos += 4;
+            if (obj->type == CUSTOM_OBJ_GROUP)
+                obj->default_child_type = CUSTOM_OBJ_POINT_3D;
         } else if (version == CUST_FORMAT_V2) {
             if (!read_object_v2(data, len, &pos, obj)) {
                 free(obj);
@@ -855,13 +891,245 @@ void custom_objects_deserialize(image_t *img, const uint8_t *data, int len)
     for (i = 0; i < count; i++) {
         if (!loaded[i]) continue;
         j = group_indices[i];
-        if (version == CUST_FORMAT_V3 && j >= 0 && j < count && loaded[j])
+        if ((version == CUST_FORMAT_V3 || version == CUST_FORMAT_V4) &&
+            j >= 0 && j < count && loaded[j])
             loaded[i]->group = loaded[j];
+        if (loaded[i]->type == CUSTOM_OBJ_GROUP && version < CUST_FORMAT_V3)
+            loaded[i]->default_child_type = CUSTOM_OBJ_POINT_3D;
         DL_APPEND(img->custom_objects, loaded[i]);
     }
 
     free(loaded);
     free(group_indices);
+}
+
+/* ---------- Template loading ---------- */
+
+static void normalize_type_key(const char *src, char *dst, size_t dst_len)
+{
+    size_t i, j = 0;
+    if (!src || !dst || dst_len == 0) return;
+    for (i = 0; src[i] && j + 1 < dst_len; i++) {
+        if (src[i] == ' ' || src[i] == '_' || src[i] == '-')
+            continue;
+        dst[j++] = (char)tolower((unsigned char)src[i]);
+    }
+    dst[j] = '\0';
+}
+
+static bool type_from_json_string(const char *s, custom_object_type_t *out)
+{
+    char key[64];
+    if (!s || !out) return false;
+    normalize_type_key(s, key, sizeof(key));
+    if (strcmp(key, "point2d") == 0 || strcmp(key, "2dpoint") == 0) {
+        *out = CUSTOM_OBJ_POINT_2D;
+        return true;
+    }
+    if (strcmp(key, "point3d") == 0 || strcmp(key, "3dpoint") == 0) {
+        *out = CUSTOM_OBJ_POINT_3D;
+        return true;
+    }
+    if (strcmp(key, "zone2d") == 0 || strcmp(key, "2dzone") == 0) {
+        *out = CUSTOM_OBJ_ZONE_2D;
+        return true;
+    }
+    if (strcmp(key, "zone3d") == 0 || strcmp(key, "3dzone") == 0) {
+        *out = CUSTOM_OBJ_ZONE_3D;
+        return true;
+    }
+    if (strcmp(key, "float") == 0) {
+        *out = CUSTOM_OBJ_FLOAT;
+        return true;
+    }
+    if (strcmp(key, "text") == 0) {
+        *out = CUSTOM_OBJ_TEXT;
+        return true;
+    }
+    if (strcmp(key, "color") == 0 || strcmp(key, "colour") == 0) {
+        *out = CUSTOM_OBJ_COLOR;
+        return true;
+    }
+    if (strcmp(key, "enum") == 0) {
+        *out = CUSTOM_OBJ_ENUM;
+        return true;
+    }
+    if (strcmp(key, "group") == 0) {
+        *out = CUSTOM_OBJ_GROUP;
+        return true;
+    }
+    return false;
+}
+
+static json_value *json_obj_get(json_value *obj, const char *name)
+{
+    unsigned int i;
+    if (!obj || obj->type != json_object) return NULL;
+    for (i = 0; i < obj->u.object.length; i++) {
+        if (strcmp(obj->u.object.values[i].name, name) == 0)
+            return obj->u.object.values[i].value;
+    }
+    return NULL;
+}
+
+static bool json_read_u8_color(json_value *v, uint8_t color[4])
+{
+    unsigned int i;
+    if (!v || v->type != json_array) return false;
+    for (i = 0; i < 4; i++)
+        color[i] = 255;
+    for (i = 0; i < v->u.array.length && i < 4; i++) {
+        json_value *e = v->u.array.values[i];
+        if (e->type == json_integer)
+            color[i] = (uint8_t)clamp((double)e->u.integer, 0, 255);
+        else if (e->type == json_double)
+            color[i] = (uint8_t)clamp(e->u.dbl, 0, 255);
+    }
+    return v->u.array.length >= 3;
+}
+
+static custom_object_t *append_template_object(image_t *img,
+                                               const char *name,
+                                               custom_object_type_t type,
+                                               const uint8_t color[4],
+                                               bool has_color,
+                                               custom_object_t *group,
+                                               custom_object_type_t child_type,
+                                               bool has_child_type,
+                                               const char options[][CUSTOM_OBJ_ENUM_OPTION_LEN],
+                                               int option_count)
+{
+    custom_object_t *obj;
+    int i;
+
+    obj = calloc(1, sizeof(*obj));
+    if (!obj) return NULL;
+    obj->ref = 1;
+    obj->type = type;
+    obj->visible = true;
+    obj->group = group;
+    snprintf(obj->name, sizeof(obj->name), "%s", name);
+    if (has_color)
+        memcpy(obj->color, color, 4);
+    else if (group)
+        memcpy(obj->color, group->color, 4);
+    else
+        random_object_color(obj->color);
+    if (type == CUSTOM_OBJ_GROUP) {
+        obj->default_child_type = has_child_type ? child_type :
+                                  CUSTOM_OBJ_POINT_3D;
+    }
+    if (custom_object_is_spatial(type))
+        init_object_coords(img, obj);
+    else if (type != CUSTOM_OBJ_GROUP)
+        init_value_fields(obj);
+    if (type == CUSTOM_OBJ_ENUM && option_count > 0) {
+        obj->enum_option_count = option_count;
+        obj->enum_index = 0;
+        for (i = 0; i < option_count; i++)
+            snprintf(obj->enum_options[i], CUSTOM_OBJ_ENUM_OPTION_LEN,
+                     "%s", options[i]);
+    }
+    if (group) {
+        custom_object_t *after = last_in_group_subtree(img->custom_objects, group);
+        if (after)
+            DL_APPEND_ELEM(img->custom_objects, after, obj);
+        else
+            DL_APPEND(img->custom_objects, obj);
+    } else {
+        DL_APPEND(img->custom_objects, obj);
+    }
+    return obj;
+}
+
+static bool parse_template_entry(json_value *entry, image_t *img)
+{
+    json_value *jv;
+    custom_object_type_t type;
+    const char *name, *type_str;
+    uint8_t color[4];
+    bool has_color = false;
+    custom_object_type_t child_type = CUSTOM_OBJ_POINT_3D;
+    bool has_child_type = false;
+    char options[CUSTOM_OBJ_ENUM_OPTIONS_MAX][CUSTOM_OBJ_ENUM_OPTION_LEN];
+    int option_count = 0;
+    unsigned int i;
+
+    if (!entry || entry->type != json_object) return false;
+    jv = json_obj_get(entry, "name");
+    if (!jv || jv->type != json_string || !jv->u.string.ptr[0])
+        return false;
+    name = jv->u.string.ptr;
+    jv = json_obj_get(entry, "type");
+    if (!jv || jv->type != json_string) return false;
+    type_str = jv->u.string.ptr;
+    if (!type_from_json_string(type_str, &type)) {
+        LOG_W("Unknown metadata template type: %s", type_str);
+        return false;
+    }
+    jv = json_obj_get(entry, "color");
+    if (jv && json_read_u8_color(jv, color))
+        has_color = true;
+    jv = json_obj_get(entry, "default_child_type");
+    if (jv && jv->type == json_string &&
+        type_from_json_string(jv->u.string.ptr, &child_type))
+        has_child_type = true;
+    jv = json_obj_get(entry, "options");
+    if (jv && jv->type == json_array) {
+        for (i = 0; i < jv->u.array.length &&
+             option_count < CUSTOM_OBJ_ENUM_OPTIONS_MAX; i++) {
+            json_value *opt = jv->u.array.values[i];
+            if (opt->type != json_string) continue;
+            snprintf(options[option_count], CUSTOM_OBJ_ENUM_OPTION_LEN,
+                     "%s", opt->u.string.ptr);
+            option_count++;
+        }
+    }
+    if (!append_template_object(img, name, type, color, has_color, NULL,
+                                child_type, has_child_type,
+                                options, option_count))
+        return false;
+    return true;
+}
+
+bool custom_objects_load_template_json(const char *path, image_t *img)
+{
+    char *data;
+    int size;
+    json_value *root, *metadata;
+    unsigned int i;
+    bool ok = true;
+
+    if (!path || !img) return false;
+    data = read_file(path, &size);
+    if (!data || size <= 0) {
+        LOG_E("Failed to read metadata template: %s", path);
+        free(data);
+        return false;
+    }
+    root = json_parse(data, (size_t)size);
+    free(data);
+    if (!root) {
+        LOG_E("Failed to parse metadata template: %s", path);
+        return false;
+    }
+    metadata = json_obj_get(root, "metadata");
+    if (!metadata || metadata->type != json_array) {
+        LOG_E("Metadata template missing \"metadata\" array: %s", path);
+        json_value_free(root);
+        return false;
+    }
+    custom_objects_free_list(&img->custom_objects);
+    for (i = 0; i < metadata->u.array.length; i++) {
+        if (!parse_template_entry(metadata->u.array.values[i], img))
+            ok = false;
+    }
+    json_value_free(root);
+    if (!ok)
+        LOG_W("Metadata template loaded with errors: %s", path);
+    else
+        LOG_I("Loaded metadata template: %s", path);
+    return ok;
 }
 
 void custom_objects_export_log(const image_t *img)

@@ -111,6 +111,9 @@
  *                  Text: 2 bytes length + UTF-8
  *                  Enum: int32 index, int32 option count,
  *                        per option: 1 byte len + string
+ *      v3 (first byte = 3): as v2 per object, plus int32 group index (-1 none)
+ *      v4 (first byte = 4): as v3, plus 1 byte default_child_type on groups
+ *                           (255 = not a group)
  */
 
 // We create a hash table of all the blocks, so that blocks with the same

@@ -1,0 +1,31 @@
+{
+  "metadata": [
+    { "name": "MapName", "type": "Text" },
+    { "name": "MapAuthor", "type": "Text" },
+    { "name": "Fog1", "type": "Color" },
+    { "name": "Fog2", "type": "Color" },
+    { "name": "FogDistanceStart", "type": "Float" },
+    { "name": "FogDistanceEnd", "type": "Float" },
+    {
+      "name": "WaterType",
+      "type": "Enum",
+      "options": ["Water", "Lava", "Poison", "Disabled"]
+    },
+    {
+      "name": "SpectatorSpawnPoint",
+      "type": "Point2D",
+      "color": [100, 100, 100, 255]
+    },
+    {
+      "name": "FlagRed",
+      "type": "Point2D",
+      "color": [255, 0, 0, 255]
+    },
+    {
+      "name": "SpawnRed",
+      "type": "Group",
+      "default_child_type": "Point2D",
+      "color": [200, 50, 50, 255]
+    }
+  ]
+}
