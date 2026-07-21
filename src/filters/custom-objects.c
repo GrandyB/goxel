@@ -232,7 +232,7 @@ static void gui_object_values(image_t *img, custom_object_t *obj)
     switch (obj->type) {
     case CUSTOM_OBJ_FLOAT:
         fvalue = obj->fvalue;
-        if (gui_input_float("Value", &fvalue, 0.1f, 0, 0, NULL)) {
+        if (gui_input_float("Value", &fvalue, 0.0001f, 0, 0, "%.4f")) {
             image_history_push(img);
             obj->fvalue = fvalue;
         }
@@ -333,8 +333,14 @@ static int gui(filter_t *filter_)
             gui_object_values(img, obj);
     }
 
-    if (gui_button("Export", 1.0, 0))
+    if (gui_button("Export", 1.0, 0)) {
+        const char *filters[] = {"*.json", NULL};
+        const char *path;
         custom_objects_export_log(img);
+        path = sys_get_save_path("metadata.json", filters, "json");
+        if (path)
+            custom_objects_export_json(img, path);
+    }
 
     return 0;
 }

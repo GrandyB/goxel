@@ -10,6 +10,7 @@
 
 #include "goxel.h"
 #include "custom_objects.h"
+#include "utils/json.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -929,6 +930,141 @@ void custom_objects_export_log(const image_t *img)
         }
     }
     LOG_I("=== End custom objects ===");
+}
+
+static void zone_corners(const custom_object_t *obj, int min[3], int max[3])
+{
+    int i;
+    for (i = 0; i < 3; i++) {
+        if (obj->p0[i] < obj->p1[i]) {
+            min[i] = obj->p0[i];
+            max[i] = obj->p1[i];
+        } else {
+            min[i] = obj->p1[i];
+            max[i] = obj->p0[i];
+        }
+    }
+}
+
+static json_value *export_object_value(const image_t *img,
+                                       const custom_object_t *obj)
+{
+    custom_object_t *child;
+    int min[3], max[3];
+    int color[4];
+
+    if (obj->type == CUSTOM_OBJ_GROUP) {
+        json_value *array = json_array_new(0);
+        DL_FOREACH(img->custom_objects, child) {
+            if (child->group == obj)
+                json_array_push(array, export_object_value(img, child));
+        }
+        return array;
+    }
+
+    switch (obj->type) {
+    case CUSTOM_OBJ_POINT_2D:
+        return json_int_array_new(obj->p0, 2);
+    case CUSTOM_OBJ_POINT_3D:
+        return json_int_array_new(obj->p0, 3);
+    case CUSTOM_OBJ_ZONE_2D:
+        zone_corners(obj, min, max);
+        {
+            json_value *zone = json_object_new(2);
+            json_object_push(zone, "min", json_int_array_new(min, 2));
+            json_object_push(zone, "max", json_int_array_new(max, 2));
+            return zone;
+        }
+    case CUSTOM_OBJ_ZONE_3D:
+        zone_corners(obj, min, max);
+        {
+            json_value *zone = json_object_new(2);
+            json_object_push(zone, "min", json_int_array_new(min, 3));
+            json_object_push(zone, "max", json_int_array_new(max, 3));
+            return zone;
+        }
+    case CUSTOM_OBJ_FLOAT:
+        {
+            double v = round((double)obj->fvalue * 1e6) / 1e6;
+            return json_double_new(v);
+        }
+    case CUSTOM_OBJ_TEXT:
+        return json_string_new(obj->text_value);
+    case CUSTOM_OBJ_COLOR:
+        color[0] = obj->color[0];
+        color[1] = obj->color[1];
+        color[2] = obj->color[2];
+        color[3] = obj->color[3];
+        return json_int_array_new(color, 4);
+    case CUSTOM_OBJ_ENUM:
+        if (obj->enum_option_count > 0 &&
+            obj->enum_index >= 0 &&
+            obj->enum_index < obj->enum_option_count)
+            return json_string_new(obj->enum_options[obj->enum_index]);
+        return json_string_new("");
+    default:
+        return json_null_new();
+    }
+}
+
+static json_value *export_named_entry(const custom_object_t *obj,
+                                      json_value *value)
+{
+    json_value *entry = json_object_new(1);
+    json_object_push(entry, obj->name, value);
+    return entry;
+}
+
+bool custom_objects_export_json(const image_t *img, const char *path)
+{
+    custom_object_t *obj;
+    json_value *root, *metadata, *entry;
+    json_serialize_opts opts = {
+        .mode = json_serialize_mode_multiline,
+        .opts = 0,
+        .indent_size = 2,
+    };
+    size_t len;
+    char *buf;
+    FILE *f;
+    bool ok = false;
+
+    if (!img || !path) return false;
+
+    root = json_object_new(1);
+    metadata = json_array_new(0);
+    json_object_push(root, "metadata", metadata);
+
+    DL_FOREACH(img->custom_objects, obj) {
+        if (obj->group) continue;
+        entry = export_named_entry(obj, export_object_value(img, obj));
+        json_array_push(metadata, entry);
+    }
+
+    len = json_measure_ex(root, opts);
+    buf = malloc(len);
+    if (!buf) goto done;
+    json_serialize_ex(buf, root, opts);
+    len = strlen(buf);
+
+    f = fopen(path, "wb");
+    if (!f) {
+        LOG_E("Failed to write metadata export: %s", path);
+        goto done;
+    }
+    if (fwrite(buf, 1, len, f) != len) {
+        LOG_E("Failed to write metadata export: %s", path);
+        fclose(f);
+        goto done;
+    }
+    fclose(f);
+    LOG_I("Exported metadata to %s", path);
+    ok = true;
+
+done:
+    free(buf);
+    json_builder_free(root);
+    return ok;
 }
 
 /* ---------- Rendering ---------- */

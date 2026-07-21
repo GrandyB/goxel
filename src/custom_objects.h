@@ -43,6 +43,7 @@ uint8_t *custom_objects_serialize(const image_t *img, int *out_len);
 void custom_objects_deserialize(image_t *img, const uint8_t *data, int len);
 
 void custom_objects_export_log(const image_t *img);
+bool custom_objects_export_json(const image_t *img, const char *path);
 
 const char *custom_object_type_name(custom_object_type_t type);
 bool custom_object_is_spatial(custom_object_type_t type);
