@@ -299,30 +299,37 @@ static void gui_object_coords(image_t *img, custom_object_t *obj)
 
     if (!custom_object_is_spatial(obj->type)) return;
 
-    memcpy(p0, obj->p0, sizeof(p0));
-    memcpy(p1, obj->p1, sizeof(p1));
-
     if (is_zone) {
+        int w0[3], w1[3];
         /* Keep Min <= Max in the UI. */
-        p0[0] = obj->p0[0] < obj->p1[0] ? obj->p0[0] : obj->p1[0];
-        p0[1] = obj->p0[1] < obj->p1[1] ? obj->p0[1] : obj->p1[1];
-        p0[2] = obj->p0[2] < obj->p1[2] ? obj->p0[2] : obj->p1[2];
-        p1[0] = obj->p0[0] > obj->p1[0] ? obj->p0[0] : obj->p1[0];
-        p1[1] = obj->p0[1] > obj->p1[1] ? obj->p0[1] : obj->p1[1];
-        p1[2] = obj->p0[2] > obj->p1[2] ? obj->p0[2] : obj->p1[2];
+        w0[0] = obj->p0[0] < obj->p1[0] ? obj->p0[0] : obj->p1[0];
+        w0[1] = obj->p0[1] < obj->p1[1] ? obj->p0[1] : obj->p1[1];
+        w0[2] = obj->p0[2] < obj->p1[2] ? obj->p0[2] : obj->p1[2];
+        w1[0] = obj->p0[0] > obj->p1[0] ? obj->p0[0] : obj->p1[0];
+        w1[1] = obj->p0[1] > obj->p1[1] ? obj->p0[1] : obj->p1[1];
+        w1[2] = obj->p0[2] > obj->p1[2] ? obj->p0[2] : obj->p1[2];
+        custom_object_world_to_display(img, w0, p0);
+        custom_object_world_to_display(img, w1, p1);
 
         if (gui_coord_vec("Min", p0, !is_2d)) changed = true;
         if (gui_coord_vec("Max", p1, !is_2d)) changed = true;
     } else {
+        custom_object_world_to_display(img, obj->p0, p0);
         if (gui_coord_vec("Position", p0, !is_2d)) changed = true;
     }
 
     if (!changed) return;
 
     image_history_push(img);
-    memcpy(obj->p0, p0, sizeof(obj->p0));
-    if (is_zone)
-        memcpy(obj->p1, p1, sizeof(obj->p1));
+    if (is_zone) {
+        int w0[3], w1[3];
+        custom_object_display_to_world(img, p0, w0);
+        custom_object_display_to_world(img, p1, w1);
+        memcpy(obj->p0, w0, sizeof(obj->p0));
+        memcpy(obj->p1, w1, sizeof(obj->p1));
+    } else {
+        custom_object_display_to_world(img, p0, obj->p0);
+    }
 }
 
 static void gui_object_values(image_t *img, custom_object_t *obj)

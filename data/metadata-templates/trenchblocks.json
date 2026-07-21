@@ -37,7 +37,7 @@
 			"name": "FlagRed",
 			"type": "Point2D",
 			"color": [255, 0, 0, 255],
-			"default": [20, 0]
+			"default": [300, 255]
 		}, {
 			"name": "SpawnRed",
 			"type": "Group",
@@ -47,7 +47,7 @@
 			"name": "FlagBlue",
 			"type": "2DPoint",
 			"color": [0, 0, 255, 255],
-			"default": [-20, 0]
+			"default": [200, 255]
 		}, {
 			"name": "SpawnBlue",
 			"type": "Group",

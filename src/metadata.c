@@ -149,6 +149,17 @@ static void image_z_range(const image_t *img, int *z0, int *z1)
     if (*z1 < *z0) *z1 = *z0;
 }
 
+static void image_bottom_left(const image_t *img, int out[3])
+{
+    float box[4][4];
+    if (box_is_null(img->box)) {
+        out[0] = out[1] = out[2] = 0;
+        return;
+    }
+    mat4_copy(img->box, box);
+    box_get_start_pos(box, out);
+}
+
 static void image_center(const image_t *img, int out[3])
 {
     int start[3], dims[3];
@@ -164,6 +175,26 @@ static void image_center(const image_t *img, int out[3])
     out[0] = start[0] + dims[0] / 2;
     out[1] = start[1] + dims[1] / 2;
     out[2] = start[2] + dims[2] / 2;
+}
+
+void custom_object_world_to_display(const image_t *img, const int world[3],
+                                    int display[3])
+{
+    int origin[3];
+    image_bottom_left(img, origin);
+    display[0] = world[0] - origin[0];
+    display[1] = world[1] - origin[1];
+    display[2] = world[2] - origin[2];
+}
+
+void custom_object_display_to_world(const image_t *img, const int display[3],
+                                    int world[3])
+{
+    int origin[3];
+    image_bottom_left(img, origin);
+    world[0] = display[0] + origin[0];
+    world[1] = display[1] + origin[1];
+    world[2] = display[2] + origin[2];
 }
 
 static void normalize_corners(int a[3], int b[3])
@@ -1099,29 +1130,34 @@ static bool apply_template_default(image_t *img, custom_object_t *obj,
     case CUSTOM_OBJ_POINT_2D:
     case CUSTOM_OBJ_POINT_3D:
         if (jv->type != json_array) return false;
-        if (jv->u.array.length >= 1) {
-            json_value *e = jv->u.array.values[0];
-            if (e->type == json_integer)
-                obj->p0[0] = (int)e->u.integer;
-            else if (e->type == json_double)
-                obj->p0[0] = (int)e->u.dbl;
-        }
-        if (jv->u.array.length >= 2) {
-            json_value *e = jv->u.array.values[1];
-            if (e->type == json_integer)
-                obj->p0[1] = (int)e->u.integer;
-            else if (e->type == json_double)
-                obj->p0[1] = (int)e->u.dbl;
-        }
-        if (obj->type == CUSTOM_OBJ_POINT_3D && jv->u.array.length >= 3) {
-            json_value *e = jv->u.array.values[2];
-            if (e->type == json_integer)
-                obj->p0[2] = (int)e->u.integer;
-            else if (e->type == json_double)
-                obj->p0[2] = (int)e->u.dbl;
-        } else if (obj->type == CUSTOM_OBJ_POINT_2D) {
-            image_z_range(img, &z0, &z1);
-            obj->p0[2] = z0;
+        {
+            int display[3] = {0, 0, 0};
+            if (jv->u.array.length >= 1) {
+                json_value *e = jv->u.array.values[0];
+                if (e->type == json_integer)
+                    display[0] = (int)e->u.integer;
+                else if (e->type == json_double)
+                    display[0] = (int)e->u.dbl;
+            }
+            if (jv->u.array.length >= 2) {
+                json_value *e = jv->u.array.values[1];
+                if (e->type == json_integer)
+                    display[1] = (int)e->u.integer;
+                else if (e->type == json_double)
+                    display[1] = (int)e->u.dbl;
+            }
+            if (obj->type == CUSTOM_OBJ_POINT_3D && jv->u.array.length >= 3) {
+                json_value *e = jv->u.array.values[2];
+                if (e->type == json_integer)
+                    display[2] = (int)e->u.integer;
+                else if (e->type == json_double)
+                    display[2] = (int)e->u.dbl;
+            }
+            custom_object_display_to_world(img, display, obj->p0);
+            if (obj->type == CUSTOM_OBJ_POINT_2D) {
+                image_z_range(img, &z0, &z1);
+                obj->p0[2] = z0;
+            }
         }
         return jv->u.array.length >=
                (obj->type == CUSTOM_OBJ_POINT_3D ? 3u : 2u);
@@ -1286,39 +1322,68 @@ bool custom_objects_load_template_json(const char *path, image_t *img)
     return ok;
 }
 
+static void zone_corners(const custom_object_t *obj, int min[3], int max[3])
+{
+    int i;
+    for (i = 0; i < 3; i++) {
+        if (obj->p0[i] < obj->p1[i]) {
+            min[i] = obj->p0[i];
+            max[i] = obj->p1[i];
+        } else {
+            min[i] = obj->p1[i];
+            max[i] = obj->p0[i];
+        }
+    }
+}
+
 void custom_objects_export_log(const image_t *img)
 {
     custom_object_t *obj;
+    int display[3];
     if (!img) return;
     LOG_I("=== Metadata export ===");
     DL_FOREACH(img->custom_objects, obj) {
         switch (obj->type) {
         case CUSTOM_OBJ_POINT_2D:
+            custom_object_world_to_display(img, obj->p0, display);
             LOG_I("%s [%s] visible=%d color=#%02X%02X%02X pos=(%d, %d)",
                   obj->name, custom_object_type_name(obj->type),
                   (int)obj->visible, obj->color[0], obj->color[1], obj->color[2],
-                  obj->p0[0], obj->p0[1]);
+                  display[0], display[1]);
             break;
         case CUSTOM_OBJ_POINT_3D:
+            custom_object_world_to_display(img, obj->p0, display);
             LOG_I("%s [%s] visible=%d color=#%02X%02X%02X pos=(%d, %d, %d)",
                   obj->name, custom_object_type_name(obj->type),
                   (int)obj->visible, obj->color[0], obj->color[1], obj->color[2],
-                  obj->p0[0], obj->p0[1], obj->p0[2]);
+                  display[0], display[1], display[2]);
             break;
         case CUSTOM_OBJ_ZONE_2D:
-            LOG_I("%s [%s] visible=%d color=#%02X%02X%02X "
-                  "min=(%d, %d) max=(%d, %d)",
-                  obj->name, custom_object_type_name(obj->type),
-                  (int)obj->visible, obj->color[0], obj->color[1], obj->color[2],
-                  obj->p0[0], obj->p0[1], obj->p1[0], obj->p1[1]);
+            {
+                int world_min[3], world_max[3], max_display[3];
+                zone_corners(obj, world_min, world_max);
+                custom_object_world_to_display(img, world_min, display);
+                custom_object_world_to_display(img, world_max, max_display);
+                LOG_I("%s [%s] visible=%d color=#%02X%02X%02X "
+                      "min=(%d, %d) max=(%d, %d)",
+                      obj->name, custom_object_type_name(obj->type),
+                      (int)obj->visible, obj->color[0], obj->color[1], obj->color[2],
+                      display[0], display[1], max_display[0], max_display[1]);
+            }
             break;
         case CUSTOM_OBJ_ZONE_3D:
-            LOG_I("%s [%s] visible=%d color=#%02X%02X%02X "
-                  "min=(%d, %d, %d) max=(%d, %d, %d)",
-                  obj->name, custom_object_type_name(obj->type),
-                  (int)obj->visible, obj->color[0], obj->color[1], obj->color[2],
-                  obj->p0[0], obj->p0[1], obj->p0[2],
-                  obj->p1[0], obj->p1[1], obj->p1[2]);
+            {
+                int world_min[3], world_max[3], max_display[3];
+                zone_corners(obj, world_min, world_max);
+                custom_object_world_to_display(img, world_min, display);
+                custom_object_world_to_display(img, world_max, max_display);
+                LOG_I("%s [%s] visible=%d color=#%02X%02X%02X "
+                      "min=(%d, %d, %d) max=(%d, %d, %d)",
+                      obj->name, custom_object_type_name(obj->type),
+                      (int)obj->visible, obj->color[0], obj->color[1], obj->color[2],
+                      display[0], display[1], display[2],
+                      max_display[0], max_display[1], max_display[2]);
+            }
             break;
         case CUSTOM_OBJ_FLOAT:
             LOG_I("%s [%s] value=%g", obj->name,
@@ -1354,25 +1419,13 @@ void custom_objects_export_log(const image_t *img)
     LOG_I("=== End custom objects ===");
 }
 
-static void zone_corners(const custom_object_t *obj, int min[3], int max[3])
-{
-    int i;
-    for (i = 0; i < 3; i++) {
-        if (obj->p0[i] < obj->p1[i]) {
-            min[i] = obj->p0[i];
-            max[i] = obj->p1[i];
-        } else {
-            min[i] = obj->p1[i];
-            max[i] = obj->p0[i];
-        }
-    }
-}
-
 static json_value *export_object_value(const image_t *img,
                                        const custom_object_t *obj)
 {
     custom_object_t *child;
+    int world_min[3], world_max[3];
     int min[3], max[3];
+    int display[3];
     int color[4];
 
     if (obj->type == CUSTOM_OBJ_GROUP) {
@@ -1386,11 +1439,15 @@ static json_value *export_object_value(const image_t *img,
 
     switch (obj->type) {
     case CUSTOM_OBJ_POINT_2D:
-        return json_int_array_new(obj->p0, 2);
+        custom_object_world_to_display(img, obj->p0, display);
+        return json_int_array_new(display, 2);
     case CUSTOM_OBJ_POINT_3D:
-        return json_int_array_new(obj->p0, 3);
+        custom_object_world_to_display(img, obj->p0, display);
+        return json_int_array_new(display, 3);
     case CUSTOM_OBJ_ZONE_2D:
-        zone_corners(obj, min, max);
+        zone_corners(obj, world_min, world_max);
+        custom_object_world_to_display(img, world_min, min);
+        custom_object_world_to_display(img, world_max, max);
         {
             json_value *zone = json_object_new(2);
             json_object_push(zone, "min", json_int_array_new(min, 2));
@@ -1398,7 +1455,9 @@ static json_value *export_object_value(const image_t *img,
             return zone;
         }
     case CUSTOM_OBJ_ZONE_3D:
-        zone_corners(obj, min, max);
+        zone_corners(obj, world_min, world_max);
+        custom_object_world_to_display(img, world_min, min);
+        custom_object_world_to_display(img, world_max, max);
         {
             json_value *zone = json_object_new(2);
             json_object_push(zone, "min", json_int_array_new(min, 3));

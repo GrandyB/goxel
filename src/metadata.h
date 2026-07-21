@@ -53,6 +53,11 @@ bool custom_objects_load_template_json(const char *path, image_t *img);
 
 const char *custom_object_type_name(custom_object_type_t type);
 bool custom_object_is_spatial(custom_object_type_t type);
+/* Map coords (bottom-left block = 0,0,0) <-> internal voxel coords. */
+void custom_object_world_to_display(const image_t *img, const int world[3],
+                                    int display[3]);
+void custom_object_display_to_world(const image_t *img, const int display[3],
+                                    int world[3]);
 bool custom_object_is_group(custom_object_type_t type);
 int custom_object_depth(const custom_object_t *obj);
 bool custom_object_effectively_visible(const custom_object_t *obj);

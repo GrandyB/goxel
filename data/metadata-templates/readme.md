@@ -79,6 +79,11 @@ Type names are case-insensitive. Spaces, underscores, and hyphens are ignored, s
 | Point3D  | `[x, y, z]` | `"default": [10, 20, 5]` |
 | 2D/3D Zone | —       | Not supported in templates; zones start at the map centre with a small default size. |
 
+Spatial coordinates use the **bottom-left block** of the image box as `(0, 0, 0)`.
+For a 512×512×64 map that block is at internal position `(-256, -256, -32)`; in metadata
+coordinates it is `(0, 0, 0)`. X and Y increase toward the top-right; Z increases upward.
+This matches the **Log - Coordinates** filter.
+
 For **Enum**, the label must match an entry in `options` exactly. An integer index selects
 the option by position (0-based).
 

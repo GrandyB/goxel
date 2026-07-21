@@ -20,7 +20,7 @@
 			"name": "green_flag",
 			"type": "Point2D",
 			"color": [0, 255, 0, 255],
-			"default": [20, 0]
+			"default": [300, 255]
 		}, {
 			"name": "spawn_green",
 			"type": "Group",
@@ -31,7 +31,7 @@
 			"name": "blue_flag",
 			"type": "2DPoint",
 			"color": [0, 0, 255, 255],
-			"default": [-20, 0]
+			"default": [200, 255]
 		}, {
 			"name": "spawn_blue",
 			"type": "Group",
