@@ -116,11 +116,12 @@ static void refresh_template_list(template_popup_t *popup)
 
 static int template_popup_gui(void *data)
 {
-    template_popup_t *popup = data;
+    template_popup_t *popup = &g_template_popup;
     image_t *img = goxel.image;
     const char *names[TEMPLATE_MAX];
-    int i, has_items;
+    int i, has_items, ret = 0;
 
+    (void)data;
     has_items = popup->count > 0;
     if (has_items) {
         if (popup->selected < 0) popup->selected = 0;
@@ -131,25 +132,22 @@ static int template_popup_gui(void *data)
         gui_combo("Template", &popup->selected, names, popup->count);
     } else {
         gui_text("No templates found.");
-        if (sys_get_user_dir())
-            gui_text_wrapped("Install JSON templates in:\n%s/metadata-templates/",
-                             sys_get_user_dir());
     }
 
     if (img && img->custom_objects)
-        gui_text_wrapped("Loading a template replaces all current metadata items.");
+        gui_text("Replaces all current items.");
 
     gui_row_begin(0);
     if (has_items && gui_button("Load template", 0, 0)) {
         image_history_push(img);
-        if (custom_objects_load_template_json(popup->paths[popup->selected], img))
-            g_list_current = NULL;
-        return 1;
+        custom_objects_load_template_json(popup->paths[popup->selected], img);
+        g_list_current = NULL;
+        ret = 1;
+    } else if (gui_button("Cancel", 0, 0)) {
+        ret = 2;
     }
-    if (gui_button("Cancel", 0, 0))
-        return 2;
     gui_row_end();
-    return 0;
+    return ret;
 }
 
 static void on_mouse(filter_t *filter_, const float viewport[4])
@@ -361,8 +359,8 @@ static int gui(filter_t *filter_)
     if (g_open_template_popup) {
         g_open_template_popup = false;
         refresh_template_list(&g_template_popup);
-        gui_open_popup("Load template", GUI_POPUP_RESIZE,
-                       &g_template_popup, template_popup_gui);
+        gui_open_popup_sized("Load template", 300, 150, 0,
+                             NULL, template_popup_gui);
     }
 
     gui_checkbox("Show", &img->custom_objects_show, NULL);
