@@ -459,6 +459,8 @@ static int gui(filter_t *filter_)
             gui_object_values(img, obj);
     }
 
+    gui_dummy(0, (int)gui_style_item_spacing_y());
+
     if (gui_button("Export", 1.0, 0)) {
         const char *filters[] = {"*.json", NULL};
         const char *path;

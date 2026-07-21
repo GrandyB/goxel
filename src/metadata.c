@@ -731,9 +731,7 @@ static bool read_object_v2(const uint8_t *data, int len, int *pos,
             obj->text_value[textlen] = '\0';
             break;
         case CUSTOM_OBJ_COLOR:
-            /* Legacy v2: skip separate rgba payload; value is color[4]. */
-            if (*pos + 16 <= len)
-                *pos += 16;
+            /* Colour value lives in base color[4]; no extra payload. */
             break;
         case CUSTOM_OBJ_ENUM:
             if (*pos + 8 > len) return false;
