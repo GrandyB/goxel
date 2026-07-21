@@ -1991,29 +1991,51 @@ bool gui_input_text_multiline(const char *label, char *buf, int size,
 bool gui_combo(const char *label, int *v, const char **names, int nb)
 {
     bool ret;
-    ImGui::PushItemWidth(gui_row_cell_width());
+    bool has_label = label && label[0] != '\0' && label[0] != '#';
+
     ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR(COMBO, INNER, 0));
     ImGui::PushStyleColor(ImGuiCol_PopupBg, COLOR(COMBO, BACKGROUND, 0));
     ImGui::PushStyleColor(ImGuiCol_Button, COLOR(COMBO, ITEM, 0));
-    ret = ImGui::Combo(label, v, names, nb);
+    if (has_label) {
+        ImGui::PushID(label);
+        label_aligned(label, gui_label_size_get());
+        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+        ret = ImGui::Combo("##combo", v, names, nb);
+        ImGui::PopItemWidth();
+        ImGui::PopID();
+    } else {
+        ImGui::PushItemWidth(gui_row_cell_width());
+        ret = ImGui::Combo(label, v, names, nb);
+        ImGui::PopItemWidth();
+    }
     ImGui::PopStyleColor(3);
-    ImGui::PopItemWidth();
     return ret;
 }
 
 bool gui_combo_begin(const char *label, const char *preview)
 {
     bool ret;
+    bool has_label = label && label[0] != '\0' && label[0] != '#';
+    const char *combo_id;
 
-    ImGui::PushItemWidth(-1);
+    ImGui::PushID(label ? label : "combo");
     ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR(COMBO, INNER, 0));
     ImGui::PushStyleColor(ImGuiCol_PopupBg, COLOR(COMBO, BACKGROUND, 0));
     ImGui::PushStyleColor(ImGuiCol_Button, COLOR(COMBO, ITEM, 0));
-    ret = ImGui::BeginCombo(label, preview);
+    if (has_label) {
+        label_aligned(label, gui_label_size_get());
+        combo_id = "##combo";
+    } else {
+        combo_id = label;
+    }
+    ImGui::PushItemWidth(has_label ?
+                         ImGui::GetContentRegionAvail().x : -1);
+    ret = ImGui::BeginCombo(combo_id, preview);
 
     if (!ret) {
         ImGui::PopItemWidth();
         ImGui::PopStyleColor(3);
+        ImGui::PopID();
     }
     return ret;
 }
@@ -2023,6 +2045,7 @@ void gui_combo_end(void)
     ImGui::EndCombo();
     ImGui::PopStyleColor(3);
     ImGui::PopItemWidth();
+    ImGui::PopID();
 }
 
 bool gui_combo_item(const char *label, bool is_selected)
@@ -2193,7 +2216,8 @@ bool _model_item(int idx, bool *selected, const char *name, int len)
 
 bool _layer_item(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
-                    char *name, int len, bool condensed, float trailing_w)
+                    char *name, int len, bool condensed, float trailing_w,
+                    bool allow_deselect, bool solo_active, bool *solo_pressed)
 {
     bool ret = false;
     bool selected_ = *selected;
@@ -2217,13 +2241,32 @@ bool _layer_item(int idx, int icons_count, const int *icons,
     if (visible)
     {
         bool visibility = condensed
-            ? gui_condensed_selectable_icon("##visible", &selected_, *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF) 
+            ? gui_condensed_selectable_icon("##visible", &selected_, *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF)
             : gui_selectable_icon("##visible", &selected_, *visible ? ICON_VISIBILITY : ICON_VISIBILITY_OFF);
         if (visibility)
         {
             *visible = !*visible;
             ret = true;
         }
+        ImGui::SameLine();
+    }
+
+    if (solo_pressed)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              solo_active ? COLOR(WIDGET, INNER, true)
+                                          : COLOR(WIDGET, INNER, false));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                              color_lighten(solo_active ? COLOR(WIDGET, INNER, true)
+                                                        : COLOR(WIDGET, INNER, false)));
+        if (ImGui::Button("S", ImVec2(btn_h, btn_h)))
+        {
+            *solo_pressed = true;
+            ret = true;
+        }
+        if (ImGui::IsItemHovered())
+            gui_tooltip("Solo - temp only show this item");
+        ImGui::PopStyleColor(2);
         ImGui::SameLine();
     }
 
@@ -2237,7 +2280,10 @@ bool _layer_item(int idx, int icons_count, const int *icons,
         if (name_w < btn_h) name_w = btn_h;
         if (ImGui::Button(name, ImVec2(name_w, btn_h)))
         {
-            *selected = true;
+            if (allow_deselect && *selected)
+                *selected = false;
+            else
+                *selected = true;
             ret = true;
         }
         ImGui::PopStyleVar();
@@ -2291,15 +2337,17 @@ bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
                     char *name, int len)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
-                       true, 0);
+                       true, 0, false, false, NULL);
 }
 
 bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
-                    char *name, int len, float trailing_w)
+                    char *name, int len, float trailing_w,
+                    bool allow_deselect, bool solo_active, bool *solo_pressed)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
-                       true, trailing_w);
+                       true, trailing_w, allow_deselect, solo_active,
+                       solo_pressed);
 }
 
 bool gui_layer_item(int idx, int icons_count, const int *icons,
@@ -2307,7 +2355,7 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
                     char *name, int len)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
-                       false, 0);
+                       false, 0, false, false, NULL);
 }
 
 bool gui_is_key_down(int key)

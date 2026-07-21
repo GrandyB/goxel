@@ -8,8 +8,8 @@
  * version.
  */
 
-#ifndef CUSTOM_OBJECTS_H
-#define CUSTOM_OBJECTS_H
+#ifndef METADATA_H
+#define METADATA_H
 
 #include "image.h"
 #include "render.h"
@@ -38,6 +38,11 @@ void custom_objects_render(renderer_t *rend, const image_t *img);
 void custom_objects_set_editor_active(bool active);
 void custom_objects_edit_iter(const float viewport[4]);
 
+void custom_objects_set_list_selected(custom_object_t *obj);
+custom_object_t *custom_objects_get_list_selected(void);
+void custom_objects_toggle_solo(custom_object_t *obj);
+custom_object_t *custom_objects_get_solo(void);
+
 /* Binary blob for .gox CUST chunk. Caller frees *out. */
 uint8_t *custom_objects_serialize(const image_t *img, int *out_len);
 void custom_objects_deserialize(image_t *img, const uint8_t *data, int len);
@@ -53,4 +58,4 @@ int custom_object_depth(const custom_object_t *obj);
 bool custom_object_effectively_visible(const custom_object_t *obj);
 void custom_object_effective_color(const custom_object_t *obj, uint8_t color[4]);
 
-#endif /* CUSTOM_OBJECTS_H */
+#endif /* METADATA_H */

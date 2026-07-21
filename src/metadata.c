@@ -9,7 +9,7 @@
  */
 
 #include "goxel.h"
-#include "custom_objects.h"
+#include "metadata.h"
 #include "utils/json.h"
 #include "../../ext_src/json/json.h"
 
@@ -20,6 +20,8 @@
 #include <ctype.h>
 
 static bool g_editor_active = false;
+static custom_object_t *g_list_selected = NULL;
+static custom_object_t *g_solo_obj = NULL;
 
 typedef struct {
     int state; /* 0 idle, 1 hover, 2 drag */
@@ -86,6 +88,8 @@ bool custom_object_effectively_visible(const custom_object_t *obj)
 {
     const custom_object_t *g;
     if (!obj || !obj->visible) return false;
+    if (g_solo_obj)
+        return obj == g_solo_obj;
     for (g = obj->group; g; g = g->group) {
         if (!g->visible) return false;
     }
@@ -244,6 +248,22 @@ void custom_objects_free_list(custom_object_t **list)
         DL_FOREACH(*list, obj) {
             if (obj == g_edit.obj) {
                 edit_reset();
+                break;
+            }
+        }
+    }
+    if (*list && g_list_selected) {
+        DL_FOREACH(*list, obj) {
+            if (obj == g_list_selected) {
+                g_list_selected = NULL;
+                break;
+            }
+        }
+    }
+    if (*list && g_solo_obj) {
+        DL_FOREACH(*list, obj) {
+            if (obj == g_solo_obj) {
+                g_solo_obj = NULL;
                 break;
             }
         }
@@ -450,6 +470,10 @@ void custom_object_delete(image_t *img, custom_object_t *obj)
     }
     if (g_edit.obj == obj)
         edit_reset();
+    if (g_list_selected == obj)
+        g_list_selected = NULL;
+    if (g_solo_obj == obj)
+        g_solo_obj = NULL;
     DL_DELETE(img->custom_objects, obj);
     free(obj);
 }
@@ -583,7 +607,7 @@ static int write_object(uint8_t *buf, int cap, int w, const custom_object_t *obj
     buf[w++] = (uint8_t)obj->type;
     memcpy(buf + w, obj->color, 4);
     w += 4;
-    buf[w++] = obj->visible ? 1 : 0;
+    buf[w++] = 1; /* per-item visibility is session-only */
     memcpy(buf + w, obj->p0, 12);
     w += 12;
     memcpy(buf + w, obj->p1, 12);
@@ -662,7 +686,8 @@ static bool read_object_base(const uint8_t *data, int len, int *pos,
         obj->type = CUSTOM_OBJ_POINT_3D;
     memcpy(obj->color, data + *pos, 4);
     *pos += 4;
-    obj->visible = data[(*pos)++] != 0;
+    (*pos)++; /* visible byte ignored — session-only */
+    obj->visible = true;
     memcpy(obj->p0, data + *pos, 12);
     *pos += 12;
     memcpy(obj->p1, data + *pos, 12);
@@ -1136,7 +1161,7 @@ void custom_objects_export_log(const image_t *img)
 {
     custom_object_t *obj;
     if (!img) return;
-    LOG_I("=== Custom objects export ===");
+    LOG_I("=== Metadata export ===");
     DL_FOREACH(img->custom_objects, obj) {
         switch (obj->type) {
         case CUSTOM_OBJ_POINT_2D:
@@ -1444,8 +1469,34 @@ void custom_objects_render(renderer_t *rend, const image_t *img)
 void custom_objects_set_editor_active(bool active)
 {
     g_editor_active = active;
-    if (!active)
+    if (!active) {
         edit_reset();
+        g_list_selected = NULL;
+        g_solo_obj = NULL;
+    }
+}
+
+void custom_objects_set_list_selected(custom_object_t *obj)
+{
+    g_list_selected = obj;
+}
+
+custom_object_t *custom_objects_get_list_selected(void)
+{
+    return g_list_selected;
+}
+
+void custom_objects_toggle_solo(custom_object_t *obj)
+{
+    if (g_solo_obj == obj)
+        g_solo_obj = NULL;
+    else
+        g_solo_obj = obj;
+}
+
+custom_object_t *custom_objects_get_solo(void)
+{
+    return g_solo_obj;
 }
 
 static bool unproject_on_box(const float viewport[4], const float pos[2],
@@ -1680,6 +1731,12 @@ drag_end_check:
     if (!best) {
         g_edit.state = 0;
         g_edit.obj = NULL;
+        if (g_list_selected &&
+            custom_object_is_spatial(g_list_selected->type) &&
+            custom_object_effectively_visible(g_list_selected)) {
+            custom_object_get_box(img, g_list_selected, box);
+            render_face_gizmo(box, 0);
+        }
         return;
     }
 
@@ -1688,6 +1745,14 @@ drag_end_check:
     g_edit.state = 1;
     render_face_gizmo(g_edit.box, best_face);
 
+    if (g_list_selected && g_list_selected != best &&
+        custom_object_is_spatial(g_list_selected->type) &&
+        custom_object_effectively_visible(g_list_selected)) {
+        float sel_box[4][4];
+        custom_object_get_box(img, g_list_selected, sel_box);
+        render_face_gizmo(sel_box, 0);
+    }
+
     if (best->type == CUSTOM_OBJ_ZONE_2D || best->type == CUSTOM_OBJ_ZONE_3D)
         goxel_set_help_text(shift ? "Drag to move (Shift)" : "Drag to resize");
     else
@@ -1695,6 +1760,7 @@ drag_end_check:
 
     if (pressed) {
         float face_plane[4][4], v[3];
+        g_list_selected = best;
         /* Zones: default resize; Shift to move. Points: always move. */
         g_edit.mode = (!shift &&
             (best->type == CUSTOM_OBJ_ZONE_2D ||

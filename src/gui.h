@@ -216,7 +216,8 @@ bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
 /* Like gui_condensed_layer_item, but leaves trailing_w px free on the right
  * for same-line action buttons. */
 bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icons,
-    bool *visible, bool *selected, char *name, int len, float trailing_w);
+    bool *visible, bool *selected, char *name, int len, float trailing_w,
+    bool allow_deselect, bool solo_active, bool *solo_pressed);
 float gui_icon_height(bool condensed);
 bool gui_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);

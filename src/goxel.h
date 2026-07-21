@@ -39,7 +39,7 @@
 #include "gesture3d.h"
 #include "gui.h"
 #include "image.h"
-#include "custom_objects.h"
+#include "metadata.h"
 #include "inputs.h"
 #include "layer.h"
 #include "log.h"

@@ -9,14 +9,14 @@
  */
 
 #include "goxel.h"
-#include "custom_objects.h"
+#include "metadata.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 typedef struct {
     filter_t filter;
-} filter_custom_objects_t;
+} filter_metadata_t;
 
 #define TEMPLATE_MAX 64
 
@@ -63,8 +63,7 @@ static int type_to_picker_index(custom_object_type_t type)
     return 0;
 }
 
-/* List highlight only (gizmos are hover-based, not list selection). */
-static custom_object_t *g_list_current = NULL;
+/* List highlight; synced to map gizmos via custom_objects_set_list_selected. */
 static custom_object_t *g_pending_delete = NULL;
 static custom_object_t *g_pending_dup = NULL;
 static custom_object_t *g_pending_add_to_group = NULL;
@@ -80,7 +79,7 @@ static void on_close(filter_t *filter_)
 {
     (void)filter_;
     custom_objects_set_editor_active(false);
-    g_list_current = NULL;
+    custom_objects_set_list_selected(NULL);
 }
 
 static int on_template_file(const char *dirpath, const char *name, void *user)
@@ -141,7 +140,7 @@ static int template_popup_gui(void *data)
     if (has_items && gui_button("Load template", 0, 0)) {
         image_history_push(img);
         custom_objects_load_template_json(popup->paths[popup->selected], img);
-        g_list_current = NULL;
+        custom_objects_set_list_selected(NULL);
         ret = 1;
     } else if (gui_button("Cancel", 0, 0)) {
         ret = 2;
@@ -158,16 +157,16 @@ static void on_mouse(filter_t *filter_, const float viewport[4])
 
 static void ensure_list_current_valid(image_t *img)
 {
-    custom_object_t *obj;
+    custom_object_t *obj, *current = custom_objects_get_list_selected();
     bool found = false;
-    if (!g_list_current) return;
+    if (!current) return;
     DL_FOREACH(img->custom_objects, obj) {
-        if (obj == g_list_current) {
+        if (obj == current) {
             found = true;
             break;
         }
     }
-    if (!found) g_list_current = NULL;
+    if (!found) custom_objects_set_list_selected(NULL);
 }
 
 static bool render_list_item(void *item, int idx, bool current)
@@ -175,6 +174,8 @@ static bool render_list_item(void *item, int idx, bool current)
     custom_object_t *obj = item;
     bool visible = obj->visible;
     bool selected = current;
+    bool solo_active = custom_objects_get_solo() == obj;
+    bool solo_press = false;
     bool ret = false;
     bool press = false;
     bool is_group = custom_object_is_group(obj->type);
@@ -204,8 +205,13 @@ static bool render_list_item(void *item, int idx, bool current)
 
     if (gui_condensed_layer_item_trailing(idx, 0, NULL, &visible, &selected,
                                           obj->name, sizeof(obj->name),
-                                          trailing))
+                                          trailing, true, solo_active,
+                                          &solo_press))
         ret = true;
+    if (solo_press)
+        custom_objects_toggle_solo(obj);
+    if (selected != current)
+        custom_objects_set_list_selected(selected ? obj : NULL);
     if (visible != obj->visible)
         obj->visible = visible;
 
@@ -232,16 +238,13 @@ static void render_metadata_list(image_t *img)
 {
     custom_object_t *obj;
     bool is_current;
-    int i, count;
+    int i;
 
-    DL_COUNT(img->custom_objects, obj, count);
     gui_group_begin(NULL);
     i = 0;
     DL_FOREACH(img->custom_objects, obj) {
-        is_current = g_list_current == obj;
-        if (render_list_item(obj, i, is_current)) {
-            g_list_current = obj;
-        }
+        is_current = custom_objects_get_list_selected() == obj;
+        render_list_item(obj, i, is_current);
         i++;
     }
     gui_group_end();
@@ -376,7 +379,8 @@ static int gui(filter_t *filter_)
     if (g_pending_add) {
         g_pending_add = false;
         image_history_push(img);
-        g_list_current = custom_object_add(img, CUSTOM_OBJ_POINT_3D);
+        custom_objects_set_list_selected(
+            custom_object_add(img, CUSTOM_OBJ_POINT_3D));
     }
 
     if (g_pending_add_to_group) {
@@ -386,26 +390,28 @@ static int gui(filter_t *filter_)
         if (child_type == CUSTOM_OBJ_GROUP)
             child_type = CUSTOM_OBJ_POINT_3D;
         image_history_push(img);
-        g_list_current = custom_object_add_to_group(img, group, child_type);
+        custom_objects_set_list_selected(
+            custom_object_add_to_group(img, group, child_type));
     }
 
     if (g_pending_dup) {
         custom_object_t *src = g_pending_dup;
         g_pending_dup = NULL;
         image_history_push(img);
-        g_list_current = custom_object_duplicate(img, src);
+        custom_objects_set_list_selected(
+            custom_object_duplicate(img, src));
     }
 
     if (g_pending_delete) {
         custom_object_t *del = g_pending_delete;
         g_pending_delete = NULL;
-        if (g_list_current == del)
-            g_list_current = NULL;
+        if (custom_objects_get_list_selected() == del)
+            custom_objects_set_list_selected(NULL);
         image_history_push(img);
         custom_object_delete(img, del);
     }
 
-    obj = g_list_current;
+    obj = custom_objects_get_list_selected();
     if (obj) {
         gui_text("Type");
         if (obj->type == CUSTOM_OBJ_ENUM) {
@@ -440,8 +446,8 @@ static int gui(filter_t *filter_)
     return 0;
 }
 
-FILTER_REGISTER(customobjects, filter_custom_objects_t,
-                .name = "Custom objects",
+FILTER_REGISTER(customobjects, filter_metadata_t,
+                .name = "Metadata",
                 .on_open = on_open,
                 .on_close = on_close,
                 .override_mouse = true,

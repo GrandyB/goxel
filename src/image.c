@@ -17,7 +17,7 @@
  */
 
 #include "goxel.h"
-#include "custom_objects.h"
+#include "metadata.h"
 #include "xxhash.h"
 
 /* History

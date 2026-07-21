@@ -19,7 +19,7 @@
 
 #include "goxel.h"
 #include "file_format.h"
-#include "custom_objects.h"
+#include "metadata.h"
 #include <errno.h>
 
 #define VERSION 2 // Current version of the file format.
