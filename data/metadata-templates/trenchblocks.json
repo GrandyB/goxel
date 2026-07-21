@@ -1,87 +1,73 @@
 {
-  "metadata": [
-    {
-      "name": "MapName",
-      "type": "Text",
-      "default": "My map name"
-    },
-    {
-      "name": "MapAuthor",
-      "type": "Text",
-      "default": "Deuce"
-    },
-    {
-      "name": "Fog1",
-      "type": "Color",
-      "default": [127, 127, 151]
-    },
-    {
-      "name": "Fog2",
-      "type": "Color",
-      "default": [155, 155, 189]
-    },
-    {
-      "name": "FogDistanceStart",
-      "type": "Float",
-      "default": 100.0
-    },
-    {
-      "name": "FogDistanceEnd",
-      "type": "Float",
-      "default": 128.0
-    },
-    {
-      "name": "WaterType",
-      "type": "Enum",
-      "options": ["Water", "Lava", "Poison", "Disabled"],
-      "default": "Water"
-    },
-    {
-      "name": "SpectatorSpawnPoint",
-      "type": "Point2D",
-      "color": [100, 100, 100, 255]
-    },
-    {
-      "name": "FlagRed",
-      "type": "Point2D",
-      "color": [255, 0, 0, 255],
-      "default": [20, 0]
-    },
-    {
-      "name": "SpawnRed",
-      "type": "Group",
-      "default_child_type": "Point2D",
-      "color": [200, 50, 50, 255]
-    },
-    {
-      "name": "FlagBlue",
-      "type": "2DPoint",
-      "color": [0, 0, 255, 255],
-      "default": [-20, 0]
-    },
-    {
-      "name": "SpawnBlue",
-      "type": "Group",
-      "default_child_type": "Point2D",
-      "color": [50, 50, 200, 255]
-    },
-    {
-      "name": "PickupHealth",
-      "type": "Group",
-      "default_child_type": "Point2D",
-      "color": [255, 255, 255, 255]
-    },
-    {
-      "name": "PickupAmmo",
-      "type": "Group",
-      "default_child_type": "Point2D",
-      "color": [0, 255, 0, 255]
-    },
-    {
-      "name": "PickupSatchel",
-      "type": "Group",
-      "default_child_type": "Point2D",
-      "color": [255, 255, 0, 255]
-    }
-  ]
+	"metadata": [
+		{
+			"name": "MapName",
+			"type": "Text",
+			"default": "My map name"
+		}, {
+			"name": "MapAuthor",
+			"type": "Text",
+			"default": "Deuce"
+		}, {
+			"name": "Fog1",
+			"type": "Color",
+			"default": [127, 127, 151]
+		}, {
+			"name": "Fog2",
+			"type": "Color",
+			"default": [155, 155, 189]
+		}, {
+			"name": "FogDistanceStart",
+			"type": "Float",
+			"default": 100.0
+		}, {
+			"name": "FogDistanceEnd",
+			"type": "Float",
+			"default": 128.0
+		}, {
+			"name": "WaterType",
+			"type": "Enum",
+			"options": ["Water", "Lava", "Poison", "Disabled"],
+			"default": "Water"
+		}, {
+			"name": "SpectatorSpawnPoint",
+			"type": "Point2D",
+			"color": [100, 100, 100, 255]
+		}, {
+			"name": "FlagRed",
+			"type": "Point2D",
+			"color": [255, 0, 0, 255],
+			"default": [20, 0]
+		}, {
+			"name": "SpawnRed",
+			"type": "Group",
+			"default_child_type": "Point2D",
+			"color": [200, 50, 50, 255]
+		}, {
+			"name": "FlagBlue",
+			"type": "2DPoint",
+			"color": [0, 0, 255, 255],
+			"default": [-20, 0]
+		}, {
+			"name": "SpawnBlue",
+			"type": "Group",
+			"default_child_type": "Point2D",
+			"color": [50, 50, 200, 255]
+		}, {
+			"name": "PickupHealth",
+			"type": "Group",
+			"default_child_type": "Point2D",
+			"color": [255, 255, 255, 255]
+		}, {
+			"name": "PickupAmmo",
+			"type": "Group",
+			"default_child_type": "Point2D",
+			"color": [0, 255, 0, 255]
+		}, {
+			"name": "PickupSatchel",
+			"type": "Group",
+			"default_child_type": "Point2D",
+			"color": [255, 255, 0, 255]
+		}
+	]
 }

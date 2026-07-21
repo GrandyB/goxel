@@ -114,6 +114,8 @@
  *      v3 (first byte = 3): as v2 per object, plus int32 group index (-1 none)
  *      v4 (first byte = 4): as v3, plus 1 byte default_child_type on groups
  *                           (255 = not a group)
+ *      v5 (first byte = 5): as v4, plus 1 byte lock_child_types_to_default on groups
+ *                           (0 = unlocked, 1 = locked; 0 for non-groups)
  */
 
 // We create a hash table of all the blocks, so that blocks with the same

@@ -76,6 +76,8 @@ struct custom_object {
     char enum_options[CUSTOM_OBJ_ENUM_OPTIONS_MAX][CUSTOM_OBJ_ENUM_OPTION_LEN];
     /* Groups: default type for the + add-child button. */
     custom_object_type_t default_child_type;
+    /* Groups: when true, children cannot change type in the metadata UI. */
+    bool lock_child_types_to_default;
 };
 
 typedef struct history history_t;

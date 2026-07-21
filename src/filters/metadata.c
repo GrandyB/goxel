@@ -442,13 +442,18 @@ static int gui(filter_t *filter_)
         if (obj->type == CUSTOM_OBJ_ENUM) {
             gui_text("Enum");
         } else {
-            type = type_to_picker_index(obj->type);
-            if (gui_combo("##obj_type", &type, TYPE_NAMES,
-                          obj->group ? PICKER_CHILD_COUNT : PICKER_TYPES_COUNT)) {
-                custom_object_type_t new_type = PICKER_TYPES[type];
-                if (new_type != obj->type) {
-                    image_history_push(img);
-                    custom_object_set_type(img, obj, new_type);
+            bool type_locked = obj->group && obj->group->lock_child_types_to_default;
+            if (type_locked) {
+                gui_text("%s", custom_object_type_name(obj->type));
+            } else {
+                type = type_to_picker_index(obj->type);
+                if (gui_combo("##obj_type", &type, TYPE_NAMES,
+                              obj->group ? PICKER_CHILD_COUNT : PICKER_TYPES_COUNT)) {
+                    custom_object_type_t new_type = PICKER_TYPES[type];
+                    if (new_type != obj->type) {
+                        image_history_push(img);
+                        custom_object_set_type(img, obj, new_type);
+                    }
                 }
             }
         }

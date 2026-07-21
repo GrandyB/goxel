@@ -44,7 +44,8 @@ array describes one item to create.
 | `color`              | Points, zones, groups   | Row and map tint as `[R, G, B]` or `[R, G, B, A]` (uint8, 0–255). If omitted, a random colour is chosen. |
 | `options`            | Enum                    | Array of option labels (max 32 options, 64 characters each). |
 | `default`            | Text, Float, Color, Enum, Point2D, Point3D | Initial value when the template is loaded (see below). |
-| `default_child_type` | Group                   | Default type for new children added with the group **+** button. Defaults to **3D Point** if omitted. |
+| `default_child_type` | Group                   | Default type for new children added with the group **+** button. Defaults to **2D Point** if omitted. |
+| `lock_child_types_to_default` | Group                   | When `true`, children cannot change type in the metadata panel. Defaults to `false`. |
 
 Unknown fields are ignored. Invalid entries are skipped with a log warning; other items
 still load.
@@ -86,6 +87,7 @@ the option by position (0-based).
 Templates use a **flat** list. A group entry only creates the empty group; it does not
 define child items in JSON. After loading, use the group **+** button to add children.
 The `default_child_type` field sets which type those children use by default.
+Set `lock_child_types_to_default` to `true` to prevent changing child types in the editor.
 
 Child items added in the editor inherit their parent group's colour unless they define
 their own `color`.

@@ -1,0 +1,43 @@
+{
+	"metadata": [
+		{
+			"name": "name",
+			"type": "Text",
+			"default": "My map name"
+		}, {
+			"name": "description",
+			"type": "Text",
+			"default": "My map description"
+		}, {
+			"name": "author",
+			"type": "Text",
+			"default": "Deuce"
+		}, {
+			"name": "fog",
+			"type": "Color",
+			"default": [127, 127, 151]
+		}, {
+			"name": "green_flag",
+			"type": "Point2D",
+			"color": [0, 255, 0, 255],
+			"default": [20, 0]
+		}, {
+			"name": "spawn_green",
+			"type": "Group",
+			"default_child_type": "Point2D",
+			"lock_child_types_to_default": true,
+			"color": [50, 200, 50, 255]
+		}, {
+			"name": "blue_flag",
+			"type": "2DPoint",
+			"color": [0, 0, 255, 255],
+			"default": [-20, 0]
+		}, {
+			"name": "spawn_blue",
+			"type": "Group",
+			"default_child_type": "Point2D",
+			"lock_child_types_to_default": true,
+			"color": [50, 50, 200, 255]
+		}
+	]
+}
