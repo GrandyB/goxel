@@ -2,28 +2,46 @@
 Small explanation of the internals of goxel code
 ================================================
 
-The voxels data are stored as blocks of 16^3 voxels (`block_t`).  The blocks
-implement a copy on write mechanism with references counting, so that it is
-very fast to copy blocks, the actual data (`block_data_t`) is copied only when
-we make change to a block.
+Voxel data is stored in 16³ tiles (`tile_t`). Each tile holds a pointer to
+shared `tile_data_t` (RGBA voxels + ref count). Tiles and volumes use copy-on-write
+with reference counting, so copying is cheap and `tile_data_t` is duplicated only
+when a tile is written.
 
-Several blocks together form a mesh (`mesh_t`), the meshes also use a copy on
-write mechanism to make copy basically free.
+Several tiles together form a volume (`volume_t`). Volumes also use copy-on-write
+for their tile hash table (`tiles_ref`), so volume copies are basically free.
+`volume->key` changes on every write and is used to invalidate caches.
 
-An `image_t` contains several `layer_t`, which is basically a mesh plus a few
-attributes.  The image also keeps snapshots of the layers at every changes for
-undo history (since we use copy on write on individual blocks, this does not
-require much memory).
+An `image_t` contains several `layer_t`, each of which owns a `volume_t` plus
+material, transform, and visibility attributes. The image keeps undo snapshots
+via `image_history_push()` at stroke boundaries; COW on tiles keeps this
+memory-efficient.
 
-The basic function to operate on a mesh is `mesh_op`, we give it a `painter_t`
-pointer that defines the operation: shape, color, mode, etc.
+The basic function to paint or modify a volume is `volume_op()` in
+`src/volume_utils.c`. It takes a `painter_t` (shape SDF, color, blend mode,
+symmetry, noise) and an oriented bounding box. The lowest-level write is
+`volume_set_at()` in `src/volume.c`, which triggers `volume_prepare_write()`
+and `tile_prepare_write()` as needed.
 
-All the rendering functions are differed.  The `render_xxx` calls just build a
-list of operations, that is executed when we call `render_render`.
+Layer compositing and brush preview use `volume_merge()` (per-tile `tile_merge()`).
 
-The assets are stored directly in the C code (`src/assets.inl`), a python
-script (`tools/create_assets`) takes care of generating this file.
-We can then use `assets_get` to retrieve them.
+Rendering is deferred: `render_volume()` and related calls append items to
+`renderer_t::items`. The actual OpenGL draw happens in `render_submit()`, which
+iterates tiles, looks up or generates per-tile VBOs (`get_item_for_tile()`),
+and issues draw calls. Vertex data is built on the CPU by
+`volume_generate_vertices()` in `src/volume_to_vertices.c`.
 
-The gui is using Ocornut imgui library, with a few custom widgets defined in
+Each frame (`src/main.c` → `loop_function`):
+
+    poll input → goxel_iter() → goxel_render() → swap buffers
+
+Voxel writes happen in `goxel_iter()` (before drawing). The 3D viewport is
+drawn in `goxel_render_view()`, then ImGui is composited in `gui_render()`.
+
+For a full walkthrough of the frame pipeline (brush drag, tile cache
+invalidation, picking FBO, etc.), see `.cursor/docs/pipeline.md`.
+
+Assets are stored directly in C code (`src/assets.inl`); `tools/create_assets`
+generates that file. Use `assets_get()` to retrieve them.
+
+The GUI uses Dear ImGui (`src/gui.cpp`), with custom widgets in
 `src/imgui_user.inl`.
