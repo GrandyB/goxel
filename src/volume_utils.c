@@ -493,7 +493,19 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         }
     }
 
-    iter = volume_get_box_iterator(volume, box,
+    // Soft AA falloff extends outside the hard shape by `smoothness`
+    // blocks; grow the iteration box so those voxels are visited.
+    float iter_box[4][4];
+    mat4_copy(box, iter_box);
+    if (painter->smoothness > 0) {
+        float sm = painter->smoothness;
+        for (i = 0; i < 3; i++) {
+            float n = vec3_norm(iter_box[i]);
+            if (n > 1e-6f)
+                vec3_mul(iter_box[i], (n + sm) / n, iter_box[i]);
+        }
+    }
+    iter = volume_get_box_iterator(volume, iter_box,
                                  skip_dst_empty ? VOLUME_ITER_SKIP_EMPTY : 0);
 
     // XXX: for the moment we cannot use the same accessor for both

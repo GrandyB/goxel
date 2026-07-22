@@ -239,11 +239,13 @@ int tool_gui_radius(void)
 
 int tool_gui_smoothness(void)
 {
-    bool s;
-    s = goxel.painter.smoothness;
-    if (gui_checkbox("Antialiased", &s, NULL)) {
-        goxel.painter.smoothness = s ? 1 : 0;
+    int s = (int)goxel.painter.smoothness;
+    if (gui_input_int("Antialiasing", &s, 0, 16)) {
+        s = clamp(s, 0, 16);
+        goxel.painter.smoothness = (float)s;
     }
+    gui_tooltip_if_hovered(
+        "0 = hard edges, 1 = soft edge (~1 block), 2+ = wider blur");
     return 0;
 }
 
