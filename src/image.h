@@ -22,6 +22,7 @@
 #include "camera.h"
 #include "layer.h"
 #include "material.h"
+#include "metadata.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -39,52 +40,14 @@ typedef struct {
     int     noise_coverage;
 } image_recent_color_t;
 
-typedef enum {
-    CUSTOM_OBJ_POINT_2D = 0,
-    CUSTOM_OBJ_POINT_3D,
-    CUSTOM_OBJ_ZONE_2D,
-    CUSTOM_OBJ_ZONE_3D,
-    CUSTOM_OBJ_FLOAT,
-    CUSTOM_OBJ_TEXT,
-    CUSTOM_OBJ_COLOR,
-    CUSTOM_OBJ_ENUM,
-    CUSTOM_OBJ_GROUP,
-} custom_object_type_t;
-
-#define CUSTOM_OBJ_ENUM_OPTIONS_MAX 32
-#define CUSTOM_OBJ_ENUM_OPTION_LEN  64
-
-typedef struct custom_object custom_object_t;
-struct custom_object {
-    /* Leading int required: gui_list casts items to {int; next; prev;}. */
-    int ref;
-    custom_object_t *next, *prev;
-    custom_object_t *group; /* Parent group, or NULL if top-level. */
-    char name[128];
-    custom_object_type_t type;
-    uint8_t color[4];
-    bool visible;
-    /* World coords in goxel space (X/Y floor, Z height).
-     * Points: p0 used; p1 unused.
-     * Zones: p0 / p1 = inclusive AABB corners. */
-    int p0[3], p1[3];
-    /* Non-spatial value fields (type selects which is used). */
-    float fvalue;
-    char text_value[256];
-    int enum_index;
-    int enum_option_count;
-    char enum_options[CUSTOM_OBJ_ENUM_OPTIONS_MAX][CUSTOM_OBJ_ENUM_OPTION_LEN];
-    /* Groups: default type for the + add-child button. */
-    custom_object_type_t default_child_type;
-    /* Groups: when true, children cannot change type in the metadata UI. */
-    bool lock_child_types_to_default;
-};
-
 typedef struct history history_t;
 
 struct painter; /* see volume_utils.h (painter_t) */
 
+#ifndef IMAGE_T_DEFINED
 typedef struct image image_t;
+#   define IMAGE_T_DEFINED
+#endif
 struct image {
     int     ref;
     layer_t *layers;
@@ -155,6 +118,11 @@ bool layer_name_exists(void *user, const char *name);
 bool camera_name_exists(void *user, const char *name);
 
 void image_set_image_dimensions_and_center(image_t *img, int w, int h, int d);
+
+/* Image box helpers (null box falls back to default 512x512x32-style defaults). */
+void image_z_range(const image_t *img, int *z0, int *z1);
+void image_bottom_left(const image_t *img, int out[3]);
+void image_center(const image_t *img, int out[3]);
 
 void image_recent_color_push_from_painter(
         image_t *img, const struct painter *p);

@@ -19,6 +19,7 @@
 #include "goxel.h"
 #include "file_format.h"
 #include "utils/volume_preview.h"
+#include "utils/color.h"
 #include "utlist.h"
 #include <math.h>
 #include <stdlib.h>
@@ -409,35 +410,6 @@ static void placer_color_replace_reseed(tool_placer_t *placer)
     placer->color_replace_rand_h =
             (random_int(0, 16777215) + 0.5f) / 16777216.f;
     placer->color_replace_stamp_seq++;
-}
-
-static void hsv_to_rgb_u8(float h, float s, float v, uint8_t rgb[3])
-{
-    float r, g, b;
-    int i;
-    float f, p, q, t;
-
-    h = fmodf(h, 1.f);
-    if (h < 0.f)
-        h += 1.f;
-    s = clamp(s, 0.f, 1.f);
-    v = clamp(v, 0.f, 1.f);
-    i = (int)(h * 6.f);
-    f = h * 6.f - (float)i;
-    p = v * (1.f - s);
-    q = v * (1.f - f * s);
-    t = v * (1.f - (1.f - f) * s);
-    switch (i % 6) {
-    case 0: r = v; g = t; b = p; break;
-    case 1: r = q; g = v; b = p; break;
-    case 2: r = p; g = v; b = t; break;
-    case 3: r = p; g = q; b = v; break;
-    case 4: r = t; g = p; b = v; break;
-    default: r = v; g = p; b = q; break;
-    }
-    rgb[0] = (uint8_t)clamp(r * 255.f, 0.f, 255.f);
-    rgb[1] = (uint8_t)clamp(g * 255.f, 0.f, 255.f);
-    rgb[2] = (uint8_t)clamp(b * 255.f, 0.f, 255.f);
 }
 
 static void placer_stamp_apply_color_replace(tool_placer_t *placer,

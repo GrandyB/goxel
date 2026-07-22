@@ -53,3 +53,32 @@ void srgba8_to_rgba(const uint8_t srgba[4], float rgba[4])
     srgb8_to_rgb(srgba, rgba);
     rgba[3] = srgba[3] / 255.f;
 }
+
+void hsv_to_rgb_u8(float h, float s, float v, uint8_t rgb[3])
+{
+    float r, g, b, f, p, q, t;
+    int i;
+
+    h = fmodf(h, 1.f);
+    if (h < 0.f) h += 1.f;
+    if (s < 0.f) s = 0.f;
+    if (s > 1.f) s = 1.f;
+    if (v < 0.f) v = 0.f;
+    if (v > 1.f) v = 1.f;
+    i = (int)(h * 6.f);
+    f = h * 6.f - (float)i;
+    p = v * (1.f - s);
+    q = v * (1.f - f * s);
+    t = v * (1.f - (1.f - f) * s);
+    switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    default: r = v; g = p; b = q; break;
+    }
+    rgb[0] = (uint8_t)(r * 255.f + 0.5f);
+    rgb[1] = (uint8_t)(g * 255.f + 0.5f);
+    rgb[2] = (uint8_t)(b * 255.f + 0.5f);
+}

@@ -361,33 +361,8 @@ static bool goxel_unproject_on_box(
         const float box[4][4], bool inside, float out[3],
         float normal[3], int *face)
 {
-    int f;
-    float wpos[3] = {pos[0], pos[1], 0};
-    float opos[3], onorm[3];
-    float plane[4][4];
-    camera_t *cam = get_camera();
-
-    if (box_is_null(box)) return false;
-    camera_get_ray(cam, wpos, viewport, opos, onorm);
-    for (f = 0; f < 6; f++) {
-        mat4_copy(box, plane);
-        mat4_imul(plane, FACES_MATS[f]);
-
-        if (!inside && vec3_dot(plane[2], onorm) >= 0)
-            continue;
-        if (inside && vec3_dot(plane[2], onorm) <= 0)
-            continue;
-        if (!plane_line_intersection(plane, opos, onorm, out))
-            continue;
-        if (!(out[0] >= -1 && out[0] < 1 && out[1] >= -1 && out[1] < 1))
-            continue;
-        if (face) *face = f;
-        mat4_mul_vec3(plane, out, out);
-        vec3_normalize(plane[2], normal);
-        if (inside) vec3_imul(normal, -1);
-        return true;
-    }
-    return false;
+    return box_unproject(get_camera(), viewport, pos, box, inside,
+                         out, normal, face);
 }
 
 static bool goxel_unproject_on_volume(

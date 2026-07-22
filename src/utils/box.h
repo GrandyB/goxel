@@ -314,4 +314,13 @@ void box_union(const float a[4][4], const float b[4][4], float out[4][4]);
 
 void box_get_aabb(const float box[4][4], int aabb[2][3]);
 
+/*
+ * Raycast against the faces of a box.  Returns true and fills out/normal/face
+ * on hit.  When inside is true, hits inward-facing planes.
+ */
+typedef struct camera camera_t;
+bool box_unproject(const camera_t *cam, const float viewport[4],
+                   const float pos[2], const float box[4][4], bool inside,
+                   float out[3], float normal[3], int *face);
+
 #endif // BOX_H

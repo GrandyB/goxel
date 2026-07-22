@@ -768,6 +768,51 @@ void image_set_image_dimensions_and_center(image_t *img, int w, int h, int d) {
     }
 }
 
+void image_z_range(const image_t *img, int *z0, int *z1)
+{
+    int start[3], dims[3];
+    float box[4][4];
+    if (box_is_null(img->box)) {
+        *z0 = 0;
+        *z1 = 31;
+        return;
+    }
+    mat4_copy(img->box, box);
+    box_get_start_pos(box, start);
+    box_get_dimensions(box, dims);
+    *z0 = start[2];
+    *z1 = start[2] + dims[2] - 1;
+    if (*z1 < *z0) *z1 = *z0;
+}
+
+void image_bottom_left(const image_t *img, int out[3])
+{
+    float box[4][4];
+    if (box_is_null(img->box)) {
+        out[0] = out[1] = out[2] = 0;
+        return;
+    }
+    mat4_copy(img->box, box);
+    box_get_start_pos(box, out);
+}
+
+void image_center(const image_t *img, int out[3])
+{
+    int start[3], dims[3];
+    float box[4][4];
+    if (box_is_null(img->box)) {
+        out[0] = out[1] = 0;
+        out[2] = 16;
+        return;
+    }
+    mat4_copy(img->box, box);
+    box_get_start_pos(box, start);
+    box_get_dimensions(box, dims);
+    out[0] = start[0] + dims[0] / 2;
+    out[1] = start[1] + dims[1] / 2;
+    out[2] = start[2] + dims[2] / 2;
+}
+
 static void a_image_auto_resize_reset(void)
 {
     image_t *img = goxel.image;

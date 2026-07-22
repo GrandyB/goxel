@@ -23,6 +23,7 @@
 #include "../../ext_src/json/json-builder.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 // Some extra helper functions.
 
@@ -41,5 +42,11 @@ json_value *json_int_array_new(const int *v, int nb);
 json_value *json_float_array_new(const float *v, int nb);
 
 int json_index(json_value *v);
+
+/* Lookup a named field in a JSON object. Returns NULL if missing. */
+json_value *json_obj_get(json_value *obj, const char *name);
+
+/* Read [R,G,B] or [R,G,B,A] (0–255) into color; missing A defaults to 255. */
+bool json_read_u8_rgba(json_value *v, uint8_t color[4]);
 
 #endif // JSON_H

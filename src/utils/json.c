@@ -28,6 +28,7 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <string.h>
 
 static size_t base64_encode(const uint8_t *data, size_t len, char *buf)
 {
@@ -127,4 +128,38 @@ int json_index(json_value *value)
     }
     assert(false);
     return -1;
+}
+
+json_value *json_obj_get(json_value *obj, const char *name)
+{
+    unsigned int i;
+    if (!obj || obj->type != json_object) return NULL;
+    for (i = 0; i < obj->u.object.length; i++) {
+        if (strcmp(obj->u.object.values[i].name, name) == 0)
+            return obj->u.object.values[i].value;
+    }
+    return NULL;
+}
+
+bool json_read_u8_rgba(json_value *v, uint8_t color[4])
+{
+    unsigned int i;
+    if (!v || v->type != json_array) return false;
+    for (i = 0; i < 4; i++)
+        color[i] = 255;
+    for (i = 0; i < v->u.array.length && i < 4; i++) {
+        json_value *e = v->u.array.values[i];
+        if (e->type == json_integer) {
+            int n = (int)e->u.integer;
+            if (n < 0) n = 0;
+            if (n > 255) n = 255;
+            color[i] = (uint8_t)n;
+        } else if (e->type == json_double) {
+            double n = e->u.dbl;
+            if (n < 0) n = 0;
+            if (n > 255) n = 255;
+            color[i] = (uint8_t)n;
+        }
+    }
+    return v->u.array.length >= 3;
 }

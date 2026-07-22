@@ -11,12 +11,59 @@
 #ifndef METADATA_H
 #define METADATA_H
 
-#include "image.h"
-#include "render.h"
-
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+#ifndef IMAGE_T_DEFINED
+typedef struct image image_t;
+#   define IMAGE_T_DEFINED
+#endif
+#ifndef RENDERER_T_DEFINED
+typedef struct renderer renderer_t;
+#   define RENDERER_T_DEFINED
+#endif
+
+typedef enum {
+    CUSTOM_OBJ_POINT_2D = 0,
+    CUSTOM_OBJ_POINT_3D,
+    CUSTOM_OBJ_ZONE_2D,
+    CUSTOM_OBJ_ZONE_3D,
+    CUSTOM_OBJ_FLOAT,
+    CUSTOM_OBJ_TEXT,
+    CUSTOM_OBJ_COLOR,
+    CUSTOM_OBJ_ENUM,
+    CUSTOM_OBJ_GROUP,
+} custom_object_type_t;
+
+#define CUSTOM_OBJ_ENUM_OPTIONS_MAX 32
+#define CUSTOM_OBJ_ENUM_OPTION_LEN  64
+
+typedef struct custom_object custom_object_t;
+struct custom_object {
+    /* Leading int required: gui_list casts items to {int; next; prev;}. */
+    int ref;
+    custom_object_t *next, *prev;
+    custom_object_t *group; /* Parent group, or NULL if top-level. */
+    char name[128];
+    custom_object_type_t type;
+    uint8_t color[4];
+    bool visible;
+    /* World coords in goxel space (X/Y floor, Z height).
+     * Points: p0 used; p1 unused.
+     * Zones: p0 / p1 = inclusive AABB corners. */
+    int p0[3], p1[3];
+    /* Non-spatial value fields (type selects which is used). */
+    float fvalue;
+    char text_value[256];
+    int enum_index;
+    int enum_option_count;
+    char enum_options[CUSTOM_OBJ_ENUM_OPTIONS_MAX][CUSTOM_OBJ_ENUM_OPTION_LEN];
+    /* Groups: default type for the + add-child button. */
+    custom_object_type_t default_child_type;
+    /* Groups: when true, children cannot change type in the metadata UI. */
+    bool lock_child_types_to_default;
+};
 
 void custom_objects_free_list(custom_object_t **list);
 void custom_objects_copy_list(custom_object_t **dst, const custom_object_t *src);

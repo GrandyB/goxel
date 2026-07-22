@@ -36,5 +36,10 @@ void rgb_to_srgb8(const float rgb[3], uint8_t srgb[3]);
  */
 void srgba8_to_rgba(const uint8_t srgba[4], float rgba[4]);
 
+/*
+ * Convert HSV (h in [0,1) or any real; s,v in [0,1]) to 8-bit RGB.
+ */
+void hsv_to_rgb_u8(float h, float s, float v, uint8_t rgb[3]);
+
 
 #endif // COLOR_H

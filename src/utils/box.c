@@ -16,10 +16,11 @@
  * goxel.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "utils/box.h"
+#include "goxel.h"
 
 #include <limits.h>
 #include <string.h>
+#include <stdbool.h>
 
 static bool box_intersect_box_(const float b1[4][4], const float b2[4][4])
 {
@@ -97,4 +98,35 @@ void box_get_aabb(const float box[4][4], int aabb[2][3])
         ret[1][2] = fmax(ret[1][2], (int)ceil(p[2]));
     }
     memcpy(aabb, ret, sizeof(ret));
+}
+
+bool box_unproject(const camera_t *cam, const float viewport[4],
+                   const float pos[2], const float box[4][4], bool inside,
+                   float out[3], float normal[3], int *face)
+{
+    int f;
+    float wpos[3] = {pos[0], pos[1], 0};
+    float opos[3], onorm[3];
+    float plane[4][4];
+
+    if (!cam || box_is_null(box)) return false;
+    camera_get_ray(cam, wpos, viewport, opos, onorm);
+    for (f = 0; f < 6; f++) {
+        mat4_copy(box, plane);
+        mat4_imul(plane, FACES_MATS[f]);
+        if (!inside && vec3_dot(plane[2], onorm) >= 0)
+            continue;
+        if (inside && vec3_dot(plane[2], onorm) <= 0)
+            continue;
+        if (!plane_line_intersection(plane, opos, onorm, out))
+            continue;
+        if (!(out[0] >= -1 && out[0] < 1 && out[1] >= -1 && out[1] < 1))
+            continue;
+        if (face) *face = f;
+        mat4_mul_vec3(plane, out, out);
+        vec3_normalize(plane[2], normal);
+        if (inside) vec3_imul(normal, -1);
+        return true;
+    }
+    return false;
 }

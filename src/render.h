@@ -55,7 +55,10 @@ typedef struct {
     float occlusion_strength;
 } render_settings_t;
 
+#ifndef RENDERER_T_DEFINED
 typedef struct renderer renderer_t;
+#   define RENDERER_T_DEFINED
+#endif
 typedef struct render_item_t render_item_t;
 struct renderer
 {
