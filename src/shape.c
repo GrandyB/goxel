@@ -50,6 +50,7 @@ static float vec3_norm(const float v[static 3])
 shape_t shape_sphere;
 shape_t shape_cube;
 shape_t shape_cylinder;
+shape_t shape_spray;
 
 static float sphere_func(const float p[3], const float s[3], float smoothness)
 {
@@ -116,5 +117,10 @@ void shapes_init(void)
     shape_cylinder = (shape_t){
         .id     = "cylinder",
         .func = cylinder_func,
+    };
+    /* Same SDF as sphere; brush tool special-cases spray deposition. */
+    shape_spray = (shape_t){
+        .id     = "spray",
+        .func   = sphere_func,
     };
 }

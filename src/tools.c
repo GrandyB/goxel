@@ -190,6 +190,7 @@ int tool_gui_shape(const shape_t **shape)
         {"Sphere", &shape_sphere, ICON_SHAPE_SPHERE},
         {"Cube", &shape_cube, ICON_SHAPE_CUBE},
         {"Cylinder", &shape_cylinder, ICON_SHAPE_CYLINDER},
+        {"Spray", &shape_spray, ICON_CLOUD},
     };
     gui_icon_info_t grid[64] = {};
     shape = shape ?: &goxel.painter.shape;

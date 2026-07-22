@@ -134,6 +134,7 @@ static const shape_t *SHAPES[] = {
     &shape_sphere,
     &shape_cube,
     &shape_cylinder,
+    &shape_spray,
 };
 
 typedef struct {

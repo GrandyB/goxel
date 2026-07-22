@@ -587,6 +587,80 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     cache_add(cache, &key, sizeof(key), volume_copy(volume), 1, volume_del);
 }
 
+void volume_spray(volume_t *volume, const painter_t *painter, const float box[4][4],
+                  int count)
+{
+    int i, vp[3];
+    float p[3], sx, sy, sz, n2;
+    float size[3], local[3], mat[4][4], droplet_box[4][4];
+    float (*shape_func)(const float[3], const float[3], float smoothness);
+    painter_t pnt, painter2;
+    float box2[4][4];
+    const float *sym_o = painter->symmetry_origin;
+    int tries;
+    const int max_tries = 24;
+    bool use_box;
+
+    if (count <= 0) return;
+
+    if (painter->symmetry) {
+        painter2 = *painter;
+        for (i = 0; i < 3; i++) {
+            if (!(painter->symmetry & (1 << i))) continue;
+            painter2.symmetry &= ~(1 << i);
+            mat4_set_identity(box2);
+            mat4_itranslate(box2, +sym_o[0], +sym_o[1], +sym_o[2]);
+            if (i == 0) mat4_iscale(box2, -1,  1,  1);
+            if (i == 1) mat4_iscale(box2,  1, -1,  1);
+            if (i == 2) mat4_iscale(box2,  1,  1, -1);
+            mat4_itranslate(box2, -sym_o[0], -sym_o[1], -sym_o[2]);
+            mat4_imul(box2, box);
+            volume_spray(volume, &painter2, box2, count);
+        }
+    }
+
+    /* One-voxel cube stamps go through volume_op so color blend + noise
+     * match the normal brush path. Keep smoothness so paint-mode AA softens
+     * each droplet (goxel already zeroes it outside MODE_PAINT). */
+    pnt = *painter;
+    pnt.symmetry = 0;
+    pnt.shape = &shape_cube;
+
+    shape_func = painter->shape->func;
+    box_get_size(box, size);
+    mat4_copy(box, mat);
+    mat4_iscale(mat, 1 / size[0], 1 / size[1], 1 / size[2]);
+    mat4_invert(mat, mat);
+    use_box = painter->box && !box_is_null(*painter->box);
+
+    for (i = 0; i < count; i++) {
+        for (tries = 0; tries < max_tries; tries++) {
+            sx = (random_int(0, 10000) / 10000.f) * 2.f - 1.f;
+            sy = (random_int(0, 10000) / 10000.f) * 2.f - 1.f;
+            sz = (random_int(0, 10000) / 10000.f) * 2.f - 1.f;
+            n2 = sx * sx + sy * sy + sz * sz;
+            if (n2 > 1.f) continue;
+
+            p[0] = box[3][0] + sx * box[0][0] + sy * box[1][0] + sz * box[2][0];
+            p[1] = box[3][1] + sx * box[0][1] + sy * box[1][1] + sz * box[2][1];
+            p[2] = box[3][2] + sx * box[0][2] + sy * box[1][2] + sz * box[2][2];
+            vp[0] = (int)floorf(p[0]);
+            vp[1] = (int)floorf(p[1]);
+            vp[2] = (int)floorf(p[2]);
+            vec3_set(p, vp[0] + 0.5f, vp[1] + 0.5f, vp[2] + 0.5f);
+            if (use_box && !bbox_contains_vec(*painter->box, p)) continue;
+
+            mat4_mul_vec3(mat, p, local);
+            if (shape_func(local, size, 0) < 0.f) continue;
+
+            bbox_from_extents(droplet_box, p, 0.5f, 0.5f, 0.5f);
+            box_swap_axis(droplet_box, 2, 0, 1, droplet_box);
+            volume_op(volume, &pnt, droplet_box);
+            break;
+        }
+    }
+}
+
 // XXX: remove this function!
 void volume_get_box(const volume_t *volume, bool exact, float box[4][4])
 {

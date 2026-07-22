@@ -34,5 +34,6 @@ void shapes_init(void);
 extern shape_t shape_sphere;
 extern shape_t shape_cube;
 extern shape_t shape_cylinder;
+extern shape_t shape_spray;
 
 #endif // SHAPE_H
