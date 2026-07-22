@@ -265,7 +265,7 @@ int volume_generate_vertices(const volume_t *volume, const int block_pos[3],
         // Non visible. Threshold must stay in sync with:
         // - import_cmap (src/formats/cmap.c) — only paints voxels at/above this
         // - image_image_layer_to_volume (src/image.c) — skips creating voxels
-        //   below this, so image planes do not leave "ghost" voxels behind
+        //   below this, so image references do not leave "ghost" voxels behind
         if (v[3] < 127) continue;
         neighboors_mask = get_neighboors(data, pos, neighboors);
         for (f = 0; f < 6; f++) {

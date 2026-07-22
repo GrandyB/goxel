@@ -145,4 +145,10 @@ uint32_t image_get_key(const image_t *img);
  */
 bool image_is_empty(const image_t *img);
 
+/*
+ * Turn an image (texture) layer into a 1-voxel-deep volume layer.
+ * Does not push history.
+ */
+void image_image_layer_to_volume(image_t *img, layer_t *layer);
+
 #endif // IMAGE_H

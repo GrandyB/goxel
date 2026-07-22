@@ -1076,8 +1076,9 @@ bool image_is_empty(const image_t *img)
 
 /*
  * Turn an image layer into a volume of 1 voxel depth.
+ * Does not push history; callers must snapshot first if needed.
  */
-static void image_image_layer_to_volume(image_t *img, layer_t *layer)
+void image_image_layer_to_volume(image_t *img, layer_t *layer)
 {
     uint8_t *data;
     int x, y, w, h, bpp = 0, pos[3];
@@ -1085,9 +1086,9 @@ static void image_image_layer_to_volume(image_t *img, layer_t *layer)
     float p[3];
     assert(img);
     assert(layer);
+    assert(layer->image);
     volume_accessor_t acc;
 
-    image_history_push(img);
     data = img_read(layer->image->path, &w, &h, &bpp);
     acc = volume_get_accessor(layer->volume);
     for (y = 0; y < h; y++)
@@ -1298,6 +1299,8 @@ ACTION_REGISTER(ACTION_img_move_camera_down,
 
 static void a_img_image_layer_to_volume(void)
 {
+    /* Snapshot before mutate; ACTION_TOUCH_IMAGE also pushes after. */
+    image_history_push(goxel.image);
     image_image_layer_to_volume(goxel.image, goxel.image->active_layer);
 }
 

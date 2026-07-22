@@ -1612,13 +1612,11 @@ void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path) {
     goxel_import_file(cmap_path, "colormap");
 }
 
-void goxel_import_image_plane(const char *path)
+static layer_t *add_image_layer_from_tex(texture_t *tex)
 {
     layer_t *layer;
-    texture_t *tex;
-    tex = texture_new_image(path, TF_NEAREST);
-    if (!tex) return;
-    image_history_push(goxel.image);
+
+    assert(tex);
     layer = image_add_layer(goxel.image, NULL);
     sprintf(layer->name, "img");
     layer->image = tex;
@@ -1628,6 +1626,40 @@ void goxel_import_image_plane(const char *path)
     if (tex->h % 2 == 1)
         mat4_itranslate(layer->mat, 0, 0.5, 0);
     mat4_iscale(layer->mat, layer->image->w, layer->image->h, 1);
+    return layer;
+}
+
+void goxel_import_image_reference(const char *path)
+{
+    texture_t *tex;
+
+    tex = texture_new_image(path, TF_NEAREST);
+    if (!tex) return;
+    image_history_push(goxel.image);
+    add_image_layer_from_tex(tex);
+}
+
+void goxel_import_image_volume(const char *path)
+{
+    layer_t *layer;
+    texture_t *tex;
+    int z0, z1, start[3];
+    float mat[4][4] = MAT4_IDENTITY;
+
+    tex = texture_new_image(path, TF_NEAREST);
+    if (!tex) return;
+    image_history_push(goxel.image);
+    layer = add_image_layer_from_tex(tex);
+    image_image_layer_to_volume(goxel.image, layer);
+    /* Place the 1-high slab on the map floor (image box min Z). */
+    if (!volume_is_empty(layer->volume)) {
+        image_z_range(goxel.image, &z0, &z1);
+        volume_get_start_pos(layer->volume, start);
+        if (start[2] != z0) {
+            mat4_itranslate(mat, 0, 0, z0 - start[2]);
+            volume_move(layer->volume, mat);
+        }
+    }
 }
 
 void goxel_on_low_memory(void)

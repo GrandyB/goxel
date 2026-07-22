@@ -118,7 +118,7 @@ static int import_cmap(const file_format_t *format, image_t *image, const char *
             // Recolor visible blocks only. Must match the alpha threshold in
             // volume_generate_vertices (src/volume_to_vertices.c) and
             // image_image_layer_to_volume (src/image.c): voxels with alpha < 127
-            // are not drawn / not created from image planes. Treating any
+            // are not drawn / not created from image references. Treating any
             // alpha != 0 as solid and forcing alpha to 255 would promote
             // invisible "ghost" voxels into real blocks on the map.
             for (z = 0; z < dimensions[2]; z++) {

@@ -27,13 +27,22 @@ int gui_settings_popup(void *data);
 int gui_about_popup(void *data);
 int gui_about_scripts_popup(void *data);
 
-static void import_image_plane(void)
+static void import_image_reference(void)
 {
     const char *path;
-    const char *filters[] = {"*.png", "*.jpg", "*.jpeg", NULL};
-    path = sys_open_file_dialog("Open", NULL, filters, "png, jpeg");
+    const char *filters[] = {"*.png", "*.jpg", "*.jpeg", "*.bmp", NULL};
+    path = sys_open_file_dialog("Open", NULL, filters, "png, jpeg, bmp");
     if (!path) return;
-    goxel_import_image_plane(path);
+    goxel_import_image_reference(path);
+}
+
+static void import_image_volume(void)
+{
+    const char *path;
+    const char *filters[] = {"*.png", "*.jpg", "*.jpeg", "*.bmp", NULL};
+    path = sys_open_file_dialog("Open", NULL, filters, "png, jpeg, bmp");
+    if (!path) return;
+    goxel_import_image_volume(path);
 }
 
 static void import_hmap_cmap(void) {
@@ -116,8 +125,10 @@ void gui_menu(void)
             gui_menu_end();
         };
         if (gui_menu_begin("Import...", true)) {
-            if (gui_menu_item(0, "image plane", true))
-                import_image_plane();
+            if (gui_menu_item(0, "image reference", true))
+                import_image_reference();
+            if (gui_menu_item(0, "image volume", true))
+                import_image_volume();
             if (gui_menu_item(0, "hmap + cmap", true))
                 import_hmap_cmap();
             file_format_iter("r", NULL, import_menu_callback);

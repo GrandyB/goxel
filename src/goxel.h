@@ -680,7 +680,8 @@ void goxel_set_help_text(const char *msg, ...);
 void goxel_set_hint_text(const char *msg, ...);
 
 void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path);
-void goxel_import_image_plane(const char *path);
+void goxel_import_image_reference(const char *path);
+void goxel_import_image_volume(const char *path);
 
 int goxel_import_file(const char *path, const char *format);
 int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume, void (*on_select)(const char *path, const char *file_name, const file_format_t *format));
