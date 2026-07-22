@@ -377,7 +377,7 @@ TOOL_REGISTER(TOOL_FILL, fill, tool_fill_t,
              .name = "Fill",
              .iter_fn = tool_fill_iter,
              .gui_fn = gui,
-             .default_shortcut = "F",
+             .default_shortcut = "N",
              .flags = TOOL_SHOW_MASK,
              .has_snap = true,
 )
