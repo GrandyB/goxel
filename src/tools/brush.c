@@ -30,13 +30,14 @@ typedef struct {
     // Gesture start and last pos (should we put it in the 3d gesture?)
     float start_pos[3];
     float last_pos[3];
-    // Cache of the last operation.
+    // Cache of the last operation (hover/drag skip).
     // XXX: could we remove this?
     struct     {
         float      pos[3];
         bool       pressed;
         int        mode;
         uint64_t   volume_key;
+        float      radius_x, radius_y, radius_z;
     } last_op;
     /* Active layer before this stroke; used to add map-color history on commit. */
     uint64_t   layer_key_at_stroke_start;
@@ -56,12 +57,18 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
     if (    pressed == brush->last_op.pressed &&
             mode == brush->last_op.mode &&
             brush->last_op.volume_key == volume_get_key(volume) &&
+            brush->last_op.radius_x == goxel.radius_x &&
+            brush->last_op.radius_y == goxel.radius_y &&
+            brush->last_op.radius_z == goxel.radius_z &&
             vec3_equal(curs->pos, brush->last_op.pos)) {
         return true;
     }
     brush->last_op.pressed = pressed;
     brush->last_op.mode = mode;
     brush->last_op.volume_key = volume_get_key(volume);
+    brush->last_op.radius_x = goxel.radius_x;
+    brush->last_op.radius_y = goxel.radius_y;
+    brush->last_op.radius_z = goxel.radius_z;
     vec3_copy(curs->pos, brush->last_op.pos);
     return false;
 }
