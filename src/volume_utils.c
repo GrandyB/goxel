@@ -493,16 +493,17 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         }
     }
 
-    // Soft AA falloff extends outside the hard shape by `smoothness`
-    // blocks; grow the iteration box so those voxels are visited.
+    // Soft AA and frosted-glass scatter extend outside the hard shape;
+    // grow the iteration box so those voxels are visited.  Cubes need a
+    // finite SDF band of the same width (they return ±inf outside it).
     float iter_box[4][4];
+    float shape_sm = painter->smoothness + painter->frosted_glass;
     mat4_copy(box, iter_box);
-    if (painter->smoothness > 0) {
-        float sm = painter->smoothness;
+    if (shape_sm > 0) {
         for (i = 0; i < 3; i++) {
             float n = vec3_norm(iter_box[i]);
             if (n > 1e-6f)
-                vec3_mul(iter_box[i], (n + sm) / n, iter_box[i]);
+                vec3_mul(iter_box[i], (n + shape_sm) / n, iter_box[i]);
         }
     }
     iter = volume_get_box_iterator(volume, iter_box,
@@ -521,7 +522,12 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
                  (float)noise_tex_coord(vp[2]));
         if (use_box && !bbox_contains_vec(*painter->box, p)) continue;
         mat4_mul_vec3(mat, p, p);
-        k = shape_func(p, size, painter->smoothness);
+        k = shape_func(p, size, shape_sm);
+        // Randomly displace the SDF boundary so edges dither/scatter.
+        if (painter->frosted_glass > 0) {
+            float n = uniform_noise((float)vp[0], (float)vp[1], (float)vp[2]);
+            k += (n * 2.f - 1.f) * painter->frosted_glass;
+        }
         if (painter->smoothness) {
             v = clamp(k / painter->smoothness, -1.0f, 1.0f) / 2.0f + 0.5f;
         } else {

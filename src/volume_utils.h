@@ -120,6 +120,7 @@ typedef struct painter {
     uint8_t         color[4];
     int             color_blend;
     float           smoothness;
+    float           frosted_glass;    // Edge dither/scatter radius (0 = off)
     int             symmetry; // bitfield X Y Z
     float           symmetry_origin[3];
     float           (*box)[4][4];     // Clipping box (can be null)

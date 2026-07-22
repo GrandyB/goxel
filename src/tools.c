@@ -247,6 +247,12 @@ int tool_gui_smoothness(void)
     }
     gui_tooltip_if_hovered(
         "0 = hard edges, 1 = soft edge (~1 block), 2+ = wider blur");
+    float frost = goxel.painter.frosted_glass;
+    if (gui_input_float("Frosted glass", &frost, 0.1f, 0.f, 16.f, "%.1f")) {
+        goxel.painter.frosted_glass = clamp(frost, 0.f, 16.f);
+    }
+    gui_tooltip_if_hovered(
+        "0 = none; higher scatters/dithers shape edges");
     return 0;
 }
 
