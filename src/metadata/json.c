@@ -171,8 +171,6 @@ static bool parse_template_entry(json_value *entry, image_t *img)
     custom_object_type_t child_type = DEFAULT_CHILD_TYPE_FIRST;
     bool has_child_type = false;
     bool lock_child_types_to_default = false;
-    char options[CUSTOM_OBJ_ENUM_OPTIONS_MAX][CUSTOM_OBJ_ENUM_OPTION_LEN];
-    int option_count = 0;
     unsigned int i;
 
     if (!entry || entry->type != json_object) return false;
@@ -197,18 +195,6 @@ static bool parse_template_entry(json_value *entry, image_t *img)
     jv = json_obj_get(entry, "lock_child_types_to_default");
     if (jv && jv->type == json_boolean)
         lock_child_types_to_default = jv->u.boolean;
-    jv = json_obj_get(entry, "options");
-    if (jv && jv->type == json_array) {
-        for (i = 0; i < jv->u.array.length &&
-             option_count < CUSTOM_OBJ_ENUM_OPTIONS_MAX; i++) {
-            json_value *opt = jv->u.array.values[i];
-            if (opt->type != json_string) continue;
-            snprintf(options[option_count], CUSTOM_OBJ_ENUM_OPTION_LEN,
-                     "%s", opt->u.string.ptr);
-            option_count++;
-        }
-    }
-
     obj = custom_object_add_to_group(img, NULL, type);
     if (!obj) return false;
 
@@ -220,12 +206,21 @@ static bool parse_template_entry(json_value *entry, image_t *img)
                                   DEFAULT_CHILD_TYPE_FIRST;
         obj->lock_child_types_to_default = lock_child_types_to_default;
     }
-    if (type == CUSTOM_OBJ_ENUM && option_count > 0) {
-        obj->enum_option_count = option_count;
-        obj->enum_index = 0;
-        for (i = 0; i < (unsigned int)option_count; i++)
-            snprintf(obj->enum_options[i], CUSTOM_OBJ_ENUM_OPTION_LEN,
-                     "%s", options[i]);
+    jv = json_obj_get(entry, "options");
+    if (type == CUSTOM_OBJ_ENUM && jv && jv->type == json_array) {
+        int option_count = 0;
+        for (i = 0; i < jv->u.array.length &&
+             option_count < CUSTOM_OBJ_ENUM_OPTIONS_MAX; i++) {
+            json_value *opt = jv->u.array.values[i];
+            if (opt->type != json_string) continue;
+            snprintf(obj->enum_options[option_count], CUSTOM_OBJ_ENUM_OPTION_LEN,
+                     "%s", opt->u.string.ptr);
+            option_count++;
+        }
+        if (option_count > 0) {
+            obj->enum_option_count = option_count;
+            obj->enum_index = 0;
+        }
     }
 
     jv = json_obj_get(entry, "default");
