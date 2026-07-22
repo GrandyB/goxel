@@ -24,6 +24,7 @@ typedef struct {
 
     volume_t *volume_orig; // Original volume.
     volume_t *volume;      // Volume containing only the tool path.
+    volume_t *delta;       // Stamps applied this frame only (for incremental preview).
     bool inherit; // Tell the painter to use the colour beneath to guide the colour
 
     // Gesture start and last pos (should we put it in the 3d gesture?)
@@ -121,6 +122,7 @@ static int on_drag(gesture3d_t *gest, void *user)
 {
     tool_brush_t *brush = USER_GET(user, 0);
     painter_t painter = *(painter_t*)USER_GET(user, 1);
+    const shape_t *shape = painter.shape;
     float box[4][4];
     cursor_t *curs = gest->cursor;
     bool shift = curs->flags & CURSOR_SHIFT;
@@ -130,6 +132,7 @@ static int on_drag(gesture3d_t *gest, void *user)
     int nb, i;
     float pos[3];
     bool alt = curs->flags & CURSOR_LEFT_ALT;
+    int merge_mode;
 
     float target[3];
     vec3_copy(curs->pos, target);
@@ -145,51 +148,62 @@ static int on_drag(gesture3d_t *gest, void *user)
         vec3_copy(target, brush->last_pos);
         image_history_push(goxel.image);
         volume_clear(brush->volume);
-
-        if (shift) {
-            painter.shape = &shape_cylinder;
-            painter.mode = MODE_MAX;
-            // Why was this a thing?
-            //vec4_set(painter.color, 255, 255, 255, 255);
-            get_box3(brush->start_pos, target, curs->normal, r_x, r_y, r_z, NULL, box);
-            volume_op(brush->volume, &painter, box);
-        }
+        if (!brush->delta) brush->delta = volume_new();
+        if (!goxel.tool_volume) goxel.tool_volume = volume_new();
+        volume_set(goxel.tool_volume, brush->volume_orig);
     }
 
     painter = *(painter_t*)USER_GET(user, 1);
+    shape = painter.shape;
     if (    (gest->state == GESTURE_UPDATE) &&
             (check_can_skip(brush, curs, painter.mode))) {
         return 0;
     }
 
+    merge_mode = painter.mode;
     painter.mode = MODE_MAX;
-    // Why was this a thing?
-    //vec4_set(painter.color, 255, 255, 255, 255);
 
-    // Render several times if the space between the current pos
-    // and the last pos is larger than the size of the tool shape.
-    // Base on radius x?
-    nb = ceil(vec3_dist(curs->pos, brush->last_pos) / 1); //(2 * goxel.radius_x));
+    if (!brush->delta) brush->delta = volume_new();
+    volume_clear(brush->delta);
+
+    // Shift+click: cylinder from previous stroke end to current target.
+    if (gest->state == GESTURE_BEGIN && shift) {
+        painter.shape = &shape_cylinder;
+        get_box3(brush->start_pos, target, curs->normal, r_x, r_y, r_z, NULL, box);
+        volume_op(brush->delta, &painter, box);
+        painter.shape = shape;
+    }
+
+    // Stamp along the segment so fast motion does not leave gaps.
+    nb = ceil(vec3_dist(curs->pos, brush->last_pos) / 1);
     nb = max(nb, 1);
     if (!alt) {
         for (i = 0; i < nb; i++) {
             vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
             get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
-            volume_op(brush->volume, &painter, box);
+            volume_op(brush->delta, &painter, box);
         }
     }
 
-    painter = *(painter_t*)USER_GET(user, 1);
-    if (!goxel.tool_volume) goxel.tool_volume = volume_new();
-    volume_set(goxel.tool_volume, brush->volume_orig);
-    // layer_t *toolvollayer = layer_new("toolvolume");
-    // toolvollayer->volume = volume_copy(goxel.tool_volume);
-    // layer_t *brushvolume = layer_new("brushvolume");
-    // brushvolume->volume = volume_copy(brush->volume);
-    // DL_APPEND(goxel.image->layers, toolvollayer);
-    // DL_APPEND(goxel.image->layers, brushvolume);
-    volume_merge(goxel.tool_volume, brush->volume, painter.mode, NULL);
-        //painter.color_blend == COLOR_INHERITED ? NULL : painter.color);
+    // Keep full stroke mask via cheap tile merge.
+    volume_merge_from(brush->volume, brush->delta, MODE_MAX, NULL);
+
+    if (gest->state == GESTURE_END) {
+        // Rebuild from the full stroke mask (authoritative commit).
+        if (!goxel.tool_volume) goxel.tool_volume = volume_new();
+        volume_set(goxel.tool_volume, brush->volume_orig);
+        volume_merge_from(goxel.tool_volume, brush->volume, merge_mode, NULL);
+    } else {
+        // Incremental preview: merge only this frame's stamps onto the layer copy.
+        // Re-seed if hover END (or anything else) wiped tool_volume mid-stroke.
+        if (!goxel.tool_volume) {
+            goxel.tool_volume = volume_new();
+            volume_set(goxel.tool_volume, brush->volume_orig);
+            volume_merge_from(goxel.tool_volume, brush->volume, merge_mode, NULL);
+        } else {
+            volume_merge_from(goxel.tool_volume, brush->delta, merge_mode, NULL);
+        }
+    }
     vec3_copy(target, brush->start_pos);
     brush->last_op.volume_key = volume_get_key(goxel.tool_volume);
 
@@ -220,8 +234,12 @@ static int on_hover(gesture3d_t *gest, void *user)
     bool alt = curs->flags & CURSOR_LEFT_ALT;
 
     if (gest->state == GESTURE_END || !curs->snaped) {
-        volume_delete(goxel.tool_volume);
-        goxel.tool_volume = NULL;
+        // Drag runs before hover; on press hover ENDs after drag BEGIN and
+        // must not destroy the stroke preview. Drag END clears tool_volume.
+        if (!(curs->flags & CURSOR_PRESSED)) {
+            volume_delete(goxel.tool_volume);
+            goxel.tool_volume = NULL;
+        }
         return 0;
     }
 
@@ -247,7 +265,7 @@ static int on_hover(gesture3d_t *gest, void *user)
     volume_set(goxel.tool_volume, volume);
     volume_op(goxel.tool_volume, painter, box);
 
-    brush->last_op.volume_key = volume_get_key(volume);
+    brush->last_op.volume_key = volume_get_key(goxel.tool_volume);
 
     return 0;
 }
@@ -284,8 +302,10 @@ static int iter(tool_t *tool, const painter_t *painter,
     // curs->snap_offset = goxel.snap_offset * goxel.tool_radius +
     //     ((painter->mode == MODE_OVER) ? 0.5 : -0.5);
 
-    gesture3d(&brush->gestures.hover, curs, USER_PASS(brush, painter));
+    // Drag before hover so release commits the stroke before hover restarts
+    // and rebuilds tool_volume for the idle preview.
     gesture3d(&brush->gestures.drag, curs, USER_PASS(brush, painter));
+    gesture3d(&brush->gestures.hover, curs, USER_PASS(brush, painter));
 
     return tool->state;
 }

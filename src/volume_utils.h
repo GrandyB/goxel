@@ -244,6 +244,17 @@ void volume_merge(volume_t *volume, const volume_t *other, int mode,
                 const uint8_t color[4]);
 
 /*
+ * Function: volume_merge_from
+ * Like volume_merge, but only visits tiles present in `other`.
+ *
+ * Use when empty tiles in `other` are a no-op for the given mode
+ * (e.g. MODE_OVER, MODE_MAX, MODE_SUB, MODE_SUB_CLAMP, MODE_PAINT).
+ * Avoids walking every tile of a large destination volume.
+ */
+void volume_merge_from(volume_t *volume, const volume_t *other, int mode,
+                       const uint8_t color[4]);
+
+/*
  * Function: volume_generate_vertices
  * Generate a vertice array for rendering a volume block.
  *

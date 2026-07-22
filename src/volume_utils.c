@@ -774,6 +774,24 @@ void volume_merge(volume_t *volume, const volume_t *other, int mode,
     cache_add(cache, &key, sizeof(key), volume_copy(volume), 1, volume_del);
 }
 
+void volume_merge_from(volume_t *volume, const volume_t *other, int mode,
+                       const uint8_t color[4])
+{
+    volume_iterator_t iter;
+    int bpos[3];
+
+    assert(volume && other);
+    if (mode == MODE_REPLACE) {
+        volume_set(volume, other);
+        return;
+    }
+
+    iter = volume_get_iterator(other, VOLUME_ITER_TILES);
+    while (volume_iter(&iter, bpos)) {
+        tile_merge(volume, other, bpos, mode, color);
+    }
+}
+
 void volume_crop(volume_t *volume, const float box[4][4])
 {
     painter_t painter = {

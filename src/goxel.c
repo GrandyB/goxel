@@ -365,27 +365,48 @@ static bool goxel_unproject_on_box(
                          out, normal, face);
 }
 
+/* Skip pick-FBO re-render when volume + camera + size are unchanged. */
+static struct {
+    bool valid;
+    uint64_t volume_key;
+    float view_mat[4][4];
+    float proj_mat[4][4];
+    int w, h;
+} g_pick_cache;
+
+/* Skip full unproject when mouse/camera/snap geometry are unchanged. */
+static struct {
+    bool valid;
+    float viewport[4];
+    float pos[2];
+    int snap_mask;
+    float offset;
+    float view_mat[4][4];
+    float proj_mat[4][4];
+    float tool_plane[4][4];
+    float plane[4][4];
+    float selection[4][4];
+    float image_box[4][4];
+    uint64_t snap_volume_key;
+    uint64_t layer_volume_key;
+    float out[3];
+    float normal[3];
+    int ret;
+} g_unproject_cache;
+
+static void invalidate_pick_cache(void)
+{
+    g_pick_cache.valid = false;
+}
+
 static bool goxel_unproject_on_volume(
         const float view[4], const float pos[2], const volume_t *volume,
         float out[3], float normal[3])
 {
     int view_size[2] = {view[2], view[3]};
-    // XXX: No need to render the fbo if it is not dirty.
-    if (goxel.pick_fbo && (goxel.pick_fbo->w != view_size[0] ||
-                           goxel.pick_fbo->h != view_size[1])) {
-        texture_delete(goxel.pick_fbo);
-        goxel.pick_fbo = NULL;
-    }
-
-    if (!goxel.pick_fbo) {
-        goxel.pick_fbo = texture_new_buffer(
-                view_size[0], view_size[1], TF_DEPTH);
-    }
-
+    uint64_t volume_key;
+    bool dirty;
     renderer_t rend = {.settings = goxel.rend.settings};
-    mat4_copy(goxel.rend.view_mat, rend.view_mat);
-    mat4_copy(goxel.rend.proj_mat, rend.proj_mat);
-
     uint32_t pixel;
     int voxel_pos[3];
     int face, tile_id, tile_pos[3];
@@ -393,11 +414,45 @@ static bool goxel_unproject_on_volume(
     float rect[4] = {0, 0, view_size[0], view_size[1]};
     uint8_t clear_color[4] = {0, 0, 0, 0};
 
+    if (goxel.pick_fbo && (goxel.pick_fbo->w != view_size[0] ||
+                           goxel.pick_fbo->h != view_size[1])) {
+        texture_delete(goxel.pick_fbo);
+        goxel.pick_fbo = NULL;
+        invalidate_pick_cache();
+    }
+
+    if (!goxel.pick_fbo) {
+        goxel.pick_fbo = texture_new_buffer(
+                view_size[0], view_size[1], TF_DEPTH);
+        invalidate_pick_cache();
+    }
+
+    mat4_copy(goxel.rend.view_mat, rend.view_mat);
+    mat4_copy(goxel.rend.proj_mat, rend.proj_mat);
+
+    volume_key = volume_get_key(volume);
+    dirty = !g_pick_cache.valid ||
+            g_pick_cache.volume_key != volume_key ||
+            g_pick_cache.w != view_size[0] ||
+            g_pick_cache.h != view_size[1] ||
+            !mat4_equal(g_pick_cache.view_mat, rend.view_mat) ||
+            !mat4_equal(g_pick_cache.proj_mat, rend.proj_mat);
+
     rend.settings.shadow = 0;
     rend.fbo = goxel.pick_fbo->framebuffer;
     rend.scale = 1;
-    render_volume(&rend, volume, NULL, EFFECT_RENDER_POS);
-    render_submit(&rend, rect, clear_color);
+    if (dirty) {
+        render_volume(&rend, volume, NULL, EFFECT_RENDER_POS);
+        render_submit(&rend, rect, clear_color);
+        g_pick_cache.valid = true;
+        g_pick_cache.volume_key = volume_key;
+        g_pick_cache.w = view_size[0];
+        g_pick_cache.h = view_size[1];
+        mat4_copy(rend.view_mat, g_pick_cache.view_mat);
+        mat4_copy(rend.proj_mat, g_pick_cache.proj_mat);
+    } else {
+        GL(glBindFramebuffer(GL_FRAMEBUFFER, goxel.pick_fbo->framebuffer));
+    }
 
     x = round(pos[0] - view[0]);
     y = round(pos[1] - view[1]);
@@ -429,6 +484,37 @@ int goxel_unproject(const float viewport[4],
     float dist, best = INFINITY;
     float v[3], p[3] = {}, n[3] = {}, box[4][4];
     camera_t *cam = get_camera();
+    uint64_t snap_volume_key = 0;
+    uint64_t layer_volume_key = 0;
+
+    if ((snap_mask & SNAP_VOLUME) && plane_is_null(goxel.tool_plane))
+        snap_volume_key = volume_get_key(
+                goxel_get_layers_volume_for_snap(goxel.image));
+    if ((snap_mask & SNAP_LAYER_OUT) && goxel.image->active_layer &&
+        goxel.image->active_layer->volume)
+        layer_volume_key = volume_get_key(goxel.image->active_layer->volume);
+
+    if (g_unproject_cache.valid &&
+            g_unproject_cache.snap_mask == snap_mask &&
+            g_unproject_cache.offset == offset &&
+            g_unproject_cache.pos[0] == pos[0] &&
+            g_unproject_cache.pos[1] == pos[1] &&
+            g_unproject_cache.snap_volume_key == snap_volume_key &&
+            g_unproject_cache.layer_volume_key == layer_volume_key &&
+            memcmp(g_unproject_cache.viewport, viewport,
+                   sizeof(g_unproject_cache.viewport)) == 0 &&
+            mat4_equal(g_unproject_cache.view_mat, cam->view_mat) &&
+            mat4_equal(g_unproject_cache.proj_mat, cam->proj_mat) &&
+            mat4_equal(g_unproject_cache.tool_plane, goxel.tool_plane) &&
+            mat4_equal(g_unproject_cache.plane, goxel.plane) &&
+            mat4_equal(g_unproject_cache.selection, goxel.selection) &&
+            mat4_equal(g_unproject_cache.image_box, goxel.image->box)) {
+        if (g_unproject_cache.ret) {
+            vec3_copy(g_unproject_cache.out, out);
+            vec3_copy(g_unproject_cache.normal, normal);
+        }
+        return g_unproject_cache.ret;
+    }
 
     // If tool_plane is set, we specifically use it.
     if (!plane_is_null(goxel.tool_plane)) {
@@ -493,6 +579,28 @@ end:
         out[1] = round(out[1] - 0.5) + 0.5;
         out[2] = round(out[2] - 0.5) + 0.5;
     }
+
+    g_unproject_cache.valid = true;
+    g_unproject_cache.snap_mask = snap_mask;
+    g_unproject_cache.offset = offset;
+    g_unproject_cache.pos[0] = pos[0];
+    g_unproject_cache.pos[1] = pos[1];
+    g_unproject_cache.snap_volume_key = snap_volume_key;
+    g_unproject_cache.layer_volume_key = layer_volume_key;
+    g_unproject_cache.ret = ret;
+    memcpy(g_unproject_cache.viewport, viewport,
+           sizeof(g_unproject_cache.viewport));
+    mat4_copy(cam->view_mat, g_unproject_cache.view_mat);
+    mat4_copy(cam->proj_mat, g_unproject_cache.proj_mat);
+    mat4_copy(goxel.tool_plane, g_unproject_cache.tool_plane);
+    mat4_copy(goxel.plane, g_unproject_cache.plane);
+    mat4_copy(goxel.selection, g_unproject_cache.selection);
+    mat4_copy(goxel.image->box, g_unproject_cache.image_box);
+    if (ret) {
+        vec3_copy(out, g_unproject_cache.out);
+        vec3_copy(normal, g_unproject_cache.normal);
+    }
+
     return ret;
 }
 
@@ -684,6 +792,8 @@ void goxel_release_graphics(void)
     shaders_release_all();
     texture_delete(goxel.pick_fbo);
     goxel.pick_fbo = NULL;
+    invalidate_pick_cache();
+    g_unproject_cache.valid = false;
     goxel.graphics_initialized = false;
 }
 
