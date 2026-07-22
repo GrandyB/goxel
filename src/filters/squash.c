@@ -68,10 +68,12 @@ static int gui(filter_t *filter_)
     
                     volume_get_at(layer->volume, &iter, pos, cur_block_color);
                     if (cur_block_color[3] != 0) {
-                        new_pos[0] = x;
-                        new_pos[1] = y;
-                        new_pos[2] = pos[2] * (filter->percentage / 100.0f);
-                        if (pos[2] > 0) new_pos[2] = max(new_pos[2], 1);
+                        new_pos[0] = pos[0];
+                        new_pos[1] = pos[1];
+                        new_pos[2] = start_pos[2] +
+                            (int)(z * (filter->percentage / 100.0f));
+                        if (z > 0)
+                            new_pos[2] = max(new_pos[2], start_pos[2] + 1);
                         volume_set_at(copy, NULL, new_pos, cur_block_color);
                     }
                 }
