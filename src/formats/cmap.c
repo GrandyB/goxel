@@ -115,15 +115,18 @@ static int import_cmap(const file_format_t *format, image_t *image, const char *
             pos[0] = x + start_pos[0];
             pos[1] = y + start_pos[1];
 
-            // Apply this 2D pixel color to any existing block in this position
+            // Recolor visible blocks only. Must match the alpha threshold in
+            // volume_generate_vertices (src/volume_to_vertices.c) and
+            // image_image_layer_to_volume (src/image.c): voxels with alpha < 127
+            // are not drawn / not created from image planes. Treating any
+            // alpha != 0 as solid and forcing alpha to 255 would promote
+            // invisible "ghost" voxels into real blocks on the map.
             for (z = 0; z < dimensions[2]; z++) {
                 pos[2] = z + start_pos[2];
 
                 volume_get_at(volume, &iter, pos, c2);
-                if (c2[3] != 0) {
-                    // Set the block color; force alpha to 255 for full opacity
+                if (c2[3] >= 127)
                     volume_set_at(volume, &iter, pos, c);
-                }
             }
         }
     }
