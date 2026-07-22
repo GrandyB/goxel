@@ -175,7 +175,16 @@ static int on_drag(gesture3d_t *gest, void *user)
     }
 
     // Stamp along the segment so fast motion does not leave gaps.
-    nb = ceil(vec3_dist(curs->pos, brush->last_pos) / 1);
+    // Step ~ brush radius (min axis): small brushes stay 1-voxel dense;
+    // large brushes avoid a volume_op per voxel of travel.
+    //
+    // Scaling knobs (spacing = max(1, f * min3(r_x,r_y,r_z))):
+    //   f = 1.0  — ~one-radius overlap
+    //   f < 1.0  — denser stamps if you see holes (e.g. 0.5).
+    //   f > 1.0  — fewer ops / more speed; try up to ~2.0 (diameter)
+    //              for cube-ish brushes on mostly straight strokes.
+    float spacing = max(0.7f, min3(r_x, r_y, r_z));
+    nb = ceil(vec3_dist(curs->pos, brush->last_pos) / spacing);
     nb = max(nb, 1);
     if (!alt) {
         for (i = 0; i < nb; i++) {
