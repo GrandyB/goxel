@@ -168,6 +168,11 @@ static int on_drag(gesture3d_t *gest, void *user)
     }
 
     merge_mode = painter.mode;
+    // MODE_PAINT of soft/partial coverage is not idempotent: merging each
+    // frame's stamps re-applies falloff onto already-painted voxels and
+    // hardens AA edges vs one merge of the accumulated mask (commit path).
+    bool rebuild_preview = (merge_mode == MODE_PAINT &&
+                            (painter.smoothness > 0 || painter.color[3] < 255));
     painter.mode = MODE_MAX;
 
     if (!brush->delta) brush->delta = volume_new();
@@ -204,8 +209,8 @@ static int on_drag(gesture3d_t *gest, void *user)
     // Keep full stroke mask via cheap tile merge.
     volume_merge_from(brush->volume, brush->delta, MODE_MAX, NULL);
 
-    if (gest->state == GESTURE_END) {
-        // Rebuild from the full stroke mask (authoritative commit).
+    if (gest->state == GESTURE_END || rebuild_preview) {
+        // Authoritative result: one merge of the full mask onto the layer.
         if (!goxel.tool_volume) goxel.tool_volume = volume_new();
         volume_set(goxel.tool_volume, brush->volume_orig);
         volume_merge_from(goxel.tool_volume, brush->volume, merge_mode, NULL);
