@@ -31,7 +31,8 @@ PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 CHARS = (u"abcdefghijklmnopqrstuvwxyz"
          u"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
          u"0123456789"
-         u" ?!\"#$%&'()*+,-./°¯[]^:<>{}@_=±"
+         # Keep full ASCII punctuation (; \ ` | ~ etc). Missing glyphs show as '?'.
+         u" ?!\"#$%&'()*+,-./:;\\`|~°¯[]^<>{}@_=±"
          u"◀▶▲▼▴▾●©"
          )
 
