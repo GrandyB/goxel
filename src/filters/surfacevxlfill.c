@@ -24,7 +24,7 @@
  */
 typedef struct {
     filter_t filter;
-} filter_vxlform_t;
+} filter_surfacevxlfill_t;
 
 static bool voxel_is_solid(const uint8_t color[4])
 {
@@ -132,7 +132,7 @@ static void process_solid_run(uint8_t (*colors)[4], const bool *is_surface,
     }
 }
 
-static void apply_vxlform(volume_t *volume)
+static void apply_surfacevxlfill(volume_t *volume)
 {
     float box[4][4];
     int dimensions[3], start_pos[3];
@@ -235,11 +235,11 @@ static int gui(filter_t *filter_)
 
     if (gui_button("Apply", -1, 0)) {
         image_history_push(goxel.image);
-        apply_vxlform(goxel.image->active_layer->volume);
+        apply_surfacevxlfill(goxel.image->active_layer->volume);
     }
     return 0;
 }
 
-FILTER_REGISTER(vxlform, filter_vxlform_t,
+FILTER_REGISTER(surfacevxlfill, filter_surfacevxlfill_t,
                 .name = "Utility - surface colour fill",
                 .gui_fn = gui, )
