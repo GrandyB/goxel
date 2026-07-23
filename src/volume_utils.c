@@ -110,16 +110,23 @@ void apply_noise_if_applicable(const painter_t *painter, float global_p[3],
 void volume_extrude(volume_t *volume,
                   const float plane[4][4],
                   const float box[4][4],
-                  const painter_t *painter)
+                  const painter_t *painter,
+                  const volume_t *inherit_from)
 {
     float proj[4][4];
     float n[3], pos[3], p[3], global_p[3];
     volume_iterator_t iter;
     int vpos[3];
     uint8_t value[4];
+    int axis = -1;
 
     vec3_normalize(plane[2], n);
     vec3_copy(plane[3], pos);
+
+    // Extrude faces are axis-aligned; pick the dominant normal axis.
+    if (fabs(n[0]) > 0.5) axis = 0;
+    else if (fabs(n[1]) > 0.5) axis = 1;
+    else if (fabs(n[2]) > 0.5) axis = 2;
 
     // Generate the projection into the plane.
     // XXX: *very* ugly code, fix this!
@@ -140,6 +147,9 @@ void volume_extrude(volume_t *volume,
 
     volume_accessor_t accessor_get = volume_get_accessor(volume);
     volume_accessor_t accessor_set = volume_get_accessor(volume);
+    volume_accessor_t inherit_acc = {0};
+    if (inherit_from)
+        inherit_acc = volume_get_accessor(inherit_from);
     iter = volume_get_box_iterator(volume, box, 0);
     while (volume_iter(&iter, vpos)) {
         vec3_set(p, vpos[0], vpos[1], vpos[2]);
@@ -149,6 +159,21 @@ void volume_extrude(volume_t *volume,
             mat4_mul_vec3(proj, p, p);
             int pi[3] = {floor(p[0]), floor(p[1]), floor(p[2])};
             volume_get_at(volume, &accessor_get, pi, value);
+            // Inherit colours from blocks met along the extrusion column.
+            if (inherit_from && value[3] && axis >= 0 &&
+                    (pi[0] != vpos[0] || pi[1] != vpos[1] || pi[2] != vpos[2])) {
+                int dist = abs(vpos[axis] - pi[axis]);
+                int step = (vpos[axis] > pi[axis]) ? 1 : -1;
+                int check[3] = {pi[0], pi[1], pi[2]};
+                uint8_t met[4];
+                int s;
+                for (s = 1; s <= dist; s++) {
+                    check[axis] = pi[axis] + s * step;
+                    volume_get_at(inherit_from, &inherit_acc, check, met);
+                    if (met[3])
+                        memcpy(value, met, 4);
+                }
+            }
             // Only vary newly extruded voxels, not the source face.
             if (painter && value[3] &&
                     (pi[0] != vpos[0] || pi[1] != vpos[1] || pi[2] != vpos[2])) {

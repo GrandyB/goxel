@@ -144,10 +144,10 @@ static int gui(tool_t *tool_)
     tool_fuzzy_select_t *tool = (void*)tool_;
     bool use_color = tool->threshold < 255;
 
+    gui_checkbox("Entire layer", &tool->global, "If unchecked, fuzzy will only select connected voxels; if checked, it will select any across the current layer");
     if (gui_checkbox("Use color", &use_color, "Stop at different color")) {
         tool->threshold = use_color ? 0 : 255;
     }
-    gui_checkbox("Entire layer", &tool->global, "If unchecked, fuzzy will only select connected voxels; if checked, it will select any across the current layer");
     if (use_color) {
         gui_input_int("Threshold", &tool->threshold, 1, 254);
     }

@@ -164,10 +164,14 @@ void volume_op(volume_t *volume, const painter_t *painter,
                const float box[4][4]);
 
 // XXX: to cleanup.
+// If inherit_from is non-NULL, newly extruded voxels keep the source-face
+// colour until the column meets a voxel in inherit_from (e.g. merged layers),
+// then use that met colour from there onwards.
 void volume_extrude(volume_t *volume,
                   const float plane[4][4],
                   const float box[4][4],
-                  const painter_t *painter);
+                  const painter_t *painter,
+                  const volume_t *inherit_from);
 
 /* Function: volume_blit
  *

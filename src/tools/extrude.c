@@ -25,18 +25,33 @@ typedef struct {
     float  box[4][4]; // Selection bbox; fixed for the drag.
     int    snap_face;
     int    last_delta;
+    bool   inherit_passed_through;
+    bool   inherit_all_layers; // false (default) = confine inherit to active layer
+    bool   use_color;
+    float  color_threshold; // Max RGB channel delta vs cursor (when use_color)
+    uint8_t start_color[4]; // Colour under cursor at gesture begin
     struct {
         gesture3d_t drag;
     } gestures;
 } tool_extrude_t;
+
+typedef struct {
+    int snap_face;
+    bool use_color;
+    float color_threshold;
+    const uint8_t *start_color;
+} extrude_select_t;
 
 static int select_cond(void *user, const volume_t *volume,
                        const int base_pos[3],
                        const int new_pos[3],
                        volume_accessor_t *volume_accessor)
 {
-    int snap_face = *((int*)user);
+    extrude_select_t *ctx = user;
+    int snap_face = ctx->snap_face;
     int p[3], n[3];
+    uint8_t c[4];
+    int diff;
 
     // Only consider voxel in the snap plane.
     memcpy(n, FACES_NORMALS[snap_face], sizeof(n));
@@ -50,6 +65,16 @@ static int select_cond(void *user, const volume_t *volume,
     p[1] = new_pos[1] + FACES_NORMALS[snap_face][1];
     p[2] = new_pos[2] + FACES_NORMALS[snap_face][2];
     if (volume_get_alpha_at(volume, volume_accessor, p)) return 0;
+
+    // Optional colour filter vs the voxel under the cursor at gesture start.
+    if (ctx->use_color) {
+        volume_get_at(volume, volume_accessor, new_pos, c);
+        if (!c[3] || !ctx->start_color[3]) return 0;
+        diff = max3(abs(c[0] - ctx->start_color[0]),
+                    abs(c[1] - ctx->start_color[1]),
+                    abs(c[2] - ctx->start_color[2]));
+        if (diff > ctx->color_threshold) return 0;
+    }
 
     return 255;
 }
@@ -81,6 +106,8 @@ static int on_drag(gesture3d_t *gest, void *user)
     float n[3], pos[3], v[3], box[4][4];
     int pi[3];
     float delta;
+    extrude_select_t select_ctx;
+    const volume_t *inherit_from;
 
     if (gest->state == GESTURE_BEGIN) {
         tool->snap_face = get_face(curs->normal);
@@ -90,7 +117,15 @@ static int on_drag(gesture3d_t *gest, void *user)
         pi[0] = floor(curs->pos[0]);
         pi[1] = floor(curs->pos[1]);
         pi[2] = floor(curs->pos[2]);
-        volume_select(volume, pi, select_cond, &tool->snap_face, tmp_volume);
+        select_ctx = (extrude_select_t) {
+            .snap_face = tool->snap_face,
+            .use_color = tool->use_color,
+            .color_threshold = tool->color_threshold,
+            .start_color = tool->start_color,
+        };
+        if (tool->use_color)
+            volume_get_at(volume, NULL, pi, tool->start_color);
+        volume_select(volume, pi, select_cond, &select_ctx, tmp_volume);
         volume_merge(tool->volume, tmp_volume, MODE_MULT_ALPHA, NULL);
         volume_delete(tmp_volume);
 
@@ -135,14 +170,22 @@ static int on_drag(gesture3d_t *gest, void *user)
     if (delta >= 1) {
         vec3_iaddk(face_plane[3], n, -0.5);
         box_move_face(box, tool->snap_face, pos, box);
-        volume_extrude(tmp_volume, face_plane, box, &goxel.painter);
+        inherit_from = NULL;
+        if (tool->inherit_passed_through) {
+            // Active layer is back at volume_orig.
+            inherit_from = tool->inherit_all_layers
+                    ? goxel_get_layers_volume(goxel.image)
+                    : tool->volume_orig;
+        }
+        volume_extrude(tmp_volume, face_plane, box, &goxel.painter,
+                       inherit_from);
         volume_merge_from(volume, tmp_volume, MODE_OVER, NULL);
     }
     if (delta < 0.5) {
         box_move_face(box, FACES_OPPOSITES[tool->snap_face], pos, box);
         vec3_imul(face_plane[2], -1.0);
         vec3_iaddk(face_plane[3], n, -0.5);
-        volume_extrude(tmp_volume, face_plane, box, NULL);
+        volume_extrude(tmp_volume, face_plane, box, NULL, NULL);
         volume_merge_from(volume, tmp_volume, MODE_SUB, NULL);
     }
     volume_delete(tmp_volume);
@@ -174,9 +217,38 @@ static int iter(tool_t *tool_, const painter_t *painter,
     return 0;
 }
 
-static int gui(tool_t *tool)
+static int gui(tool_t *tool_)
 {
+    tool_extrude_t *tool = (tool_extrude_t*)tool_;
     goxel_set_help_text("Drag any surface to extrude it.");
+    /* Skip the default label column so these checkboxes sit on the left. */
+    gui_label_size_push(0);
+    gui_checkbox("Inherit passed through colors",
+                 &tool->inherit_passed_through,
+                 "Extruded voxels keep their source colour until the column "
+                 "meets blocks (e.g. on another layer), then use those "
+                 "colours from there onwards");
+    gui_label_size_pop();
+    if (tool->inherit_passed_through) {
+        bool confine = !tool->inherit_all_layers;
+        if (gui_checkbox("Confine to layer", &confine,
+                         "When enabled, only look for passed-through colours on "
+                         "the current layer; when disabled, use all layers")) {
+            tool->inherit_all_layers = !confine;
+        }
+    }
+    gui_label_size_push(0);
+    gui_checkbox("Use color", &tool->use_color,
+                 "Only select face voxels similar to the colour under the "
+                 "cursor at gesture start");
+    gui_label_size_pop();
+    if (tool->use_color) {
+        gui_input_float("Threshold", &tool->color_threshold, 1.f, 0.f, 255.f,
+                        "%.0f");
+        gui_tooltip_if_hovered(
+                "Max RGB channel difference vs the cursor colour "
+                "(0 = exact match only)");
+    }
     return 0;
 }
 
