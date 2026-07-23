@@ -1195,8 +1195,10 @@ bool gui_input_float(const char *label, float *v, float step,
 
     if (ret) {
         *v = clamp(*v, minv, maxv);
+        // round (not floor): v/step can be 12.999... for values like 1.3/0.1,
+        // and floor would snap drag back a step while +/- buttons still work.
         if (snap_grid && snap_quant > 0.f)
-            *v = floor(*v / snap_quant) * snap_quant;
+            *v = roundf(*v / snap_quant) * snap_quant;
         on_click();
     }
     return ret;
