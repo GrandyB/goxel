@@ -87,6 +87,12 @@ static float placer_scale_custom_pct_x = 100.f;
 static float placer_scale_custom_pct_y = 100.f;
 static float placer_scale_custom_pct_z = 100.f;
 static float placer_rotation_angle_deg = 22.5f;
+/* Cached euler readback so editing one axis does not jump from mat→eul ambiguity. */
+static struct {
+    float rot[4][4];
+    float eul[3];
+    bool valid;
+} placer_rot_eul_cache = {};
 
 typedef struct {
     tool_t tool;
@@ -1208,6 +1214,7 @@ static int gui(tool_t *tool)
     float rotation[4][4] = MAT4_IDENTITY;
     float rot_degs[3];
     bool reset_rotation = false;
+    bool eul_edited = false;
     int origin_x, origin_y, origin_z, offset_x, offset_y, offset_z;
     bool changed = false;
     mat4_to_eul_degxyz(placer->rot, rot_degs);
@@ -1343,17 +1350,52 @@ static int gui(tool_t *tool)
         offset_y = (int)round(placer->offset[1]);
         offset_z = (int)round(placer->offset[2]);
             
-        gui_row_begin(1);
-        char *msg;
-        asprintf(&msg, "Rotation: %.1f / %.1f / %.1f", zero(rot_degs[0]), zero(rot_degs[1]), zero(rot_degs[2]));
-        gui_text(msg);
-        if (gui_button("Reset##rotation", 0, 0)) {
-            reset_rotation = true;
-        }
-        gui_row_end();
-
         if (gui_section_begin("Rotation", true)) {
             gui_group_begin(NULL);
+            gui_row_begin(3);
+            {
+                float eul[3];
+                float prev[3];
+                int i;
+
+                if (placer_rot_eul_cache.valid &&
+                    memcmp(placer->rot, placer_rot_eul_cache.rot,
+                           sizeof(placer_rot_eul_cache.rot)) == 0) {
+                    memcpy(eul, placer_rot_eul_cache.eul, sizeof(eul));
+                } else {
+                    for (i = 0; i < 3; i++)
+                        eul[i] = zero(rot_degs[i]);
+                }
+                memcpy(prev, eul, sizeof(prev));
+
+                gui_input_float_stack("X", &eul[0], 0.5f, -360.f, 360.f, "%.1f");
+                gui_input_float_stack("Y", &eul[1], 0.5f, -360.f, 360.f, "%.1f");
+                gui_input_float_stack("Z", &eul[2], 0.5f, -360.f, 360.f, "%.1f");
+
+                if (eul[0] != prev[0] || eul[1] != prev[1] || eul[2] != prev[2]) {
+                    float dx = eul[0] - prev[0];
+                    float dy = eul[1] - prev[1];
+                    float dz = eul[2] - prev[2];
+                    if (dx != 0.f)
+                        mat4_irotate(rotation, dx * (float)DD2R, 1, 0, 0);
+                    if (dy != 0.f)
+                        mat4_irotate(rotation, dy * (float)DD2R, 0, 1, 0);
+                    if (dz != 0.f)
+                        mat4_irotate(rotation, dz * (float)DD2R, 0, 0, 1);
+                    changed = true;
+                    eul_edited = true;
+                    memcpy(placer_rot_eul_cache.eul, eul, sizeof(eul));
+                    placer_rot_eul_cache.valid = true;
+                }
+            }
+            gui_row_end();
+            if (gui_button("Reset##rotation", 0, 0)) {
+                reset_rotation = true;
+                memset(placer_rot_eul_cache.eul, 0, sizeof(placer_rot_eul_cache.eul));
+                mat4_set_identity(placer_rot_eul_cache.rot);
+                placer_rot_eul_cache.valid = true;
+            }
+
             gui_input_float("Angle", &placer_rotation_angle_deg, 0.5f, 0.f, 180.f,
                             "%.1f");
             float rot_step = placer_rotation_angle_deg * (float)(M_PI / 180.0);
@@ -1550,6 +1592,10 @@ static int gui(tool_t *tool)
     if (reset_rotation || (placer->imported_volume && changed)) {
         if (reset_rotation) mat4_set_identity(placer->rot);
         apply_rotation(placer, rotation);
+        if (eul_edited || reset_rotation)
+            mat4_copy(placer->rot, placer_rot_eul_cache.rot);
+        else
+            placer_rot_eul_cache.valid = false;
     }
     
     return 0;

@@ -1204,6 +1204,121 @@ bool gui_input_float(const char *label, float *v, float step,
     return ret;
 }
 
+bool gui_input_float_stack(const char *label, float *v, float step,
+                           float minv, float maxv, const char *format)
+{
+    bool ret = false;
+    const char *up_utf = "▲";
+    const char *down_utf = "▼";
+    bool snap_grid;
+    float snap_quant;
+    float arrow_step;
+    float v_speed;
+    float label_w;
+    float stack_w;
+    float total_w;
+    ImVec2 origin;
+    ImVec2 stack_size;
+    const ImGuiStyle &style = ImGui::GetStyle();
+
+    if (minv == 0.f && maxv == 0.f) {
+        minv = -FLT_MAX;
+        maxv = +FLT_MAX;
+    }
+
+    if (step < 0.f) {
+        snap_grid = false;
+        arrow_step = -step;
+        snap_quant = 0.f;
+    } else {
+        snap_grid = true;
+        if (step == 0.f)
+            snap_quant = 0.1f;
+        else
+            snap_quant = step;
+        arrow_step = snap_quant;
+    }
+
+    if (!format) format = "%.1f";
+
+    if (!snap_grid) {
+        if (maxv > minv && minv > -FLT_MAX / 4.f && maxv < FLT_MAX / 4.f)
+            v_speed = (maxv - minv) * 0.003f;
+        else
+            v_speed = 1.f;
+    } else {
+        v_speed = snap_quant / 10;
+    }
+
+    ImGui::PushID(label);
+
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR(NUMBER_INPUT, INNER, false));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
+                    color_lighten(COLOR(NUMBER_INPUT, INNER, false)));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
+                    color_lighten2(COLOR(NUMBER_INPUT, INNER, false)));
+    ImGui::PushStyleColor(ImGuiCol_Button, COLOR(NUMBER_INPUT, INNER, false));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                    color_lighten(COLOR(NUMBER_INPUT, INNER, false)));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                    color_lighten2(COLOR(NUMBER_INPUT, INNER, false)));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab,
+                    COLOR(NUMBER_INPUT, ITEM, false));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 1));
+    ImGui::PushButtonRepeat(true);
+
+    total_w = gui->item_size ? gui->item_size : ImGui::GetContentRegionAvail().x;
+    label_w = ImGui::CalcTextSize(label, NULL, true).x + style.ItemSpacing.x;
+    stack_w = total_w - label_w;
+    if (stack_w < 24.f)
+        stack_w = 24.f;
+
+    origin = ImGui::GetCursorScreenPos();
+
+    ImGui::SetCursorScreenPos(ImVec2(origin.x + label_w, origin.y));
+    ImGui::BeginGroup();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 0));
+    if (ImGui::Button(up_utf, ImVec2(stack_w, 0.f))) {
+        (*v) += arrow_step;
+        ret = true;
+    }
+    ImGui::PopStyleVar(1);
+    ImGui::PushItemWidth(stack_w);
+    ret = ImGui::DragFloat("##v", v, v_speed, minv, maxv, format) || ret;
+    ImGui::PopItemWidth();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 0));
+    if (ImGui::Button(down_utf, ImVec2(stack_w, 0.f))) {
+        (*v) -= arrow_step;
+        ret = true;
+    }
+    ImGui::PopStyleVar(1);
+    ImGui::EndGroup();
+    stack_size = ImGui::GetItemRectSize();
+
+    ImGui::SetCursorScreenPos(ImVec2(
+            origin.x,
+            origin.y + (stack_size.y - ImGui::GetFontSize()) * 0.5f));
+    ImGui::TextUnformatted(label);
+
+    ImGui::SetCursorScreenPos(origin);
+    ImGui::Dummy(ImVec2(label_w + stack_size.x, stack_size.y));
+
+    ImGui::PopButtonRepeat();
+    ImGui::PopStyleVar(1);
+    ImGui::PopStyleColor(7);
+    ImGui::PopID();
+
+    if (ret) {
+        *v = clamp(*v, minv, maxv);
+        if (snap_grid && snap_quant > 0.f)
+            *v = roundf(*v / snap_quant) * snap_quant;
+        on_click();
+    }
+    if (gui->is_row) ImGui::SameLine();
+    return ret;
+}
+
 bool gui_bbox(float box[4][4])
 {
     int x, y, z, w, h, d;

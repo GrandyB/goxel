@@ -152,6 +152,9 @@ bool slider_float(const char *label, float *v, float minv, float maxv, const cha
 /* step < 0: no snap-to-grid while dragging; arrow buttons step by |step|. */
 bool gui_input_float(const char *label, float *v, float step,
                      float minv, float maxv, const char *format);
+/* Label left of a vertical ▲ / value / ▼ stack. Suited to gui_row_begin. */
+bool gui_input_float_stack(const char *label, float *v, float step,
+                           float minv, float maxv, const char *format);
 bool gui_angle(const char *id, float *v, int vmin, int vmax);
 bool gui_bbox(float box[4][4]);
 bool gui_quat(const char *label, float q[4]);
