@@ -496,8 +496,17 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
                 vec3_mul(iter_box[i], (n + shape_sm) / n, iter_box[i]);
         }
     }
-    iter = volume_get_box_iterator(volume, iter_box,
-                                 skip_dst_empty ? VOLUME_ITER_SKIP_EMPTY : 0);
+    // INTERSECT keeps tiles that only partially overlap the shape box.
+    // Iterating only the box would skip voxels in those tiles that lie
+    // outside it, leaving a TILE_SIZE strip of extras (e.g. copy/cut into
+    // placer). Visit every remaining voxel so outside ones are cleared.
+    if (mode == MODE_INTERSECT || mode == MODE_INTERSECT_FILL) {
+        iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS |
+                (skip_dst_empty ? VOLUME_ITER_SKIP_EMPTY : 0));
+    } else {
+        iter = volume_get_box_iterator(volume, iter_box,
+                skip_dst_empty ? VOLUME_ITER_SKIP_EMPTY : 0);
+    }
 
     // XXX: for the moment we cannot use the same accessor for both
     // setting and getting!  Need to fix that!!
