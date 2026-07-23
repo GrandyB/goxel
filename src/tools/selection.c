@@ -25,6 +25,7 @@ enum {
 
 static int g_drag_mode = 0;
 static int original_drag_mode = 0;
+static file_format_t *ff_export_current = NULL;
 
 typedef struct {
     bool    active;
@@ -451,6 +452,22 @@ static float get_magnitude(float box[4][4], int axis_index)
     return box[0][axis_index] + box[1][axis_index] + box[2][axis_index];
 }
 
+static const char *make_label(const file_format_t *f, char *buf, int len)
+{
+    const char *ext = f->exts[0] + 1;
+    snprintf(buf, len, "%s (%s)", f->name, ext);
+    return buf;
+}
+
+static void on_export_format(void *user, file_format_t *f)
+{
+    char label[128];
+    make_label(f, label, sizeof(label));
+    if (gui_combo_item(label, f == ff_export_current)) {
+        ff_export_current = f;
+    }
+}
+
 static int gui(tool_t *tool)
 {
     tool_selection_t *selection = (tool_selection_t *)tool;
@@ -572,6 +589,44 @@ static int gui(tool_t *tool)
             action_exec(action_get(ACTION_layer_clear, true));
             action_exec(action_get(ACTION_tool_set_placer, true));
             mat4_copy(mat4_zero, *box);
+        }
+    }
+    gui_section_end();
+
+    if (gui_section_begin("Export as", GUI_SECTION_COLLAPSABLE_CLOSED)) {
+        char label[128];
+        if (!ff_export_current)
+            ff_export_current = file_formats_export_to_volume;
+
+        make_label(ff_export_current, label, sizeof(label));
+        if (gui_combo_begin("Export as", label)) {
+            file_format_iter("t", NULL, on_export_format);
+            gui_combo_end();
+        }
+
+        if (ff_export_current->export_gui)
+            ff_export_current->export_gui(ff_export_current);
+
+        if (gui_button("Export box selection", -1, 0)) {
+            const char *path;
+            volume_t *copy;
+            painter_t painter;
+
+            path = sys_get_save_path("", ff_export_current->exts,
+                                    ff_export_current->exts_desc);
+            if (path) {
+                // Always use the box selection only — never the fuzzy mask.
+                copy = volume_copy(goxel.image->active_layer->volume);
+                painter = (painter_t) {
+                    .shape = &shape_cube,
+                    .mode = MODE_INTERSECT,
+                    .color = {255, 255, 255, 255},
+                };
+                volume_op(copy, &painter, *box);
+                ff_export_current->export_volume_func(
+                        ff_export_current, copy, path);
+                volume_delete(copy);
+            }
         }
     }
     gui_section_end();

@@ -597,17 +597,17 @@ static int iter(tool_t *tool, const painter_t *painter,
     return tool->state;
 }
 
-static const char *make_label(const file_format_t *f, char *buf, int len, char *id)
+static const char *make_label(const file_format_t *f, char *buf, int len)
 {
     const char *ext = f->exts[0] + 1;
-    snprintf(buf, len, "%s (%s)##%s", f->name, ext, id);
+    snprintf(buf, len, "%s (%s)", f->name, ext);
     return buf;
 }
 
 static void on_import_format(void *user, file_format_t *f)
 {
     char label[128];
-    make_label(f, label, sizeof(label), "import");
+    make_label(f, label, sizeof(label));
     if (gui_combo_item(label, f == ff_import_current)) {
         ff_import_current = f;
     }
@@ -616,7 +616,7 @@ static void on_import_format(void *user, file_format_t *f)
 static void on_export_format(void *user, file_format_t *f)
 {
     char label[128];
-    make_label(f, label, sizeof(label), "export");
+    make_label(f, label, sizeof(label));
     if (gui_combo_item(label, f == ff_export_current)) {
         ff_export_current = f;
     }
@@ -1283,8 +1283,8 @@ static int gui(tool_t *tool)
         char label[128];
         if (!ff_import_current) ff_import_current = file_formats_import_to_volume; // First one.
 
-        make_label(ff_import_current, label, sizeof(label), "placerimport");
-        if (gui_combo_begin("Import as##plcaerimport", label)) {
+        make_label(ff_import_current, label, sizeof(label));
+        if (gui_combo_begin("Import as", label)) {
             file_format_iter("v", NULL, on_import_format);
             gui_combo_end();
         }
@@ -1314,8 +1314,8 @@ static int gui(tool_t *tool)
         char label[128];
         if (!ff_export_current) ff_export_current = file_formats_export_to_volume; // First one.
 
-        make_label(ff_export_current, label, sizeof(label), "export");
-        if (gui_combo_begin("Export as##placerexport", label)) {
+        make_label(ff_export_current, label, sizeof(label));
+        if (gui_combo_begin("Export as", label)) {
             file_format_iter("t", NULL, on_export_format);
             gui_combo_end();
         }

@@ -1042,7 +1042,8 @@ bool gui_input_int(const char *label, int *v, int minv, int maxv)
 static void label_aligned(const char *label, float size)
 {
     ImVec2 spacing;
-    float text_size = ImGui::CalcTextSize(label).x;
+    const char *label_end = ImGui::FindRenderedTextEnd(label);
+    float text_size = ImGui::CalcTextSize(label, label_end).x;
     const ImGuiStyle &style = ImGui::GetStyle();
 
     if (size <= 0)
@@ -1054,7 +1055,7 @@ static void label_aligned(const char *label, float size)
 
     ImGui::SetCursorPosX(size - text_size - ITEM_SPACING.x);
     ImGui::AlignTextToFramePadding();
-    ImGui::Text("%s", label);
+    ImGui::TextUnformatted(label, label_end);
     ImGui::SameLine();
     ImGui::PopStyleVar(1);
 }
