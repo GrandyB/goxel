@@ -25,7 +25,7 @@ static bool render_camera_item(void *item, int idx, bool is_current)
                           sizeof(cam->name));
 }
 
-/* Button group: see color_blend_button / tool_gui_drag_mode. */
+/* Button group: see tool_gui_drag_mode. */
 static bool camera_mode_button(camera_t *cam, const char *label, camera_mode_t m)
 {
     bool v = cam->mode == m;

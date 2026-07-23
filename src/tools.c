@@ -290,32 +290,20 @@ int tool_gui_noise(void)
     return 0;
 }
 
-static bool color_blend_button(const char *label, int s)
-{
-    bool v = goxel.painter.color_blend == s;
-    if (gui_selectable(label, &v, NULL, -1)) {
-        goxel.painter.color_blend = s;
-        return true;
-    }
-    return false;
-}
-
 int tool_gui_color(void)
 {
     if (gui_section_begin("Color", true)) {
-        gui_color_inline("", goxel.painter.color);
-        if (goxel.painter.mode == MODE_PAINT) {
-            gui_color_opacity(goxel.painter.color);
+        /* Skip the default label column so the checkbox sits on the left. */
+        gui_label_size_push(0);
+        gui_checkbox("Inherit from block(s) beneath", &goxel.painter.color_inherit,
+                     NULL);
+        gui_label_size_pop();
+        if (!goxel.painter.color_inherit) {
+            gui_color_inline("", goxel.painter.color);
+            if (goxel.painter.mode == MODE_PAINT) {
+                gui_color_opacity(goxel.painter.color);
+            }
         }
-        gui_text("Blend mode");
-        gui_group_begin(NULL);
-        gui_row_begin(4);
-        color_blend_button("User", COLOR_USER);
-        color_blend_button("Inherit", COLOR_INHERITED);
-        color_blend_button("Add", COLOR_ADD_INHERITED);
-        color_blend_button("Mid", COLOR_MIDPOINT_INHERITED);
-        gui_row_end();
-        gui_group_end();
     }
     
     tool_gui_noise();

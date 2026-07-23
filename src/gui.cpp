@@ -1045,6 +1045,9 @@ static void label_aligned(const char *label, float size)
     float text_size = ImGui::CalcTextSize(label).x;
     const ImGuiStyle &style = ImGui::GetStyle();
 
+    if (size <= 0)
+        return;
+
     spacing = style.ItemSpacing;
     spacing.x = ITEM_SPACING.x;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, spacing);

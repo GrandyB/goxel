@@ -178,7 +178,7 @@ static int gui(tool_t *tool_)
         uint64_t k0 = volume_get_key(volume);
         image_history_push(goxel.image);
         // Build a paint volume covering the mask's AABB using volume_op so
-        // painter features (noise, color_blend) are applied per voxel.
+        // painter features (noise, color_inherit) are applied per voxel.
         // We start from an empty volume (not a copy of the mask) to avoid
         // white voxels bleeding through, and override the painter's shape
         // and box so they can't restrict the fill area. After painting,
