@@ -70,6 +70,22 @@ static const water_layer_settings_t default_settings = {
 
 static const water_layer_preset_t presets[] = {
     {
+        .name = "Open ocean",
+        .settings = {
+            .color = {40, 85, 115, 255},
+            .deep_color = {18, 45, 70, 255},
+            .foam_color = {135, 156, 163, 255},
+            .scale = 32.0f,
+            .direction_deg = 35.0f,
+            .stretch = 2.8f,
+            .warp = 0.25f,
+            .detail = 0.4f,
+            .foam = 0.3f,
+            .contrast = 0.65f,
+            .seed = 42,
+        },
+    },
+    {
         .name = "Calm lake",
         .settings = {
             .color = {55, 105, 125, 255},
@@ -83,22 +99,6 @@ static const water_layer_preset_t presets[] = {
             .foam = 0.2f,
             .contrast = 0.55f,
             .seed = 11,
-        },
-    },
-    {
-        .name = "Open ocean",
-        .settings = {
-            .color = {40, 85, 115, 255},
-            .deep_color = {18, 45, 70, 255},
-            .foam_color = {180, 215, 225, 255},
-            .scale = 32.0f,
-            .direction_deg = 35.0f,
-            .stretch = 2.8f,
-            .warp = 0.5f,
-            .detail = 0.4f,
-            .foam = 0.45f,
-            .contrast = 0.8f,
-            .seed = 42,
         },
     },
     {
@@ -399,8 +399,6 @@ static int gui(filter_t *filter_)
     gui_color_small("Mid", s->color);
     gui_color_small("Deep", s->deep_color);
     gui_color_small("Foam", s->foam_color);
-    if (gui_button("Copy mid from painter", -1, 0))
-        memcpy(s->color, goxel.painter.color, sizeof(s->color));
     gui_group_end();
 
     gui_group_begin("Waves");
