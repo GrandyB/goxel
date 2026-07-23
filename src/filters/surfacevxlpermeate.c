@@ -375,6 +375,6 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(surfacevxlpermeate, filter_surfacevxlpermeate_t,
-                .name = "Utility - surface colour permeate",
+                .name = "Utility - .vxl color permeation",
                 .on_open = on_open,
                 .gui_fn = gui, )
