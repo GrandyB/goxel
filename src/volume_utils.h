@@ -99,7 +99,7 @@ typedef struct painter {
     uint8_t         color[4];
     bool            color_inherit; // Use nearest color beneath stamp position
     float           smoothness;
-    float           frosted_glass;    // Edge dither/scatter radius (0 = off)
+    float           dithering;        // Edge dither/scatter radius (0 = off)
     int             symmetry; // bitfield X Y Z
     float           symmetry_origin[3];
     float           (*box)[4][4];     // Clipping box (can be null)
@@ -162,16 +162,6 @@ void volume_get_heights_in_box(const volume_t *volume, int dimensions[3], int st
  */
 void volume_op(volume_t *volume, const painter_t *painter,
                const float box[4][4]);
-
-/*
- * Function: volume_spray
- * Randomly paint up to `count` voxels inside the painter shape/box.
- *
- * Used by the spray brush: each call deposits a sparse subset so holding
- * still gradually fills the volume. No result cache (non-deterministic).
- */
-void volume_spray(volume_t *volume, const painter_t *painter,
-                  const float box[4][4], int count);
 
 // XXX: to cleanup.
 void volume_extrude(volume_t *volume,

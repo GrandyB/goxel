@@ -712,7 +712,7 @@ void goxel_reset(void)
         .shape = &shape_cube,
         .mode = MODE_OVER,
         .smoothness = 0,
-        .frosted_glass = 0,
+        .dithering = 0,
         .noise_enabled = 0,
         .noise_coverage = 100,
         .noise_intensity = 5,

@@ -190,7 +190,6 @@ int tool_gui_shape(const shape_t **shape)
         {"Sphere", &shape_sphere, ICON_SHAPE_SPHERE},
         {"Cube", &shape_cube, ICON_SHAPE_CUBE},
         {"Cylinder", &shape_cylinder, ICON_SHAPE_CYLINDER},
-        {"Spray", &shape_spray, ICON_CLOUD},
     };
     gui_icon_info_t grid[64] = {};
     shape = shape ?: &goxel.painter.shape;
@@ -247,9 +246,9 @@ int tool_gui_smoothness(void)
     }
     gui_tooltip_if_hovered(
         "0 = hard edges, 1 = soft edge (~1 block), 2+ = wider blur");
-    float frost = goxel.painter.frosted_glass;
-    if (gui_input_float("Frosted glass", &frost, 0.1f, 0.f, 16.f, "%.1f")) {
-        goxel.painter.frosted_glass = clamp(frost, 0.f, 16.f);
+    float dither = goxel.painter.dithering;
+    if (gui_input_float("Dithering", &dither, 0.1f, 0.f, 16.f, "%.1f")) {
+        goxel.painter.dithering = clamp(dither, 0.f, 16.f);
     }
     gui_tooltip_if_hovered(
         "0 = none; higher scatters/dithers shape edges");

@@ -134,7 +134,6 @@ static const shape_t *SHAPES[] = {
     &shape_sphere,
     &shape_cube,
     &shape_cylinder,
-    &shape_spray,
 };
 
 typedef struct {
@@ -770,6 +769,9 @@ int load_from_file(const char *path, bool replace)
                 DICT_CPY("box", layer->box);
 
                 if (strcmp(dict_key, "shape") == 0) {
+                    /* Removed spray shape: treat as sphere for old files. */
+                    if (strcmp(dict_value, "spray") == 0)
+                        layer->shape = &shape_sphere;
                     for (i = 0; i < ARRAY_SIZE(SHAPES); i++) {
                         if (strcmp(SHAPES[i]->id, dict_value) == 0) {
                             layer->shape = SHAPES[i];

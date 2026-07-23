@@ -126,15 +126,6 @@ static void get_box3(const float p0[3], const float p1[3], const float n[3],
 }
 
 
-/* Droplets per frame: scales with ellipsoid volume so larger brushes fill
- * at a similar pace. Floor of 1 keeps tiny brushes spraying while held. */
-static int spray_count_for_radius(float r_x, float r_y, float r_z)
-{
-    float vol = (4.f / 3.f) * M_PI * r_x * r_y * r_z;
-    /* ~2s to fill at 60fps. */
-    int n = (int)ceilf(vol / 120.f);
-    return max(1, n);
-}
 static int on_drag(gesture3d_t *gest, void *user)
 {
     tool_brush_t *brush = USER_GET(user, 0);
@@ -172,10 +163,7 @@ static int on_drag(gesture3d_t *gest, void *user)
 
     painter = *(painter_t*)USER_GET(user, 1);
     shape = painter.shape;
-    bool is_spray = (shape == &shape_spray);
-    /* Spray must keep depositing while the cursor is held still. */
-    if (    !is_spray &&
-            (gest->state == GESTURE_UPDATE) &&
+    if (    (gest->state == GESTURE_UPDATE) &&
             (check_can_skip(brush, curs, painter.mode))) {
         return 0;
     }
@@ -187,8 +175,6 @@ static int on_drag(gesture3d_t *gest, void *user)
     bool rebuild_preview = (merge_mode == MODE_PAINT &&
                             (painter.smoothness > 0 || painter.color[3] < 255));
     painter.mode = MODE_MAX;
-    /* Spray uses the sphere SDF; deposition is sparse via volume_spray. */
-    if (is_spray) painter.shape = &shape_sphere;
 
     if (!brush->delta) brush->delta = volume_new();
     volume_clear(brush->delta);
@@ -198,36 +184,20 @@ static int on_drag(gesture3d_t *gest, void *user)
         painter.shape = &shape_cylinder;
         get_box3(brush->start_pos, target, curs->normal, r_x, r_y, r_z, NULL, box);
         volume_op(brush->delta, &painter, box);
-        painter.shape = is_spray ? &shape_sphere : shape;
+        painter.shape = shape;
     }
 
-    if (is_spray) {
-        /* One spray burst per frame at the cursor (and along the path if
-         * moving). Holding still accumulates random voxels toward a sphere. */
-        int droplets = spray_count_for_radius(r_x, r_y, r_z);
-        float spacing = max(0.7f, min3(r_x, r_y, r_z));
-        nb = ceil(vec3_dist(target, brush->last_pos) / spacing);
-        nb = max(nb, 1);
-        if (!alt) {
-            for (i = 0; i < nb; i++) {
-                vec3_mix(brush->last_pos, target, (i + 1.0) / nb, pos);
-                get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
-                volume_spray(brush->delta, &painter, box, droplets);
-            }
-        }
-    } else {
-        // Stamp along the segment so fast motion does not leave gaps.
-        // Step ~ brush radius (min axis): small brushes stay 1-voxel dense;
-        // large brushes avoid a volume_op per voxel of travel.
-        float spacing = max(0.7f, min3(r_x, r_y, r_z));
-        nb = ceil(vec3_dist(curs->pos, brush->last_pos) / spacing);
-        nb = max(nb, 1);
-        if (!alt) {
-            for (i = 0; i < nb; i++) {
-                vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
-                get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
-                volume_op(brush->delta, &painter, box);
-            }
+    // Stamp along the segment so fast motion does not leave gaps.
+    // Step ~ brush radius (min axis): small brushes stay 1-voxel dense;
+    // large brushes avoid a volume_op per voxel of travel.
+    float spacing = max(0.7f, min3(r_x, r_y, r_z));
+    nb = ceil(vec3_dist(curs->pos, brush->last_pos) / spacing);
+    nb = max(nb, 1);
+    if (!alt) {
+        for (i = 0; i < nb; i++) {
+            vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
+            get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
+            volume_op(brush->delta, &painter, box);
         }
     }
 
@@ -309,14 +279,7 @@ static int on_hover(gesture3d_t *gest, void *user)
 
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, volume);
-    if (painter->shape == &shape_spray) {
-        /* Preview the spray radius as a solid sphere. */
-        painter_t preview = *painter;
-        preview.shape = &shape_sphere;
-        volume_op(goxel.tool_volume, &preview, box);
-    } else {
-        volume_op(goxel.tool_volume, painter, box);
-    }
+    volume_op(goxel.tool_volume, painter, box);
 
     brush->last_op.volume_key = volume_get_key(goxel.tool_volume);
 
@@ -327,10 +290,7 @@ static int on_hover(gesture3d_t *gest, void *user)
 static int iter(tool_t *tool, const painter_t *painter,
                 const float viewport[4])
 {
-    if (painter->shape == &shape_spray)
-        goxel_set_help_text("Spray can: hold to gradually fill random voxels in the sphere. Move while held to spray along a path.");
-    else
-        goxel_set_help_text("Click to brush - there are hotkeys for changing modes etc! TIP: Holding shift will toggle line mode.");
+    goxel_set_help_text("Click to brush - there are hotkeys for changing modes etc! TIP: Holding shift will toggle line mode.");
     tool_brush_t *brush = (tool_brush_t*)tool;
     cursor_t *curs = &goxel.cursor;
     // XXX: for the moment we force rounded positions for the brush tool
