@@ -138,7 +138,8 @@ void volume_extrude(volume_t *volume,
         proj[3][2] = pos[2];
     }
 
-    // XXX: use an accessor to speed up access.
+    volume_accessor_t accessor_get = volume_get_accessor(volume);
+    volume_accessor_t accessor_set = volume_get_accessor(volume);
     iter = volume_get_box_iterator(volume, box, 0);
     while (volume_iter(&iter, vpos)) {
         vec3_set(p, vpos[0], vpos[1], vpos[2]);
@@ -147,7 +148,7 @@ void volume_extrude(volume_t *volume,
         } else {
             mat4_mul_vec3(proj, p, p);
             int pi[3] = {floor(p[0]), floor(p[1]), floor(p[2])};
-            volume_get_at(volume, NULL, pi, value);
+            volume_get_at(volume, &accessor_get, pi, value);
             // Only vary newly extruded voxels, not the source face.
             if (painter && value[3] &&
                     (pi[0] != vpos[0] || pi[1] != vpos[1] || pi[2] != vpos[2])) {
@@ -158,7 +159,7 @@ void volume_extrude(volume_t *volume,
                 apply_noise_if_applicable(painter, global_p, value);
             }
         }
-        volume_set_at(volume, NULL, vpos, value);
+        volume_set_at(volume, &accessor_set, vpos, value);
     }
 
 }

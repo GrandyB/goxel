@@ -22,6 +22,7 @@ typedef struct {
     tool_t tool;
     volume_t *volume_orig;
     volume_t *volume;
+    float  box[4][4]; // Selection bbox; fixed for the drag.
     int    snap_face;
     int    last_delta;
     struct {
@@ -97,14 +98,15 @@ static int on_drag(gesture3d_t *gest, void *user)
         image_history_push(goxel.image);
 
         // XXX: to remove: this is duplicated from selection tool.
-        volume_get_box(tool->volume, true, box);
-        mat4_mul(box, FACES_MATS[tool->snap_face], face_plane);
+        volume_get_box(tool->volume, true, tool->box);
+        mat4_mul(tool->box, FACES_MATS[tool->snap_face], face_plane);
         vec3_normalize(face_plane[0], v);
         plane_from_vectors(goxel.tool_plane, curs->pos, curs->normal, v);
         tool->last_delta = 0;
     }
 
-    volume_get_box(tool->volume, true, box);
+    // Selection is fixed for the drag; reuse the cached bbox.
+    mat4_copy(tool->box, box);
 
     // XXX: have some generic way to resize boxes, since we use it all the
     // time!
@@ -134,14 +136,14 @@ static int on_drag(gesture3d_t *gest, void *user)
         vec3_iaddk(face_plane[3], n, -0.5);
         box_move_face(box, tool->snap_face, pos, box);
         volume_extrude(tmp_volume, face_plane, box, &goxel.painter);
-        volume_merge(volume, tmp_volume, MODE_OVER, NULL);
+        volume_merge_from(volume, tmp_volume, MODE_OVER, NULL);
     }
     if (delta < 0.5) {
         box_move_face(box, FACES_OPPOSITES[tool->snap_face], pos, box);
         vec3_imul(face_plane[2], -1.0);
         vec3_iaddk(face_plane[3], n, -0.5);
         volume_extrude(tmp_volume, face_plane, box, NULL);
-        volume_merge(volume, tmp_volume, MODE_SUB, NULL);
+        volume_merge_from(volume, tmp_volume, MODE_SUB, NULL);
     }
     volume_delete(tmp_volume);
 
