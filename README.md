@@ -26,7 +26,7 @@ additions below are specific to this fork.
 Download
 --------
 
-The latest release of **this fork** (currently **0_2o**) can be downloaded from:
+The latest release of **this fork** (currently **0_2r**) can be downloaded from:
 
 https://github.com/GrandyB/goxel/releases/latest
 
@@ -81,7 +81,11 @@ Designed for **voxel map making for games**. Highlights relative to upstream:
 - Selection tool
     - Holding **Shift** temporarily switches to move rather than resize
     - Select entire layer; copy / cut selection into the placer
+    - Export the box selection to a file (same formats as volume export)
 - Brush can set width / height / depth separately; optional origin at base
+- Brush **antialiasing** is a soft-edge distance (0 = hard, 1 ≈ one block, 2+ wider)
+- Brush **dithering** scatters shape edges for a noisier outline
+- Large / fast brush strokes are faster (stamp spacing by radius; lighter live preview)
 - Move tool can do destructive rotation
 - Fuzzy select can select layer-wide and fill with noise
 - Holding **Shift** on brush/shape still draws lines (dedicated line tool removed)
@@ -95,7 +99,7 @@ Designed for **voxel map making for games**. Highlights relative to upstream:
 ### Colours
 
 - Colour picker integrated into the tools panel
-- Blend modes: User / Inherited / Interpolated
+- **Inherit from block(s) beneath** — optional; otherwise uses the chosen colour
 - Noise panel — random noise to texture brush / paint / place / extrude
 - Opacity as 0–100% integers; Ctrl+Shift colour-pick retains previous alpha
 
@@ -110,6 +114,8 @@ Designed for **voxel map making for games**. Highlights relative to upstream:
 - Generation: Genland terrain, terrain coloring, doodad placement on heights
 - Bulk: fill upwards by colour, remove by colour
 - Transform: squash, rotate 90°, wrap / mirror (plus View > Wrap edge preview)
+    - Mirror includes **half-mirror** (copy one half onto the other) per axis
+- **`.vxl` color permeation** — push exposed surface colours inward through solid voxels (depth / blur)
 - Simple shadows from other visible layers; coords dump for the selection box
 - Colour H/S/L/C for layer (from upstream filter system)
 

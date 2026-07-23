@@ -75,7 +75,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_2q"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_2r"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -442,7 +442,6 @@ enum {
     X(ICON_INFO,                    7, 3, 0),
 
     X(ICON_SETTINGS,                0, 4, 0),
-    X(ICON_CLOUD,                   1, 4, 0),
     X(ICON_SHAPE,                   2, 4, 0),
     X(ICON_CLOSE,                   3, 4, 0),
 
