@@ -1111,6 +1111,13 @@ bool slider_float(const char *label, float *v, float minv, float maxv, const cha
     return ret;
 }
 
+/* Snap to a step grid using double math so values like 1.3/0.1 and 0.3/0.01
+ * don't get stuck on float32 division noise (see gui-input-float.md). */
+static float snap_float_grid(float v, float quant)
+{
+    return (float)(round((double)v / (double)quant) * (double)quant);
+}
+
 bool gui_input_float(const char *label, float *v, float step,
                      float minv, float maxv, const char *format)
 {
@@ -1122,6 +1129,8 @@ bool gui_input_float(const char *label, float *v, float step,
     float snap_quant;
     float arrow_step;
     float v_speed;
+    bool drag_active;
+    bool drag_edited_end;
 
     if (minv == 0.f && maxv == 0.f) {
         minv = -FLT_MAX;
@@ -1180,6 +1189,9 @@ bool gui_input_float(const char *label, float *v, float step,
         ImGui::PushItemWidth(
                 ImGui::GetContentRegionAvail().x - button_width);
         ret = ImGui::DragFloat("", v, v_speed, minv, maxv, format) || ret;
+        // Capture before later buttons overwrite the last-item flags.
+        drag_active = ImGui::IsItemActive();
+        drag_edited_end = ImGui::IsItemDeactivatedAfterEdit();
         ImGui::PopItemWidth();
         ImGui::SameLine();
         if (ImGui::Button(right_utf)) {
@@ -1195,11 +1207,19 @@ bool gui_input_float(const char *label, float *v, float step,
 
     if (ret) {
         *v = clamp(*v, minv, maxv);
-        // round (not floor): v/step can be 12.999... for values like 1.3/0.1,
-        // and floor would snap drag back a step while +/- buttons still work.
-        if (snap_grid && snap_quant > 0.f)
-            *v = roundf(*v / snap_quant) * snap_quant;
+        // While dragging, ImGui's format rounding owns the value. Re-snapping
+        // every frame fights DragCurrentAccum (1dp floor snap-back, and 2dp
+        // bit rewrites like 0.30f → 0.29999998f). Snap on arrows / drag end.
+        if (snap_grid && snap_quant > 0.f && !drag_active)
+            *v = snap_float_grid(*v, snap_quant);
+        *v = clamp(*v, minv, maxv);
         on_click();
+    } else if (drag_edited_end && snap_grid && snap_quant > 0.f) {
+        float snapped = clamp(snap_float_grid(*v, snap_quant), minv, maxv);
+        if (snapped != *v) {
+            *v = snapped;
+            ret = true;
+        }
     }
     return ret;
 }
@@ -1217,6 +1237,8 @@ bool gui_input_float_stack(const char *label, float *v, float step,
     float label_w;
     float stack_w;
     float total_w;
+    bool drag_active;
+    bool drag_edited_end;
     ImVec2 origin;
     ImVec2 stack_size;
     const ImGuiStyle &style = ImGui::GetStyle();
@@ -1286,6 +1308,8 @@ bool gui_input_float_stack(const char *label, float *v, float step,
     ImGui::PopStyleVar(1);
     ImGui::PushItemWidth(stack_w);
     ret = ImGui::DragFloat("##v", v, v_speed, minv, maxv, format) || ret;
+    drag_active = ImGui::IsItemActive();
+    drag_edited_end = ImGui::IsItemDeactivatedAfterEdit();
     ImGui::PopItemWidth();
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 0));
     if (ImGui::Button(down_utf, ImVec2(stack_w, 0.f))) {
@@ -1311,9 +1335,16 @@ bool gui_input_float_stack(const char *label, float *v, float step,
 
     if (ret) {
         *v = clamp(*v, minv, maxv);
-        if (snap_grid && snap_quant > 0.f)
-            *v = roundf(*v / snap_quant) * snap_quant;
+        if (snap_grid && snap_quant > 0.f && !drag_active)
+            *v = snap_float_grid(*v, snap_quant);
+        *v = clamp(*v, minv, maxv);
         on_click();
+    } else if (drag_edited_end && snap_grid && snap_quant > 0.f) {
+        float snapped = clamp(snap_float_grid(*v, snap_quant), minv, maxv);
+        if (snapped != *v) {
+            *v = snapped;
+            ret = true;
+        }
     }
     if (gui->is_row) ImGui::SameLine();
     return ret;
