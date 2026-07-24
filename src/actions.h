@@ -98,6 +98,8 @@ enum
     ACTION_move_plane_up,
     ACTION_move_plane_down,
     ACTION_toggle_plane_visible,
+    ACTION_tool_size_increase_xy,
+    ACTION_tool_size_decrease_xy,
     ACTION_tool_size_increase,
     ACTION_tool_size_decrease,
     ACTION_tool_set_placer,

@@ -2387,27 +2387,43 @@ ACTION_REGISTER(ACTION_toggle_plane_visible,
     .default_shortcut = "/"
 )
 
-static void tool_size_change(float delta) {
+static void tool_size_change(float delta, bool include_z) {
     if (delta != 0) {
         goxel.radius_x = clamp(goxel.radius_x + delta, 0.5, 64);
         goxel.radius_y = clamp(goxel.radius_y + delta, 0.5, 64);
-        //goxel.radius_z = clamp(goxel.radius_z + delta, 0.5, 64);
+        if (include_z) {
+            goxel.radius_z = clamp(goxel.radius_z + delta, 0.5, 64);
+        }
     }
 }
-static void tool_size_increase(void) { tool_size_change(0.5); }
-static void tool_size_decrease(void) { tool_size_change(-0.5); }
+static void tool_size_increase(void) { tool_size_change(0.5, true); }
+static void tool_size_decrease(void) { tool_size_change(-0.5, true); }
+static void tool_size_increase_xy(void) { tool_size_change(0.5, false); }
+static void tool_size_decrease_xy(void) { tool_size_change(-0.5, false); }
 
-ACTION_REGISTER(ACTION_tool_size_increase,
-    .help = "Tool size - increase",
+ACTION_REGISTER(ACTION_tool_size_increase_xy,
+    .help = "Tool size - increase (x/y only)",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
-    .cfunc = tool_size_increase,
+    .cfunc = tool_size_increase_xy,
     .default_shortcut = "]"
 )
+ACTION_REGISTER(ACTION_tool_size_decrease_xy,
+    .help = "Tool size - decrease (x/y only)",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = tool_size_decrease_xy,
+    .default_shortcut = "["
+)
+ACTION_REGISTER(ACTION_tool_size_increase,
+    .help = "Tool size - increase (x/y/z)",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = tool_size_increase,
+    .default_shortcut = "}"
+)
 ACTION_REGISTER(ACTION_tool_size_decrease,
-    .help = "Tool size - decrease",
+    .help = "Tool size - decrease (x/y/z)",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = tool_size_decrease,
-    .default_shortcut = "["
+    .default_shortcut = "{"
 )
 
 static void toggle_first_person_camera(void)
