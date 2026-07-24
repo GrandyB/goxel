@@ -2391,7 +2391,7 @@ static void tool_size_change(float delta) {
     if (delta != 0) {
         goxel.radius_x = clamp(goxel.radius_x + delta, 0.5, 64);
         goxel.radius_y = clamp(goxel.radius_y + delta, 0.5, 64);
-        goxel.radius_z = clamp(goxel.radius_z + delta, 0.5, 64);
+        //goxel.radius_z = clamp(goxel.radius_z + delta, 0.5, 64);
     }
 }
 static void tool_size_increase(void) { tool_size_change(0.5); }
