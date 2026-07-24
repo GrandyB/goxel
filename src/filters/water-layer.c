@@ -720,13 +720,13 @@ static int gui(filter_t *filter_)
     gui_row_end();
     gui_group_end();
 
-    if(gui_collapsing_header("Colors", true)) {
+    if(gui_collapsing_header("Colors", false)) {
         gui_color_small("Mid", s->color);
         gui_color_small("Deep", s->deep_color);
         gui_color_small("Foam", s->foam_color);
     }
 
-    if(gui_collapsing_header("Waves", true)) {
+    if(gui_collapsing_header("Wave parameters", false)) {
         gui_input_float("Scale", &s->scale, 1.0f, 1.0f, 256.0f, "%.0f");
         gui_tooltip_if_hovered("Size of the large swells in blocks (higher = broader).");
         gui_input_float("Direction", &s->direction_deg, 1.0f, 0.0f, 360.0f, "%.0f");
