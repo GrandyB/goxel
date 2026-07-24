@@ -83,8 +83,10 @@ static void get_box3(const float p0[3], const float p1[3], const float n[3],
     if (p1 == NULL) {
         bbox_from_extents(box, p0, r_x, r_y, r_z);
         box_swap_axis(box, 2, 0, 1, box);
+        // Cursor is on voxel centers (*.5). Shift up so the shape's lowest
+        // Z sits on the bottom face of that voxel (not an extra voxel up).
         if (goxel.brush_origin_at_base)
-            box[3][2] += r_z;
+            box[3][2] += r_z - 0.5f;
         mat4_copy(box, out);
         return;
     }
@@ -121,7 +123,7 @@ static void get_box3(const float p0[3], const float p1[3], const float n[3],
     vec3_normalize(v, v);
     vec3_mul3(v, r_x, r_y, r_z, box[1]);
     if (goxel.brush_origin_at_base)
-        box[3][2] += r_z;
+        box[3][2] += r_z - 0.5f;
     mat4_copy(box, out);
 }
 
@@ -130,7 +132,6 @@ static int on_drag(gesture3d_t *gest, void *user)
 {
     tool_brush_t *brush = USER_GET(user, 0);
     painter_t painter = *(painter_t*)USER_GET(user, 1);
-    const shape_t *shape = painter.shape;
     float box[4][4];
     cursor_t *curs = gest->cursor;
     bool shift = curs->flags & CURSOR_SHIFT;
@@ -141,6 +142,7 @@ static int on_drag(gesture3d_t *gest, void *user)
     float pos[3];
     bool alt = curs->flags & CURSOR_LEFT_ALT;
     int merge_mode;
+    float spacing;
 
     float target[3];
     vec3_copy(curs->pos, target);
@@ -162,7 +164,6 @@ static int on_drag(gesture3d_t *gest, void *user)
     }
 
     painter = *(painter_t*)USER_GET(user, 1);
-    shape = painter.shape;
     if (    (gest->state == GESTURE_UPDATE) &&
             (check_can_skip(brush, curs, painter.mode))) {
         return 0;
@@ -179,18 +180,43 @@ static int on_drag(gesture3d_t *gest, void *user)
     if (!brush->delta) brush->delta = volume_new();
     volume_clear(brush->delta);
 
-    // Shift+click: cylinder from previous stroke end to current target.
+    // Step ~ brush radius (min axis): small brushes stay 1-voxel dense;
+    // large brushes avoid a volume_op per voxel of travel.
+    spacing = max(0.7f, min3(r_x, r_y, r_z));
+
+    // Shift+click: connect previous stroke end → target.
     if (gest->state == GESTURE_BEGIN && shift) {
-        painter.shape = &shape_cylinder;
-        get_box3(brush->start_pos, target, curs->normal, r_x, r_y, r_z, NULL, box);
-        volume_op(brush->delta, &painter, box);
-        painter.shape = shape;
+        if (r_x <= 0.5f && r_y <= 0.5f) {
+            // 1×1 footprint: stamp cubes so stepped paths stay solid.
+            painter.shape = &shape_cube;
+            nb = ceil(vec3_dist(brush->start_pos, target) / spacing);
+            nb = max(nb, 1);
+            for (i = 0; i <= nb; i++) {
+                vec3_mix(brush->start_pos, target, (float)i / nb, pos);
+                get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
+                volume_op(brush->delta, &painter, box);
+            }
+        } else if (painter.shape == &shape_sphere) {
+            // Larger spheres: one tube along the segment (not stamped spheres).
+            painter.shape = &shape_cylinder;
+            get_box3(brush->start_pos, target, curs->normal,
+                     r_x, r_y, r_z, NULL, box);
+            volume_op(brush->delta, &painter, box);
+            painter.shape = &shape_sphere;
+        } else {
+            // Cube / cylinder: stamp the brush along the path (full height
+            // on diagonals; origin-at-base walls stay uniform).
+            nb = ceil(vec3_dist(brush->start_pos, target) / spacing);
+            nb = max(nb, 1);
+            for (i = 0; i <= nb; i++) {
+                vec3_mix(brush->start_pos, target, (float)i / nb, pos);
+                get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
+                volume_op(brush->delta, &painter, box);
+            }
+        }
     }
 
     // Stamp along the segment so fast motion does not leave gaps.
-    // Step ~ brush radius (min axis): small brushes stay 1-voxel dense;
-    // large brushes avoid a volume_op per voxel of travel.
-    float spacing = max(0.7f, min3(r_x, r_y, r_z));
     nb = ceil(vec3_dist(curs->pos, brush->last_pos) / spacing);
     nb = max(nb, 1);
     if (!alt) {
