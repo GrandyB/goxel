@@ -62,6 +62,7 @@ typedef struct {
     int preset_index;
     int bleed_distance;
     float bleed_strength;
+    float bleed_lightness;  /* 0 = black, 1 = unchanged, 2 = white */
     float bleed_blur;       /* box-blur radius on dithered bleed (blocks) */
     float bleed_dithering;  /* edge scatter radius (brush-style) */
     float bleed_noise;      /* random RGB noise amplitude on bled colour */
@@ -193,6 +194,7 @@ static void reset_bleed_defaults(filter_water_layer_t *filter)
 {
     filter->bleed_distance = 6;
     filter->bleed_strength = 0.9f;
+    filter->bleed_lightness = 0.75f;
     filter->bleed_blur = 2.0f;
     filter->bleed_dithering = 4.0f;
     filter->bleed_noise = 6.0f;
@@ -354,6 +356,26 @@ static void blend_rgb(uint8_t base[4], const uint8_t overlay[4], float t)
     base[2] = (uint8_t)clamp((int)lroundf(base[2] + (overlay[2] - base[2]) * u), 0, 255);
 }
 
+/* 0 = black, 1 = unchanged, 2 = white. */
+static void apply_bleed_lightness(uint8_t c[4], float lightness)
+{
+    float L = clamp(lightness, 0.0f, 2.0f);
+    float t;
+    int i;
+
+    if (fabsf(L - 1.0f) < 1e-6f)
+        return;
+    if (L <= 1.0f) {
+        for (i = 0; i < 3; i++)
+            c[i] = (uint8_t)clamp((int)lroundf((float)c[i] * L), 0, 255);
+    } else {
+        t = L - 1.0f;
+        for (i = 0; i < 3; i++)
+            c[i] = (uint8_t)clamp(
+                (int)lroundf((float)c[i] + (255.0f - (float)c[i]) * t), 0, 255);
+    }
+}
+
 /*
  * Random noise on bled RGB. Mostly luminance (±amount on all channels) with
  * a small chromatic component so saturation stays limited (brush-like).
@@ -486,8 +508,8 @@ static void field_to_color(const water_layer_settings_t *s, float h,
 static void generate_water_layer(volume_t *volume,
                                  const water_layer_settings_t *settings,
                                  int bleed_distance, float bleed_strength,
-                                 float bleed_blur, float bleed_dithering,
-                                 float bleed_noise)
+                                 float bleed_lightness, float bleed_blur,
+                                 float bleed_dithering, float bleed_noise)
 {
     float box[4][4];
     int dimensions[3], start_pos[3];
@@ -593,6 +615,7 @@ static void generate_water_layer(volume_t *volume,
             if (t <= 0.0f)
                 continue;
 
+            apply_bleed_lightness(bleed, bleed_lightness);
             bidx = idx * 4;
             bleed_buf[bidx + 0] = (float)bleed[0] * t;
             bleed_buf[bidx + 1] = (float)bleed[1] * t;
@@ -721,21 +744,25 @@ static int gui(filter_t *filter_)
         gui_tooltip_if_hovered("Separation between deep, mid, and foam colours.");
     }
 
-    if (gui_collapsing_header("Color bleed", true)) {
+    if (gui_collapsing_header("Color bleed", false)) {
         gui_input_int("Distance", &filter->bleed_distance, 0, 64);
         gui_tooltip_if_hovered(
             "How far colours from blocks above the water (z+1) spread into "
             "the water sheet. 0 disables bleed.");
-        gui_input_float("Strength", &filter->bleed_strength, 0.05f, 0.0f, 1.0f,
+        gui_input_float("Strength", &filter->bleed_strength, 0.01f, 0.0f, 1.0f,
                         "%.2f");
         gui_tooltip_if_hovered(
             "Opacity of the bled colour, including the direct copy under a "
             "z+1 block.");
+        gui_input_float("Lightness", &filter->bleed_lightness, 0.05f, 0.0f, 2.0f,
+                        "%.2f");
+        gui_tooltip_if_hovered(
+            "0 = pitch black, 1 = no change, 2 = white.");
         gui_input_float("Blur", &filter->bleed_blur, 0.1f, 0.0f, 16.0f, "%.1f");
         gui_tooltip_if_hovered(
             "Box-blur radius (blocks) applied to the dithered bleed colours. "
             "0 = raw dither, higher = softer speckles.");
-        gui_input_float("Dithering", &filter->bleed_dithering, 0.1f, 0.0f, 16.0f,
+        gui_input_float("Dithering", &filter->bleed_dithering, 0.1f, 0.0f, 32.0f,
                         "%.1f");
         gui_tooltip_if_hovered(
             "0 = none; higher scatters/dithers the bleed falloff edge "
@@ -764,8 +791,8 @@ static int gui(filter_t *filter_)
         image_history_push(goxel.image);
         generate_water_layer(goxel.image->active_layer->volume, s,
                              filter->bleed_distance, filter->bleed_strength,
-                             filter->bleed_blur, filter->bleed_dithering,
-                             filter->bleed_noise);
+                             filter->bleed_lightness, filter->bleed_blur,
+                             filter->bleed_dithering, filter->bleed_noise);
     }
     return 0;
 }
