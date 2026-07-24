@@ -149,6 +149,23 @@ static const water_layer_preset_t presets[] = {
             .seed = 19,
         },
     },
+    {
+        /* Matches genland default water (#3C6478) with almost flat surface. */
+        .name = "Classic gen",
+        .settings = {
+            .color = {57, 100, 120, 255},
+            .deep_color = {40, 75, 93, 255},
+            .foam_color = {76, 107, 123, 255},
+            .scale = 30.0f,
+            .direction_deg = 18.0f,
+            .stretch = 1.3f,
+            .warp = 0.12f,
+            .detail = 0.28f,
+            .foam = 0.3f,
+            .contrast = 0.7f,
+            .seed = 1,
+        },
+    },
 };
 
 static const int preset_count = (int)(sizeof(presets) / sizeof(presets[0]));
@@ -395,34 +412,39 @@ static int gui(filter_t *filter_)
     gui_row_end();
     gui_group_end();
 
-    gui_group_begin("Colors");
-    gui_color_small("Mid", s->color);
-    gui_color_small("Deep", s->deep_color);
-    gui_color_small("Foam", s->foam_color);
-    gui_group_end();
+    if(gui_collapsing_header("Colors", true)) {
+        gui_color_small("Mid", s->color);
+        gui_color_small("Deep", s->deep_color);
+        gui_color_small("Foam", s->foam_color);
+    }
 
-    gui_group_begin("Waves");
-    gui_input_float("Scale", &s->scale, 1.0f, 1.0f, 256.0f, "%.0f");
-    gui_tooltip_if_hovered("Size of the large swells in blocks (higher = broader).");
-    gui_input_float("Direction", &s->direction_deg, 1.0f, 0.0f, 360.0f, "%.0f");
-    gui_tooltip_if_hovered("Swell travel direction in degrees.");
-    gui_input_float("Stretch", &s->stretch, 0.05f, 1.0f, 6.0f, "%.2f");
-    gui_tooltip_if_hovered(
-        "Elongates waves along the swell direction (1 = round cells).");
-    gui_input_float("Warp", &s->warp, 0.01f, 0.0f, 2.0f, "%.2f");
-    gui_tooltip_if_hovered("Domain warp — bends the pattern into flowing shapes.");
-    gui_input_float("Detail", &s->detail, 0.01f, 0.0f, 1.0f, "%.2f");
-    gui_tooltip_if_hovered("Amount of fine ripple noise on top of the swells.");
-    gui_input_float("Foam", &s->foam, 0.01f, 0.0f, 1.0f, "%.2f");
-    gui_tooltip_if_hovered("How strongly bright foam appears on wave crests.");
-    gui_input_float("Contrast", &s->contrast, 0.01f, 0.0f, 1.0f, "%.2f");
-    gui_tooltip_if_hovered("Separation between deep, mid, and foam colours.");
+    if(gui_collapsing_header("Waves", true)) {
+        gui_input_float("Scale", &s->scale, 1.0f, 1.0f, 256.0f, "%.0f");
+        gui_tooltip_if_hovered("Size of the large swells in blocks (higher = broader).");
+        gui_input_float("Direction", &s->direction_deg, 1.0f, 0.0f, 360.0f, "%.0f");
+        gui_tooltip_if_hovered("Swell travel direction in degrees.");
+        gui_input_float("Stretch", &s->stretch, 0.05f, 1.0f, 6.0f, "%.2f");
+        gui_tooltip_if_hovered(
+            "Elongates waves along the swell direction (1 = round cells).");
+        gui_input_float("Warp", &s->warp, 0.01f, 0.0f, 2.0f, "%.2f");
+        gui_tooltip_if_hovered("Domain warp — bends the pattern into flowing shapes.");
+        gui_input_float("Detail", &s->detail, 0.01f, 0.0f, 1.0f, "%.2f");
+        gui_tooltip_if_hovered("Amount of fine ripple noise on top of the swells.");
+        gui_input_float("Foam", &s->foam, 0.01f, 0.0f, 1.0f, "%.2f");
+        gui_tooltip_if_hovered("How strongly bright foam appears on wave crests.");
+        gui_input_float("Contrast", &s->contrast, 0.01f, 0.0f, 1.0f, "%.2f");
+        gui_tooltip_if_hovered("Separation between deep, mid, and foam colours.");
+    }
+    
+    gui_separator();
+    
     gui_input_int("Seed", &s->seed, 0, RAND_MAX);
     if (gui_button("Randomize seed", -1, 0)) {
         srand((unsigned)time(NULL));
         s->seed = rand();
     }
-    gui_group_end();
+
+    gui_separator();
 
     if (gui_button("Generate", -1, 0)) {
         if (!goxel.image || !goxel.image->active_layer ||
