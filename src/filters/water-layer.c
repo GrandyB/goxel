@@ -193,7 +193,7 @@ static void settings_copy(water_layer_settings_t *dst,
 static void reset_bleed_defaults(filter_water_layer_t *filter)
 {
     filter->bleed_distance = 6;
-    filter->bleed_strength = 0.9f;
+    filter->bleed_strength = 0.8f;
     filter->bleed_lightness = 0.75f;
     filter->bleed_blur = 2.0f;
     filter->bleed_dithering = 4.0f;
