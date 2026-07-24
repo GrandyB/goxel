@@ -50,40 +50,14 @@ typedef struct
 #define VSID 512
 #define VSHL 9 // used in lighting calc
 
-static void process_voxel_data(volume_t *volume, genland_settings_t *settings, vcol *argb)
+/* Cap column height at the image box Z, but never below GENLAND_MIN_HEIGHT. */
+static int genland_height_cap(void)
 {
-    if (settings->replace_current_layer) {
-        volume_clear(volume);
-    }
-    int start_pos[3];
-    box_get_start_pos(goxel.image->box, start_pos);
-
-    int pos[3];
-    // Loop over each (x, y) coordinate in the buffer grid
-    for (int y = 0; y < VSID; y++)
-    {
-        for (int x = 0; x < VSID; x++, argb++)
-        {
-            // The alpha channel holds the height value, but with 0 at the top.
-            // Convert it so that 0 becomes the bottom of the volume.
-            // settings->max_height - 1 is the maximum z index in the volume.
-            int voxelTopZ = clamp((settings->max_height - 1) - (int)argb->a, 0, settings->max_height);
-            
-            // Only process columns with a valid height.
-            if (voxelTopZ >= 0)
-            {
-                // Fill the column from the bottom (z = 0) up to voxelTopZ with the same color.
-                for (int z = 0; z <= voxelTopZ; z++)
-                {
-                    pos[0] = x + start_pos[0];
-                    pos[1] = y + start_pos[1];
-                    pos[2] = z + start_pos[2];
-                    uint8_t color[4] = {argb->r, argb->g, argb->b, 255};
-                    volume_set_at(volume, NULL, pos, color);
-                }
-            }
-        }
-    }
+    int dimensions[3];
+    if (box_is_null(goxel.image->box))
+        return GENLAND_MIN_HEIGHT;
+    box_get_dimensions(goxel.image->box, dimensions);
+    return max(GENLAND_MIN_HEIGHT, dimensions[2]);
 }
 
 //----------------------------------------------------------------------------
@@ -207,7 +181,39 @@ double noise3d(double fx, double fy, double fz, long mask)
 vcol buf[VSID * VSID];
 vcol amb[VSID * VSID]; // ambient
 float hgt[VSID * VSID];
+int column_h[VSID * VSID]; // clipped column heights for voxel fill
 unsigned char sh[VSID * VSID];
+
+static void process_voxel_data(volume_t *volume, genland_settings_t *settings,
+                               vcol *argb, const int *heights, int height_cap)
+{
+    if (settings->replace_current_layer) {
+        volume_clear(volume);
+    }
+    int start_pos[3];
+    box_get_start_pos(goxel.image->box, start_pos);
+
+    int pos[3];
+    int max_top_z = max(height_cap - 1, 0);
+    for (int y = 0; y < VSID; y++)
+    {
+        for (int x = 0; x < VSID; x++, argb++, heights++)
+        {
+            int voxelTopZ = clamp(*heights - 1, 0, max_top_z);
+            if (voxelTopZ < 0)
+                continue;
+
+            for (int z = 0; z <= voxelTopZ; z++)
+            {
+                pos[0] = x + start_pos[0];
+                pos[1] = y + start_pos[1];
+                pos[2] = z + start_pos[2];
+                uint8_t color[4] = {argb->r, argb->g, argb->b, 255};
+                volume_set_at(volume, NULL, pos, color);
+            }
+        }
+    }
+}
 
 #define PI 3.141592653589793
 
@@ -237,6 +243,8 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     printf("Assistance by Ken Silverman (http://advsys.net/ken)\n");
 
     noiseinit(settings->seed);
+
+    int height_cap = genland_height_cap();
 
     // Tom's algorithm from 12/04/2005 (more or less)
     printf("Generating landscape\n");
@@ -273,7 +281,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
                     sampleY *= 2;
                 }
                 // Compute base height for the sample
-                baseSamples[octaveIndex] = (tempValue * - settings->variety) + settings->offset;
+                baseSamples[octaveIndex] = (tempValue * - settings->amplitude) + settings->base_height;
                 // Modulate height using sine to simulate river effect (.02 approximates river width)
                 if (settings->num_rivers >= 1 && settings->river_width != 0) {
                     tempValue = sin(pixelX * ((2 * PI * settings->num_rivers) / VSID) + riverNoise * 4 + (((1 - settings->river_phase) * 2 * PI) + (1.5 * PI)))
@@ -308,7 +316,8 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
 
             // Calculate blend factor for grass using normal and additional noise
             grassBlend = min(max(max(-normalZ, 0.0) * 1.4 - correctedSamples[0] / 32.0 +
-                                noise3d(pixelX * (1.0 / 64.0), pixelY * (1.0 / 64.0), 0.3, 15) * 0.3, 0.0), 1.0);
+                                noise3d(pixelX * (1.0 / 64.0), pixelY * (1.0 / 64.0), 0.3, 15) * 0.3 +
+                                settings->grass_bias, 0.0), 1.0);
             // Blend towards first grass color
             groundRed += (settings->color_grass1[0] - groundRed) * grassBlend;
             groundGreen += (settings->color_grass1[1] - groundGreen) * grassBlend;
@@ -340,7 +349,9 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
                         / sqrt(0.5 * 0.5 + 0.25 * 0.25 + 1.0 * 1.0);
             tempValue *= 1.2;
 
-            buf[globalIndex].a = (unsigned char)(settings->max_height - baseSamples[0]);
+            // Clip to image-box height (floor GENLAND_MIN_HEIGHT); never wrap.
+            column_h[globalIndex] = clamp((int)baseSamples[0], 0, height_cap);
+            buf[globalIndex].a = 255;
             //buf[globalIndex].a = (unsigned char)(175.0 - baseSamples[0] * ((double)VSID / 256.0)); // original genland
             buf[globalIndex].r = (unsigned char)min(max(groundRed * tempValue, 0), 255 - maxAmbient);
             buf[globalIndex].g = (unsigned char)min(max(groundGreen * tempValue, 0), 255 - maxAmbient);
@@ -408,7 +419,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
     }
 
     // Process and integrate the voxel data into the volume structure
-    process_voxel_data(volume, settings, buf);
+    process_voxel_data(volume, settings, buf, column_h, height_cap);
 
     free(octaveAmplitudes);
     free(maskLUT);
