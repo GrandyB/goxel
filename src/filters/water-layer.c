@@ -27,6 +27,13 @@
  * Flat 1-block water sheet on the image-box bottom. Colour is painted with a
  * single domain-warped directional FBM field (swells + ripples + foam crests).
  * Always overwrites the bottom voxel of each column.
+ *
+ * Optional colour bleed (independent of presets): when bleed_distance > 0,
+ * colours from solids one block above the water (z = bottom + 1) are blended
+ * into the water sheet, fading outwards over bleed_distance blocks at
+ * bleed_strength opacity. bleed_dithering scatters the falloff; bleed_blur
+ * box-blurs that dithered contribution; bleed_noise then adds limited-sat
+ * luminance noise on the blurred colour before compositing.
  */
 
 typedef struct {
@@ -48,10 +55,16 @@ typedef struct {
     water_layer_settings_t settings;
 } water_layer_preset_t;
 
+/* Bleed is filter-owned so Load preset / wave Reset leave it alone. */
 typedef struct {
     filter_t filter;
     water_layer_settings_t settings;
     int preset_index;
+    int bleed_distance;
+    float bleed_strength;
+    float bleed_blur;       /* box-blur radius on dithered bleed (blocks) */
+    float bleed_dithering;  /* edge scatter radius (brush-style) */
+    float bleed_noise;      /* random RGB noise amplitude on bled colour */
 } filter_water_layer_t;
 
 static const water_layer_settings_t default_settings = {
@@ -176,10 +189,20 @@ static void settings_copy(water_layer_settings_t *dst,
     memcpy(dst, src, sizeof(*dst));
 }
 
+static void reset_bleed_defaults(filter_water_layer_t *filter)
+{
+    filter->bleed_distance = 6;
+    filter->bleed_strength = 0.9f;
+    filter->bleed_blur = 2.0f;
+    filter->bleed_dithering = 4.0f;
+    filter->bleed_noise = 6.0f;
+}
+
 static void reset_to_defaults(filter_water_layer_t *filter)
 {
     settings_copy(&filter->settings, &default_settings);
     filter->preset_index = 0;
+    reset_bleed_defaults(filter);
 }
 
 static void load_preset(filter_water_layer_t *filter, int index)
@@ -322,6 +345,124 @@ static void lerp_color(const uint8_t a[4], const uint8_t b[4], float t,
     out[3] = 255;
 }
 
+/* Blend overlay RGB into base at opacity t; keep base alpha. */
+static void blend_rgb(uint8_t base[4], const uint8_t overlay[4], float t)
+{
+    float u = clamp(t, 0.0f, 1.0f);
+    base[0] = (uint8_t)clamp((int)lroundf(base[0] + (overlay[0] - base[0]) * u), 0, 255);
+    base[1] = (uint8_t)clamp((int)lroundf(base[1] + (overlay[1] - base[1]) * u), 0, 255);
+    base[2] = (uint8_t)clamp((int)lroundf(base[2] + (overlay[2] - base[2]) * u), 0, 255);
+}
+
+/*
+ * Random noise on bled RGB. Mostly luminance (±amount on all channels) with
+ * a small chromatic component so saturation stays limited (brush-like).
+ */
+static void noise_bleed_color(uint8_t c[4], int x, int y, int z, float amount)
+{
+    const float sat = 0.05f; /* ~brush default noise_saturation (5/100) */
+    float a = fabsf(amount);
+    float n, cr, cg, cb;
+    if (a < 1e-6f)
+        return;
+    n = uniform_noise((float)x, (float)y, (float)z) * 2.0f - 1.0f;
+    cr = uniform_noise((float)x + 19.0f, (float)y, (float)z) * 2.0f - 1.0f;
+    cg = uniform_noise((float)x, (float)y + 37.0f, (float)z) * 2.0f - 1.0f;
+    cb = uniform_noise((float)x, (float)y, (float)z + 53.0f) * 2.0f - 1.0f;
+    c[0] = (uint8_t)clamp(
+        (int)lroundf((float)c[0] + (n + cr * sat) * a), 0, 255);
+    c[1] = (uint8_t)clamp(
+        (int)lroundf((float)c[1] + (n + cg * sat) * a), 0, 255);
+    c[2] = (uint8_t)clamp(
+        (int)lroundf((float)c[2] + (n + cb * sat) * a), 0, 255);
+}
+
+/* Box-blur premultiplied RGBA float buffer (rgb*w, w). OOB = zero. */
+static void box_blur_premul(float *dst, const float *src,
+                            int width, int height, int r)
+{
+    int x, y, dx, dy, sx, sy, idx, nidx, area;
+    float sum_r, sum_g, sum_b, sum_w;
+
+    if (r <= 0) {
+        memcpy(dst, src, (size_t)width * (size_t)height * 4 * sizeof(float));
+        return;
+    }
+    area = (2 * r + 1) * (2 * r + 1);
+    for (x = 0; x < width; x++) {
+        for (y = 0; y < height; y++) {
+            sum_r = sum_g = sum_b = sum_w = 0.0f;
+            for (dy = -r; dy <= r; dy++) {
+                for (dx = -r; dx <= r; dx++) {
+                    sx = x + dx;
+                    sy = y + dy;
+                    if (sx < 0 || sy < 0 || sx >= width || sy >= height)
+                        continue;
+                    nidx = (sx * height + sy) * 4;
+                    sum_r += src[nidx + 0];
+                    sum_g += src[nidx + 1];
+                    sum_b += src[nidx + 2];
+                    sum_w += src[nidx + 3];
+                }
+            }
+            idx = (x * height + y) * 4;
+            /* Divide by full kernel so edges fade; empty taps are zero. */
+            dst[idx + 0] = sum_r / (float)area;
+            dst[idx + 1] = sum_g / (float)area;
+            dst[idx + 2] = sum_b / (float)area;
+            dst[idx + 3] = sum_w / (float)area;
+        }
+    }
+}
+
+/*
+ * Nearest solid at z = water+1 within Chebyshev radius. On distance ties,
+ * average source colours. Returns false if nothing in range.
+ */
+static bool bleed_sample(const uint8_t *src_rgba, const uint8_t *src_solid,
+                         int width, int height, int x, int y, int radius,
+                         uint8_t out[4], int *out_dist)
+{
+    int dx, dy, sx, sy, d, best = radius + 1;
+    int sum_r = 0, sum_g = 0, sum_b = 0, count = 0;
+    int idx;
+
+    for (dy = -radius; dy <= radius; dy++) {
+        for (dx = -radius; dx <= radius; dx++) {
+            d = max(abs(dx), abs(dy)); /* Chebyshev */
+            if (d > radius || d > best)
+                continue;
+            sx = x + dx;
+            sy = y + dy;
+            if (sx < 0 || sy < 0 || sx >= width || sy >= height)
+                continue;
+            idx = sx * height + sy;
+            if (!src_solid[idx])
+                continue;
+            if (d < best) {
+                best = d;
+                sum_r = src_rgba[idx * 4 + 0];
+                sum_g = src_rgba[idx * 4 + 1];
+                sum_b = src_rgba[idx * 4 + 2];
+                count = 1;
+            } else { /* d == best */
+                sum_r += src_rgba[idx * 4 + 0];
+                sum_g += src_rgba[idx * 4 + 1];
+                sum_b += src_rgba[idx * 4 + 2];
+                count++;
+            }
+        }
+    }
+    if (count <= 0)
+        return false;
+    out[0] = (uint8_t)((sum_r + count / 2) / count);
+    out[1] = (uint8_t)((sum_g + count / 2) / count);
+    out[2] = (uint8_t)((sum_b + count / 2) / count);
+    out[3] = 255;
+    *out_dist = best;
+    return true;
+}
+
 static void field_to_color(const water_layer_settings_t *s, float h,
                            uint8_t out[4])
 {
@@ -343,14 +484,23 @@ static void field_to_color(const water_layer_settings_t *s, float h,
 }
 
 static void generate_water_layer(volume_t *volume,
-                                 const water_layer_settings_t *settings)
+                                 const water_layer_settings_t *settings,
+                                 int bleed_distance, float bleed_strength,
+                                 float bleed_blur, float bleed_dithering,
+                                 float bleed_noise)
 {
     float box[4][4];
     int dimensions[3], start_pos[3];
-    int x, y, pos[3], bottom_z;
-    uint8_t color[4];
+    int x, y, pos[3], bottom_z, above_z, idx, bidx;
+    int width, height, radius, search_r, dist, blur_r;
+    uint8_t color[4], bleed[4], sample[4];
+    uint8_t *src_rgba = NULL;
+    uint8_t *src_solid = NULL;
+    uint8_t *water_rgba = NULL;
+    float *bleed_buf = NULL;
+    float *bleed_blurred = NULL;
     volume_iterator_t iter;
-    float h;
+    float h, strength, dither, t, n, k, fade, w;
 
     if (!volume || !goxel.image)
         return;
@@ -368,18 +518,152 @@ static void generate_water_layer(volume_t *volume,
 
     noise_init(settings->seed);
     bottom_z = start_pos[2];
+    above_z = bottom_z + 1;
+    width = dimensions[0];
+    height = dimensions[1];
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
 
-    for (x = 0; x < dimensions[0]; x++) {
-        for (y = 0; y < dimensions[1]; y++) {
+    radius = bleed_distance;
+    strength = clamp(bleed_strength, 0.0f, 1.0f);
+    dither = max(bleed_dithering, 0.0f);
+    blur_r = (int)lroundf(max(bleed_blur, 0.0f));
+    search_r = radius + (int)ceilf(dither);
+
+    water_rgba = calloc((size_t)width * (size_t)height * 4, 1);
+    if (!water_rgba)
+        return;
+
+    if (radius > 0) {
+        src_rgba = calloc((size_t)width * (size_t)height * 4, 1);
+        src_solid = calloc((size_t)width * (size_t)height, 1);
+        bleed_buf = calloc((size_t)width * (size_t)height * 4, sizeof(float));
+        if (!src_rgba || !src_solid || !bleed_buf) {
+            free(src_rgba);
+            free(src_solid);
+            free(bleed_buf);
+            free(water_rgba);
+            return;
+        }
+        for (x = 0; x < width; x++) {
+            for (y = 0; y < height; y++) {
+                pos[0] = start_pos[0] + x;
+                pos[1] = start_pos[1] + y;
+                pos[2] = above_z;
+                volume_get_at(volume, &iter, pos, sample);
+                idx = x * height + y;
+                if (sample[3] != 0) {
+                    src_solid[idx] = 1;
+                    src_rgba[idx * 4 + 0] = sample[0];
+                    src_rgba[idx * 4 + 1] = sample[1];
+                    src_rgba[idx * 4 + 2] = sample[2];
+                    src_rgba[idx * 4 + 3] = sample[3];
+                }
+            }
+        }
+    }
+
+    /* Pass 1: water sheet + dithered bleed contribution (premultiplied). */
+    for (x = 0; x < width; x++) {
+        for (y = 0; y < height; y++) {
             pos[0] = start_pos[0] + x;
             pos[1] = start_pos[1] + y;
             pos[2] = bottom_z;
+            idx = x * height + y;
             h = water_field(settings, (float)x, (float)y);
             field_to_color(settings, h, color);
-            volume_set_at(volume, &iter, pos, color);
+            water_rgba[idx * 4 + 0] = color[0];
+            water_rgba[idx * 4 + 1] = color[1];
+            water_rgba[idx * 4 + 2] = color[2];
+            water_rgba[idx * 4 + 3] = color[3];
+
+            if (radius <= 0)
+                continue;
+            if (!bleed_sample(src_rgba, src_solid, width, height, x, y,
+                              search_r, bleed, &dist))
+                continue;
+
+            /* Brush-style: scatter the falloff boundary. */
+            k = (float)(radius + 1) - (float)dist;
+            if (dither > 0.0f) {
+                n = uniform_noise((float)pos[0], (float)pos[1], (float)pos[2]);
+                k += (n * 2.0f - 1.0f) * dither;
+            }
+            fade = clamp(k / (float)(radius + 1), 0.0f, 1.0f);
+            t = strength * fade;
+            if (t <= 0.0f)
+                continue;
+
+            bidx = idx * 4;
+            bleed_buf[bidx + 0] = (float)bleed[0] * t;
+            bleed_buf[bidx + 1] = (float)bleed[1] * t;
+            bleed_buf[bidx + 2] = (float)bleed[2] * t;
+            bleed_buf[bidx + 3] = t;
         }
     }
+
+    /* Pass 2: blur dithered bleed, then noise, then composite onto water. */
+    if (radius > 0) {
+        if (blur_r > 0) {
+            bleed_blurred = calloc((size_t)width * (size_t)height * 4,
+                                   sizeof(float));
+            if (bleed_blurred) {
+                box_blur_premul(bleed_blurred, bleed_buf, width, height,
+                                blur_r);
+            } else {
+                bleed_blurred = bleed_buf; /* fall back: no blur */
+            }
+        } else {
+            bleed_blurred = bleed_buf;
+        }
+
+        for (x = 0; x < width; x++) {
+            for (y = 0; y < height; y++) {
+                idx = x * height + y;
+                bidx = idx * 4;
+                color[0] = water_rgba[bidx + 0];
+                color[1] = water_rgba[bidx + 1];
+                color[2] = water_rgba[bidx + 2];
+                color[3] = water_rgba[bidx + 3];
+                w = bleed_blurred[bidx + 3];
+                if (w > 1e-6f) {
+                    bleed[0] = (uint8_t)clamp(
+                        (int)lroundf(bleed_blurred[bidx + 0] / w), 0, 255);
+                    bleed[1] = (uint8_t)clamp(
+                        (int)lroundf(bleed_blurred[bidx + 1] / w), 0, 255);
+                    bleed[2] = (uint8_t)clamp(
+                        (int)lroundf(bleed_blurred[bidx + 2] / w), 0, 255);
+                    pos[0] = start_pos[0] + x;
+                    pos[1] = start_pos[1] + y;
+                    pos[2] = bottom_z;
+                    noise_bleed_color(bleed, pos[0], pos[1], pos[2],
+                                      bleed_noise);
+                    blend_rgb(color, bleed, clamp(w, 0.0f, 1.0f));
+                }
+                pos[0] = start_pos[0] + x;
+                pos[1] = start_pos[1] + y;
+                pos[2] = bottom_z;
+                volume_set_at(volume, &iter, pos, color);
+            }
+        }
+
+        if (bleed_blurred != bleed_buf)
+            free(bleed_blurred);
+    } else {
+        for (x = 0; x < width; x++) {
+            for (y = 0; y < height; y++) {
+                idx = x * height + y;
+                pos[0] = start_pos[0] + x;
+                pos[1] = start_pos[1] + y;
+                pos[2] = bottom_z;
+                volume_set_at(volume, &iter, pos, &water_rgba[idx * 4]);
+            }
+        }
+    }
+
+    free(src_rgba);
+    free(src_solid);
+    free(bleed_buf);
+    free(water_rgba);
 }
 
 /* ---- GUI ----------------------------------------------------------------- */
@@ -393,7 +677,8 @@ static int gui(filter_t *filter_)
     const char *help_text =
         "Paints a flat 1-block water sheet on the image-box bottom.\n"
         "Uses domain-warped directional noise for swells, ripples, and foam.\n"
-        "Always overwrites the bottom block of each column.";
+        "Always overwrites the bottom block of each column.\n"
+        "Color bleed optionally tints water from solids one block above.";
 
     goxel_set_help_text(help_text);
     if (gui_collapsing_header("Hint", false))
@@ -435,7 +720,33 @@ static int gui(filter_t *filter_)
         gui_input_float("Contrast", &s->contrast, 0.01f, 0.0f, 1.0f, "%.2f");
         gui_tooltip_if_hovered("Separation between deep, mid, and foam colours.");
     }
-    
+
+    if (gui_collapsing_header("Color bleed", true)) {
+        gui_input_int("Distance", &filter->bleed_distance, 0, 64);
+        gui_tooltip_if_hovered(
+            "How far colours from blocks above the water (z+1) spread into "
+            "the water sheet. 0 disables bleed.");
+        gui_input_float("Strength", &filter->bleed_strength, 0.05f, 0.0f, 1.0f,
+                        "%.2f");
+        gui_tooltip_if_hovered(
+            "Opacity of the bled colour, including the direct copy under a "
+            "z+1 block.");
+        gui_input_float("Blur", &filter->bleed_blur, 0.1f, 0.0f, 16.0f, "%.1f");
+        gui_tooltip_if_hovered(
+            "Box-blur radius (blocks) applied to the dithered bleed colours. "
+            "0 = raw dither, higher = softer speckles.");
+        gui_input_float("Dithering", &filter->bleed_dithering, 0.1f, 0.0f, 16.0f,
+                        "%.1f");
+        gui_tooltip_if_hovered(
+            "0 = none; higher scatters/dithers the bleed falloff edge "
+            "(same idea as brush dithering).");
+        gui_input_float("Noise", &filter->bleed_noise, 0.5f, 0.0f, 64.0f,
+                        "%.1f");
+        gui_tooltip_if_hovered(
+            "Random luminance noise amplitude on bled colours (±value). "
+            "Chroma is kept low so hues stay close to the source.");
+    }
+
     gui_separator();
     
     gui_input_int("Seed", &s->seed, 0, RAND_MAX);
@@ -451,7 +762,10 @@ static int gui(filter_t *filter_)
             !goxel.image->active_layer->volume)
             return 0;
         image_history_push(goxel.image);
-        generate_water_layer(goxel.image->active_layer->volume, s);
+        generate_water_layer(goxel.image->active_layer->volume, s,
+                             filter->bleed_distance, filter->bleed_strength,
+                             filter->bleed_blur, filter->bleed_dithering,
+                             filter->bleed_noise);
     }
     return 0;
 }
@@ -460,6 +774,7 @@ static void on_open(filter_t *filter_)
 {
     filter_water_layer_t *filter = (void *)filter_;
     reset_to_defaults(filter);
+    reset_bleed_defaults(filter);
 }
 
 FILTER_REGISTER(water_layer, filter_water_layer_t,
