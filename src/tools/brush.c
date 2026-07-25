@@ -34,10 +34,13 @@ typedef struct {
     // XXX: could we remove this?
     struct     {
         float      pos[3];
+        float      normal[3];
         bool       pressed;
         int        mode;
         uint64_t   volume_key;
         float      radius_x, radius_y, radius_z;
+        bool       block_face_alignment;
+        bool       origin_at_base;
     } last_op;
     /* Active layer before this stroke; used to add map-color history on commit. */
     uint64_t   layer_key_at_stroke_start;
@@ -60,7 +63,12 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
             brush->last_op.radius_x == goxel.radius_x &&
             brush->last_op.radius_y == goxel.radius_y &&
             brush->last_op.radius_z == goxel.radius_z &&
-            vec3_equal(curs->pos, brush->last_op.pos)) {
+            brush->last_op.block_face_alignment ==
+                goxel.brush_block_face_alignment &&
+            brush->last_op.origin_at_base == goxel.brush_origin_at_base &&
+            vec3_equal(curs->pos, brush->last_op.pos) &&
+            (!goxel.brush_block_face_alignment ||
+             vec3_equal(curs->normal, brush->last_op.normal))) {
         return true;
     }
     brush->last_op.pressed = pressed;
@@ -69,8 +77,24 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
     brush->last_op.radius_x = goxel.radius_x;
     brush->last_op.radius_y = goxel.radius_y;
     brush->last_op.radius_z = goxel.radius_z;
+    brush->last_op.block_face_alignment = goxel.brush_block_face_alignment;
+    brush->last_op.origin_at_base = goxel.brush_origin_at_base;
     vec3_copy(curs->pos, brush->last_op.pos);
+    vec3_copy(curs->normal, brush->last_op.normal);
     return false;
+}
+
+/* Match extrude/box_edit: nearest cube face for an axis-aligned normal. */
+static int brush_get_face(const float n[3])
+{
+    int f;
+    const int *n2;
+    for (f = 0; f < 6; f++) {
+        n2 = FACES_NORMALS[f];
+        if (vec3_dot(n, VEC(n2[0], n2[1], n2[2])) > 0.5)
+            return f;
+    }
+    return -1;
 }
 
 // XXX: same as in brush.c.
@@ -79,8 +103,25 @@ static void get_box3(const float p0[3], const float p1[3], const float n[3],
 {
     float rot[4][4], box[4][4];
     float v[3];
+    int face;
 
     if (p1 == NULL) {
+        // Block face alignment: Diameter Z along the snapped face normal
+        // (e.g. wall +Y → world extents X/Z/Y for diameters X/Y/Z).
+        // box[0]=Z, box[1]=X, box[2]=Y — same convention as box_swap_axis.
+        if (goxel.brush_block_face_alignment && n &&
+            (face = brush_get_face(n)) >= 0) {
+            const float (*fm)[4] = FACES_MATS[face];
+            mat4_set_identity(box);
+            vec3_mul(fm[2], r_z, box[0]);
+            vec3_mul(fm[0], r_x, box[1]);
+            vec3_mul(fm[1], r_y, box[2]);
+            vec3_copy(p0, box[3]);
+            if (goxel.brush_origin_at_base)
+                vec3_addk(box[3], fm[2], r_z - 0.5f, box[3]);
+            mat4_copy(box, out);
+            return;
+        }
         bbox_from_extents(box, p0, r_x, r_y, r_z);
         box_swap_axis(box, 2, 0, 1, box);
         // Cursor is on voxel centers (*.5). Shift up so the shape's lowest
@@ -358,6 +399,8 @@ static int gui(tool_t *tool)
     tool_gui_radius();
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
+    gui_checkbox("Block face align", &goxel.brush_block_face_alignment,
+                 "Diameter Z follows the block face normal (paint walls side-on)");
     tool_gui_smoothness();
     tool_gui_color(false);
     gui_section_end();

@@ -708,6 +708,7 @@ void goxel_reset(void)
     goxel.radius_y = 0.5;
     goxel.radius_z = 0.5;
     goxel.brush_origin_at_base = false;
+    goxel.brush_block_face_alignment = false;
     goxel.painter = (painter_t) {
         .shape = &shape_cube,
         .mode = MODE_OVER,
