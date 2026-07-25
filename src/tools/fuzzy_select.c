@@ -21,6 +21,7 @@
 typedef struct {
     tool_t tool;
     int threshold;
+    int expand_distance;
     bool global;
     struct {
         gesture3d_t click;
@@ -139,6 +140,56 @@ static layer_t *cut_as_new_layer(image_t *img, layer_t *layer,
     return new_layer;
 }
 
+/* Grow goxel.mask by Chebyshev distance, clamped to the image box. */
+static void expand_selection_mask(int distance)
+{
+    volume_t *expanded;
+    volume_iterator_t iter;
+    volume_accessor_t acc, src_acc;
+    int pos[3], p[3], dx, dy, dz;
+    int dims[3], start[3];
+    bool use_box;
+    static const uint8_t white[4] = {255, 255, 255, 255};
+
+    if (distance < 1 || !goxel.mask || volume_is_empty(goxel.mask))
+        return;
+
+    use_box = !box_is_null(goxel.image->box);
+    if (use_box) {
+        box_get_dimensions(goxel.image->box, dims);
+        box_get_start_pos(goxel.image->box, start);
+    }
+
+    expanded = volume_copy(goxel.mask);
+    acc = volume_get_accessor(expanded);
+    src_acc = volume_get_accessor(goxel.mask);
+    iter = volume_get_iterator(goxel.mask,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        if (!volume_get_alpha_at(goxel.mask, &src_acc, pos))
+            continue;
+        for (dx = -distance; dx <= distance; dx++) {
+            for (dy = -distance; dy <= distance; dy++) {
+                for (dz = -distance; dz <= distance; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0)
+                        continue;
+                    p[0] = pos[0] + dx;
+                    p[1] = pos[1] + dy;
+                    p[2] = pos[2] + dz;
+                    if (use_box &&
+                        (p[0] < start[0] || p[0] >= start[0] + dims[0] ||
+                         p[1] < start[1] || p[1] >= start[1] + dims[1] ||
+                         p[2] < start[2] || p[2] >= start[2] + dims[2]))
+                        continue;
+                    volume_set_at(expanded, &acc, p, white);
+                }
+            }
+        }
+    }
+    volume_delete(goxel.mask);
+    goxel.mask = expanded;
+}
+
 static int gui(tool_t *tool_)
 {
     tool_fuzzy_select_t *tool = (void*)tool_;
@@ -205,6 +256,15 @@ static int gui(tool_t *tool_)
                          goxel.mask);
     }
     gui_group_end();
+
+    if (tool->expand_distance < 1)
+        tool->expand_distance = 1;
+    if (gui_section_begin("Expand selection", true)) {
+        gui_input_int("Distance", &tool->expand_distance, 1, 128);
+        if (gui_button("Expand", -1, 0))
+            expand_selection_mask(tool->expand_distance);
+    }
+    gui_section_end();
     return 0;
 }
 
