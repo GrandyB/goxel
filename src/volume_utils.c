@@ -307,8 +307,8 @@ static void color_mul(const uint8_t a[4], const uint8_t b[4],
 }
 
 // XXX: cleanup this: in fact we might not need that many modes!
-static void combine(const uint8_t a[4], const uint8_t b[4], int mode,
-                    uint8_t out[4])
+void voxel_combine(const uint8_t a[4], const uint8_t b[4], int mode,
+                   uint8_t out[4])
 {
     int i, aa = a[3], ba = b[3];
     uint8_t ret[4];
@@ -599,7 +599,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         volume_get_at(volume, &accessor, vp, value);
         if (!value[3] && skip_dst_empty) continue;
             //LOG_D("Value: %i/%i/%i, C: %i/%i/%i", value[0], value[1], value[2], c[0], c[1], c[2]);
-        combine(value, c, mode, new_value);
+        voxel_combine(value, c, mode, new_value);
             //LOG_D("new_value: %i/%i/%i", new_value[0], new_value[1], new_value[2]);
         if (!vec4_equal(value, new_value)) {
             volume_set_at(volume, &accessor, vp, new_value);
@@ -756,7 +756,7 @@ static void tile_merge(volume_t *volume, const volume_t *other, const int pos[3]
             // LOG_D("V1: %i/%i/%i, V2: %i/%i/%i", v1[0], v1[1], v1[2], v2[0], v2[1], v2[2]);
             // LOG_D("OV1: %i/%i/%i, OV2: %i/%i/%i", ov1[0], ov1[1], ov1[2], ov2[0], ov2[1], ov2[2]);
         //}
-        combine(v1, v2, mode, v1);
+        voxel_combine(v1, v2, mode, v1);
         volume_set_at(tile, &a3, (int[]){x, y, z}, v1);
     }
     cache_add(cache, &key, sizeof(key), tile, 1, volume_del);

@@ -412,6 +412,7 @@ enum {
     X(ICON_TOOL_EXTRUDE,            6, 0, THEME_GROUP_ICON),
     X(ICON_TOOL_LINE,               7, 1, THEME_GROUP_ICON),
     X(ICON_TOOL_FUZZY_SELECT,       7, 0, THEME_GROUP_ICON),
+    X(ICON_TOOL_CLONE_STAMP,        5, 6, THEME_GROUP_ICON),
     X(ICON_TOOL_PLACER,             6, 6, THEME_GROUP_ICON),
     X(ICON_TOOL_FILL,               7, 6, THEME_GROUP_ICON),
 

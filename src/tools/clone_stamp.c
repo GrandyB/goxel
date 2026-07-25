@@ -1,0 +1,419 @@
+/* Goxel 3D voxels editor — Clone Stamp tool (Paint.NET-style). */
+
+#include "goxel.h"
+#include "utils/clone_stamp_op.h"
+
+/* Purple: Ctrl-hold pick preview (exact sample blocks only). */
+static const uint8_t k_pick_marker[4] = {160, 180, 255, 180};
+/* Yellow: confirmed clone source (exact sample blocks). */
+static const uint8_t k_source_marker[4] = {255, 200, 80, 180};
+
+typedef struct {
+    tool_t tool;
+
+    volume_t *volume_orig; /* Layer snapshot for sampling during a stroke. */
+    volume_t *stroke;      /* Accumulated clone paints (no source marker). */
+
+    bool has_source;
+    float source_pos[3];
+    bool offset_locked;
+    float offset[3];
+
+    /* Sampling options (GUI). */
+    bool sample_inited;
+    bool take_uppermost; /* default true once sample_inited */
+    int  depth;          /* used when !take_uppermost; default 0 */
+
+    float last_pos[3];
+    struct {
+        float    pos[3];
+        bool     pressed;
+        bool     has_source;
+        float    source_pos[3];
+        uint64_t volume_key;
+        float    radius_x, radius_y, radius_z;
+        bool     take_uppermost;
+        int      depth;
+    } last_op;
+
+    struct {
+        gesture3d_t drag;
+        gesture3d_t hover;
+        gesture3d_t ctrl_hover; /* Ctrl held: pick-source footprint at cursor */
+        gesture3d_t set_source;
+    } gestures;
+} tool_clone_stamp_t;
+
+static void ensure_sample_defaults(tool_clone_stamp_t *cs)
+{
+    if (cs->sample_inited) return;
+    cs->take_uppermost = true;
+    cs->depth = 0;
+    cs->sample_inited = true;
+}
+
+static clone_stamp_sample_t sample_opts(const tool_clone_stamp_t *cs)
+{
+    return (clone_stamp_sample_t){
+        .take_uppermost = cs->take_uppermost,
+        .depth = cs->depth,
+    };
+}
+
+static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
+{
+    volume_t *volume = goxel.tool_volume;
+    const bool pressed = curs->flags & CURSOR_PRESSED;
+    if (    pressed == cs->last_op.pressed &&
+            cs->has_source == cs->last_op.has_source &&
+            cs->last_op.volume_key == volume_get_key(volume) &&
+            cs->last_op.radius_x == goxel.radius_x &&
+            cs->last_op.radius_y == goxel.radius_y &&
+            cs->last_op.radius_z == goxel.radius_z &&
+            cs->last_op.take_uppermost == cs->take_uppermost &&
+            cs->last_op.depth == cs->depth &&
+            vec3_equal(curs->pos, cs->last_op.pos) &&
+            (!cs->has_source || vec3_equal(cs->source_pos, cs->last_op.source_pos))) {
+        return true;
+    }
+    cs->last_op.pressed = pressed;
+    cs->last_op.has_source = cs->has_source;
+    cs->last_op.volume_key = volume_get_key(volume);
+    cs->last_op.radius_x = goxel.radius_x;
+    cs->last_op.radius_y = goxel.radius_y;
+    cs->last_op.radius_z = goxel.radius_z;
+    cs->last_op.take_uppermost = cs->take_uppermost;
+    cs->last_op.depth = cs->depth;
+    vec3_copy(curs->pos, cs->last_op.pos);
+    if (cs->has_source)
+        vec3_copy(cs->source_pos, cs->last_op.source_pos);
+    return false;
+}
+
+static void get_box3(const float p0[3], float r_x, float r_y, float r_z,
+                     float out[4][4])
+{
+    float box[4][4];
+
+    bbox_from_extents(box, p0, r_x, r_y, r_z);
+    box_swap_axis(box, 2, 0, 1, box);
+    if (goxel.brush_origin_at_base)
+        box[3][2] += r_z - 0.5f;
+    mat4_copy(box, out);
+}
+
+static const shape_t *clone_shape(void)
+{
+    return goxel.painter.shape ? goxel.painter.shape : &shape_sphere;
+}
+
+static void apply_at(tool_clone_stamp_t *cs, volume_t *dest,
+                     const volume_t *sample,
+                     const float target[3], const float source[3])
+{
+    float box[4][4];
+    clone_stamp_sample_t opts = sample_opts(cs);
+
+    get_box3(target, goxel.radius_x, goxel.radius_y, goxel.radius_z, box);
+    clone_stamp_apply(dest, sample, target, source, box, clone_shape(), 0.f,
+                      &opts);
+}
+
+/* Highlight the exact blocks that would be copied from at `source`. */
+static void preview_source_at(tool_clone_stamp_t *cs, volume_t *dest,
+                              const volume_t *sample, const float source[3],
+                              const uint8_t marker[4])
+{
+    float box[4][4];
+    clone_stamp_sample_t opts = sample_opts(cs);
+
+    get_box3(source, goxel.radius_x, goxel.radius_y, goxel.radius_z, box);
+    clone_stamp_preview_source(dest, sample, source, box, clone_shape(), 0.f,
+                               &opts, marker);
+}
+
+static void refresh_tool_preview(tool_clone_stamp_t *cs,
+                                 const volume_t *sample_for_source)
+{
+    if (!cs->stroke) return;
+    if (!goxel.tool_volume) goxel.tool_volume = volume_new();
+    volume_set(goxel.tool_volume, cs->stroke);
+    if (cs->has_source)
+        preview_source_at(cs, goxel.tool_volume, sample_for_source,
+                          cs->source_pos, k_source_marker);
+    cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
+}
+
+/* Layer + exact sample blocks at `at` with the given marker colour. */
+static void show_exact_source_preview(tool_clone_stamp_t *cs,
+                                      const float at[3],
+                                      const uint8_t marker[4])
+{
+    volume_t *layer = goxel.image->active_layer->volume;
+
+    if (!goxel.tool_volume) goxel.tool_volume = volume_new();
+    volume_set(goxel.tool_volume, layer);
+    preview_source_at(cs, goxel.tool_volume, layer, at, marker);
+    cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
+    cs->last_op.has_source = cs->has_source;
+    vec3_copy(at, cs->last_op.pos);
+    if (cs->has_source)
+        vec3_copy(cs->source_pos, cs->last_op.source_pos);
+}
+
+static void update_source_from_target(tool_clone_stamp_t *cs,
+                                      const float target[3])
+{
+    if (!cs->offset_locked) return;
+    vec3_add(target, cs->offset, cs->source_pos);
+}
+
+static int on_set_source(gesture3d_t *gest, void *user)
+{
+    tool_clone_stamp_t *cs = USER_GET(user, 0);
+    cursor_t *curs = gest->cursor;
+
+    if (!curs->snaped) return 0;
+    if (gest->state == GESTURE_BEGIN || gest->state == GESTURE_UPDATE ||
+        gest->state == GESTURE_END) {
+        if (gest->state != GESTURE_END) {
+            vec3_copy(curs->pos, cs->source_pos);
+            cs->has_source = true;
+            cs->offset_locked = false;
+            goxel_set_help_text(
+                "Clone source set — click and drag to paint from this location");
+        }
+        /* Confirmed source: yellow exact-block highlight. */
+        if (cs->has_source)
+            show_exact_source_preview(cs, cs->source_pos, k_source_marker);
+    }
+    return 0;
+}
+
+/* Ctrl held: purple exact-block pick preview at the cursor only. */
+static int on_ctrl_hover(gesture3d_t *gest, void *user)
+{
+    tool_clone_stamp_t *cs = USER_GET(user, 0);
+    cursor_t *curs = gest->cursor;
+
+    if (gest->state == GESTURE_END || !curs->snaped)
+        return 0;
+
+    if (gest->state != GESTURE_BEGIN && goxel.tool_volume &&
+        check_can_skip(cs, curs))
+        return 0;
+
+    show_exact_source_preview(cs, curs->pos, k_pick_marker);
+    return 0;
+}
+
+static int on_drag(gesture3d_t *gest, void *user)
+{
+    tool_clone_stamp_t *cs = USER_GET(user, 0);
+    cursor_t *curs = gest->cursor;
+    float r_x = goxel.radius_x;
+    float r_y = goxel.radius_y;
+    float r_z = goxel.radius_z;
+    float spacing, pos[3], target[3];
+    int nb, i;
+
+    if (!cs->has_source) {
+        if (gest->state == GESTURE_BEGIN) {
+            gui_alert("Clone Stamp",
+                      "Ctrl+Click to set the clone source, then click and "
+                      "drag to paint from that location.");
+        }
+        return GESTURE_FAILED;
+    }
+
+    vec3_copy(curs->pos, target);
+
+    if (gest->state == GESTURE_BEGIN) {
+        vec3_sub(cs->source_pos, target, cs->offset);
+        cs->offset_locked = true;
+        vec3_copy(target, cs->last_pos);
+
+        if (!cs->volume_orig)
+            cs->volume_orig = volume_new();
+        volume_set(cs->volume_orig, goxel.image->active_layer->volume);
+        image_history_push(goxel.image);
+
+        if (!cs->stroke) cs->stroke = volume_new();
+        volume_set(cs->stroke, cs->volume_orig);
+        apply_at(cs, cs->stroke, cs->volume_orig, target, cs->source_pos);
+        refresh_tool_preview(cs, cs->volume_orig);
+        return 0;
+    }
+
+    if (gest->state == GESTURE_UPDATE && check_can_skip(cs, curs))
+        return 0;
+
+    if (!cs->stroke) {
+        cs->stroke = volume_new();
+        volume_set(cs->stroke, cs->volume_orig);
+    }
+
+    update_source_from_target(cs, target);
+
+    spacing = max(0.7f, min3(r_x, r_y, r_z));
+    nb = ceil(vec3_dist(curs->pos, cs->last_pos) / spacing);
+    nb = max(nb, 1);
+    for (i = 0; i < nb; i++) {
+        float src[3];
+        vec3_mix(cs->last_pos, curs->pos, (i + 1.0f) / nb, pos);
+        vec3_add(pos, cs->offset, src);
+        apply_at(cs, cs->stroke, cs->volume_orig, pos, src);
+        vec3_copy(src, cs->source_pos);
+    }
+
+    vec3_copy(target, cs->last_pos);
+    refresh_tool_preview(cs, cs->volume_orig);
+
+    if (gest->state == GESTURE_END) {
+        volume_set(goxel.image->active_layer->volume, cs->stroke);
+        volume_set(cs->volume_orig, cs->stroke);
+        volume_delete(goxel.tool_volume);
+        goxel.tool_volume = NULL;
+        cs->offset_locked = false;
+    }
+    return 0;
+}
+
+static int on_hover(gesture3d_t *gest, void *user)
+{
+    tool_clone_stamp_t *cs = USER_GET(user, 0);
+    cursor_t *curs = gest->cursor;
+    volume_t *layer = goxel.image->active_layer->volume;
+
+    if (gest->state == GESTURE_END || !curs->snaped) {
+        /* Ctrl-hover owns the preview while Ctrl is held — do not clear it. */
+        if (!(curs->flags & CURSOR_PRESSED) && !(curs->flags & CURSOR_CTRL)) {
+            volume_delete(goxel.tool_volume);
+            goxel.tool_volume = NULL;
+        }
+        return 0;
+    }
+
+    /* No source yet: previews are Ctrl-only (purple pick). */
+    if (!cs->has_source) {
+        volume_delete(goxel.tool_volume);
+        goxel.tool_volume = NULL;
+        return 0;
+    }
+
+    /* Force rebuild on BEGIN (e.g. after releasing Ctrl). */
+    if (gest->state != GESTURE_BEGIN && goxel.tool_volume &&
+        check_can_skip(cs, curs))
+        return 0;
+
+    if (!goxel.tool_volume) goxel.tool_volume = volume_new();
+    volume_set(goxel.tool_volume, layer);
+    apply_at(cs, goxel.tool_volume, layer, curs->pos, cs->source_pos);
+    preview_source_at(cs, goxel.tool_volume, layer, cs->source_pos,
+                      k_source_marker);
+
+    cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
+    return 0;
+}
+
+static int iter(tool_t *tool, const painter_t *painter,
+                const float viewport[4])
+{
+    tool_clone_stamp_t *cs = (tool_clone_stamp_t *)tool;
+    cursor_t *curs = &goxel.cursor;
+
+    (void)painter;
+    (void)viewport;
+
+    ensure_sample_defaults(cs);
+
+    if (!cs->gestures.drag.type) {
+        cs->gestures.drag = (gesture3d_t){
+            .type = GESTURE_DRAG,
+            .callback = on_drag,
+        };
+        cs->gestures.hover = (gesture3d_t){
+            .type = GESTURE_HOVER,
+            .callback = on_hover,
+        };
+        cs->gestures.ctrl_hover = (gesture3d_t){
+            .type = GESTURE_HOVER,
+            .buttons = CURSOR_CTRL,
+            .callback = on_ctrl_hover,
+        };
+        cs->gestures.set_source = (gesture3d_t){
+            .type = GESTURE_DRAG,
+            .buttons = CURSOR_CTRL,
+            .callback = on_set_source,
+        };
+    }
+
+    if (cs->has_source) {
+        goxel_set_help_text(
+            "Clone Stamp — click and drag to paint; Ctrl+Click to move the "
+            "source");
+    } else {
+        goxel_set_help_text(
+            "Clone Stamp — Ctrl+Click to set the clone source, then click "
+            "and drag to paint");
+    }
+
+    curs->snap_mask |= SNAP_ROUNDED;
+    curs->snap_offset = goxel.snap_offset * goxel.radius_x - 0.5f;
+
+    /* Ctrl pick-source before normal hover so Ctrl does not wipe the preview. */
+    gesture3d(&cs->gestures.set_source, curs, USER_PASS(cs, painter));
+    gesture3d(&cs->gestures.ctrl_hover, curs, USER_PASS(cs, painter));
+    gesture3d(&cs->gestures.drag, curs, USER_PASS(cs, painter));
+    gesture3d(&cs->gestures.hover, curs, USER_PASS(cs, painter));
+
+    return tool->state;
+}
+
+static int gui(tool_t *tool)
+{
+    tool_clone_stamp_t *cs = (tool_clone_stamp_t *)tool;
+
+    ensure_sample_defaults(cs);
+
+    tool_gui_radius();
+    gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
+                 "Lowest Z of the shape is at the cursor (Z-up), not the center");
+    tool_gui_snap();
+    tool_gui_shape(NULL);
+
+    if (gui_section_begin("Clone source", true)) {
+        gui_checkbox("Take uppermost block", &cs->take_uppermost,
+                     "Always take the uppermost block as the clone source");
+        if (!cs->take_uppermost) {
+            if (gui_input_int("Depth", &cs->depth, 0, 128))
+                cs->depth = clamp(cs->depth, 0, 128);
+            gui_tooltip_if_hovered(
+                "Distance from clone source location vertically we will "
+                "copy from");
+        }
+
+        if (cs->has_source) {
+            gui_text("Source set at %.0f, %.0f, %.0f",
+                     floor(cs->source_pos[0]),
+                     floor(cs->source_pos[1]),
+                     floor(cs->source_pos[2]));
+            if (gui_button("Clear source", -1, 0)) {
+                cs->has_source = false;
+                cs->offset_locked = false;
+            }
+        } else {
+            gui_text("Ctrl+Click on the map to set the source.");
+        }
+    }
+    gui_section_end();
+    return 0;
+}
+
+TOOL_REGISTER(TOOL_CLONE_STAMP, clone_stamp, tool_clone_stamp_t,
+              .name = "Clone Stamp",
+              .iter_fn = iter,
+              .gui_fn = gui,
+              .flags = TOOL_REQUIRE_CAN_EDIT,
+              .has_snap = true,
+)

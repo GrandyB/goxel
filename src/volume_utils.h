@@ -239,6 +239,13 @@ void volume_merge_from(volume_t *volume, const volume_t *other, int mode,
                        const uint8_t color[4]);
 
 /*
+ * Function: voxel_combine
+ * Blend source voxel `b` into destination voxel `a` using a <MODE> value.
+ */
+void voxel_combine(const uint8_t a[4], const uint8_t b[4], int mode,
+                   uint8_t out[4]);
+
+/*
  * Function: volume_generate_vertices
  * Generate a vertice array for rendering a volume block.
  *

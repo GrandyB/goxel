@@ -110,6 +110,7 @@ enum
     ACTION_img_auto_resize_reset,
     ACTION_delete_hidden_layers,
     ACTION_tool_set_fill,
+    ACTION_tool_set_clone_stamp,
 
     ACTION_COUNT
 };

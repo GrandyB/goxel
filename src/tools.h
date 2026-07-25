@@ -38,6 +38,7 @@ enum {
     TOOL_RECT_SELECT,
     TOOL_PLACER,
     TOOL_FILL,
+    TOOL_CLONE_STAMP,
 
     TOOL_COUNT
 };
