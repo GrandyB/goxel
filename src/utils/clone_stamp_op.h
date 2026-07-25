@@ -32,8 +32,9 @@ void clone_stamp_apply(volume_t *dest, const volume_t *sample,
                        const clone_stamp_sample_t *opts);
 
 /*
- * Highlight the exact voxels in `dest` that would be copied from for the
- * brush footprint at `source` (marker tint on those blocks only).
+ * Write marker voxels into `dest` at the exact sample positions for the
+ * brush footprint at `source`.  `dest` is typically a sparse overlay volume
+ * rendered on top of the scene (so other layers' blocks stay visible).
  */
 void clone_stamp_preview_source(volume_t *dest, const volume_t *sample,
                                 const float source[3],

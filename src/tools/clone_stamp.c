@@ -13,6 +13,9 @@ typedef struct {
 
     volume_t *volume_orig; /* Layer snapshot for sampling during a stroke. */
     volume_t *stroke;      /* Accumulated clone paints (no source marker). */
+    /* Exact sample-block highlights; drawn on top so other layers' blocks
+     * remain visible when sampling the merged map. */
+    volume_t *source_markers;
 
     bool has_source;
     float source_pos[3];
@@ -21,8 +24,9 @@ typedef struct {
 
     /* Sampling options (GUI). */
     bool sample_inited;
-    bool take_uppermost; /* default true once sample_inited */
-    int  depth;          /* used when !take_uppermost; default 0 */
+    bool take_uppermost;     /* default true once sample_inited */
+    int  depth;              /* used when !take_uppermost; default 0 */
+    bool restrict_to_layer;  /* default false: sample all visible layers */
 
     float last_pos[3];
 
@@ -41,6 +45,7 @@ typedef struct {
         float    radius_x, radius_y, radius_z;
         bool     take_uppermost;
         int      depth;
+        bool     restrict_to_layer;
         float    smoothness;
         float    dithering;
     } last_op;
@@ -58,6 +63,7 @@ static void ensure_sample_defaults(tool_clone_stamp_t *cs)
     if (cs->sample_inited) return;
     cs->take_uppermost = true;
     cs->depth = 0;
+    cs->restrict_to_layer = false;
     cs->sample_inited = true;
 }
 
@@ -67,6 +73,15 @@ static clone_stamp_sample_t sample_opts(const tool_clone_stamp_t *cs)
         .take_uppermost = cs->take_uppermost,
         .depth = cs->depth,
     };
+}
+
+/* Volume used for clone colour inheritance / source markers. */
+static const volume_t *clone_sample_volume(const tool_clone_stamp_t *cs,
+                                          const volume_t *layer_volume)
+{
+    if (cs->restrict_to_layer)
+        return layer_volume;
+    return goxel_get_layers_volume(goxel.image);
 }
 
 static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
@@ -81,6 +96,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
             cs->last_op.radius_z == goxel.radius_z &&
             cs->last_op.take_uppermost == cs->take_uppermost &&
             cs->last_op.depth == cs->depth &&
+            cs->last_op.restrict_to_layer == cs->restrict_to_layer &&
             cs->last_op.smoothness == goxel.painter.smoothness &&
             cs->last_op.dithering == goxel.painter.dithering &&
             vec3_equal(curs->pos, cs->last_op.pos) &&
@@ -95,6 +111,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
     cs->last_op.radius_z = goxel.radius_z;
     cs->last_op.take_uppermost = cs->take_uppermost;
     cs->last_op.depth = cs->depth;
+    cs->last_op.restrict_to_layer = cs->restrict_to_layer;
     cs->last_op.smoothness = goxel.painter.smoothness;
     cs->last_op.dithering = goxel.painter.dithering;
     vec3_copy(curs->pos, cs->last_op.pos);
@@ -133,17 +150,34 @@ static void apply_at(tool_clone_stamp_t *cs, volume_t *dest,
                       &opts);
 }
 
-/* Highlight the exact blocks that would be copied from at `source`. */
-static void preview_source_at(tool_clone_stamp_t *cs, volume_t *dest,
-                              const volume_t *sample, const float source[3],
-                              const uint8_t marker[4])
+/* Build / clear the on-top source-block highlight volume. */
+static void set_source_markers(tool_clone_stamp_t *cs, const volume_t *sample,
+                               const float source[3], const uint8_t marker[4])
 {
     float box[4][4];
     clone_stamp_sample_t opts = sample_opts(cs);
 
+    if (!cs->source_markers) cs->source_markers = volume_new();
+    volume_clear(cs->source_markers);
+    if (!sample) return;
     get_box3(source, goxel.radius_x, goxel.radius_y, goxel.radius_z, box);
-    clone_stamp_preview_source(dest, sample, source, box, clone_shape(), 0.f,
-                               &opts, marker);
+    clone_stamp_preview_source(cs->source_markers, sample, source, box,
+                               clone_shape(), 0.f, &opts, marker);
+}
+
+static void clear_source_markers(tool_clone_stamp_t *cs)
+{
+    if (cs->source_markers)
+        volume_clear(cs->source_markers);
+}
+
+static void render_source_markers(tool_clone_stamp_t *cs)
+{
+    /* NO_DEPTH_TEST: markers replace the active-layer tool_volume slot and
+     * would otherwise be covered by other layers at the same voxel. */
+    if (cs->source_markers && !volume_is_empty(cs->source_markers))
+        render_volume(&goxel.rend, cs->source_markers, NULL,
+                      EFFECT_NO_DEPTH_TEST);
 }
 
 static void path_clear(tool_clone_stamp_t *cs)
@@ -166,40 +200,46 @@ static void rebuild_stroke_from_path(tool_clone_stamp_t *cs)
 {
     int i;
     float src[3];
+    const volume_t *sample = clone_sample_volume(cs, cs->volume_orig);
 
     volume_set(cs->stroke, cs->volume_orig);
     for (i = 0; i < cs->path_count; i++) {
         vec3_add(cs->path[i], cs->offset, src);
-        apply_at(cs, cs->stroke, cs->volume_orig, cs->path[i], src);
+        apply_at(cs, cs->stroke, sample, cs->path[i], src);
         if (i == cs->path_count - 1)
             vec3_copy(src, cs->source_pos);
     }
 }
 
-static void refresh_tool_preview(tool_clone_stamp_t *cs,
-                                 const volume_t *sample_for_source)
+static void refresh_tool_preview(tool_clone_stamp_t *cs)
 {
+    const volume_t *sample;
+
     if (!cs->stroke) return;
+    sample = clone_sample_volume(cs, cs->volume_orig);
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, cs->stroke);
     if (cs->has_source)
-        preview_source_at(cs, goxel.tool_volume, sample_for_source,
-                          cs->source_pos, k_source_marker);
+        set_source_markers(cs, sample, cs->source_pos, k_source_marker);
+    else
+        clear_source_markers(cs);
     cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
 }
 
-/* Layer + exact sample blocks at `at` with the given marker colour. */
+/* Layer view + exact sample blocks at `at` with the given marker colour. */
 static void show_exact_source_preview(tool_clone_stamp_t *cs,
                                       const float at[3],
                                       const uint8_t marker[4])
 {
     volume_t *layer = goxel.image->active_layer->volume;
+    const volume_t *sample = clone_sample_volume(cs, layer);
 
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, layer);
-    preview_source_at(cs, goxel.tool_volume, layer, at, marker);
+    set_source_markers(cs, sample, at, marker);
     cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
     cs->last_op.has_source = cs->has_source;
+    cs->last_op.restrict_to_layer = cs->restrict_to_layer;
     vec3_copy(at, cs->last_op.pos);
     if (cs->has_source)
         vec3_copy(cs->source_pos, cs->last_op.source_pos);
@@ -286,8 +326,9 @@ static int on_drag(gesture3d_t *gest, void *user)
         volume_set(cs->stroke, cs->volume_orig);
         path_clear(cs);
         path_push(cs, target);
-        apply_at(cs, cs->stroke, cs->volume_orig, target, cs->source_pos);
-        refresh_tool_preview(cs, cs->volume_orig);
+        apply_at(cs, cs->stroke, clone_sample_volume(cs, cs->volume_orig),
+                 target, cs->source_pos);
+        refresh_tool_preview(cs);
         return 0;
     }
 
@@ -304,14 +345,17 @@ static int on_drag(gesture3d_t *gest, void *user)
     spacing = max(0.7f, min3(r_x, r_y, r_z));
     nb = ceil(vec3_dist(curs->pos, cs->last_pos) / spacing);
     nb = max(nb, 1);
-    for (i = 0; i < nb; i++) {
-        float src[3];
-        vec3_mix(cs->last_pos, curs->pos, (i + 1.0f) / nb, pos);
-        path_push(cs, pos);
-        if (goxel.painter.smoothness <= 0.f) {
-            vec3_add(pos, cs->offset, src);
-            apply_at(cs, cs->stroke, cs->volume_orig, pos, src);
-            vec3_copy(src, cs->source_pos);
+    {
+        const volume_t *sample = clone_sample_volume(cs, cs->volume_orig);
+        for (i = 0; i < nb; i++) {
+            float src[3];
+            vec3_mix(cs->last_pos, curs->pos, (i + 1.0f) / nb, pos);
+            path_push(cs, pos);
+            if (goxel.painter.smoothness <= 0.f) {
+                vec3_add(pos, cs->offset, src);
+                apply_at(cs, cs->stroke, sample, pos, src);
+                vec3_copy(src, cs->source_pos);
+            }
         }
     }
 
@@ -319,7 +363,7 @@ static int on_drag(gesture3d_t *gest, void *user)
         rebuild_stroke_from_path(cs);
 
     vec3_copy(target, cs->last_pos);
-    refresh_tool_preview(cs, cs->volume_orig);
+    refresh_tool_preview(cs);
 
     if (gest->state == GESTURE_END) {
         volume_set(goxel.image->active_layer->volume, cs->stroke);
@@ -328,6 +372,10 @@ static int on_drag(gesture3d_t *gest, void *user)
         goxel.tool_volume = NULL;
         cs->offset_locked = false;
         path_clear(cs);
+        /* Keep yellow source markers at the locked offset endpoint. */
+        if (cs->has_source)
+            set_source_markers(cs, clone_sample_volume(cs, cs->volume_orig),
+                               cs->source_pos, k_source_marker);
     }
     return 0;
 }
@@ -343,6 +391,11 @@ static int on_hover(gesture3d_t *gest, void *user)
         if (!(curs->flags & CURSOR_PRESSED) && !(curs->flags & CURSOR_CTRL)) {
             volume_delete(goxel.tool_volume);
             goxel.tool_volume = NULL;
+            if (cs->has_source)
+                set_source_markers(cs, clone_sample_volume(cs, layer),
+                                   cs->source_pos, k_source_marker);
+            else
+                clear_source_markers(cs);
         }
         return 0;
     }
@@ -351,6 +404,7 @@ static int on_hover(gesture3d_t *gest, void *user)
     if (!cs->has_source) {
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
+        clear_source_markers(cs);
         return 0;
     }
 
@@ -361,9 +415,11 @@ static int on_hover(gesture3d_t *gest, void *user)
 
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, layer);
-    apply_at(cs, goxel.tool_volume, layer, curs->pos, cs->source_pos);
-    preview_source_at(cs, goxel.tool_volume, layer, cs->source_pos,
-                      k_source_marker);
+    {
+        const volume_t *sample = clone_sample_volume(cs, layer);
+        apply_at(cs, goxel.tool_volume, sample, curs->pos, cs->source_pos);
+        set_source_markers(cs, sample, cs->source_pos, k_source_marker);
+    }
 
     cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
     return 0;
@@ -420,6 +476,8 @@ static int iter(tool_t *tool, const painter_t *painter,
     gesture3d(&cs->gestures.drag, curs, USER_PASS(cs, painter));
     gesture3d(&cs->gestures.hover, curs, USER_PASS(cs, painter));
 
+    render_source_markers(cs);
+
     return tool->state;
 }
 
@@ -444,26 +502,30 @@ static int gui(tool_t *tool)
             if (gui_button("Clear source", -1, 0)) {
                 cs->has_source = false;
                 cs->offset_locked = false;
-            }
-            gui_separator();
-            gui_text("Choose how colors are chosen\nrelative to the clone source.");
-            gui_checkbox("Inherit infinitely", &cs->take_uppermost,
-                         "Always take the uppermost block in each column "
-                         "(full map height). As the source moves onto taller "
-                         "terrain, those higher blocks are used.");
-            if (!cs->take_uppermost) {
-                if (gui_input_int("Depth", &cs->depth, 0, 128))
-                    cs->depth = clamp(cs->depth, 0, 128);
-                gui_tooltip_if_hovered(
-                    "Distance from clone source location vertically we will "
-                    "copy/inherit color from; useful if under a roof/other structure");
+                clear_source_markers(cs);
             }
         } else {
             gui_text("Ctrl+Click on the map to set\nthe clone source.");
         }
+        gui_separator();
+        gui_text("Choose how colors are chosen\nrelative to the clone source.");
+        gui_checkbox("Restrict to layer", &cs->restrict_to_layer,
+                     "Only sample clone colours from the current layer. "
+                     "When disabled, use all visible layers.");
+        gui_checkbox("Inherit infinitely", &cs->take_uppermost,
+                     "Always take the uppermost block in each column "
+                     "(full map height). As the source moves onto taller "
+                     "terrain, those higher blocks are used.");
+        if (!cs->take_uppermost) {
+            if (gui_input_int("Depth", &cs->depth, 0, 128))
+                cs->depth = clamp(cs->depth, 0, 128);
+            gui_tooltip_if_hovered(
+                "Distance from clone source location vertically we will "
+                "copy/inherit color from; useful if under a roof/other structure");
+        }
     }
     gui_section_end();
-    
+
     tool_gui_shape(NULL);
     tool_gui_snap();
     return 0;

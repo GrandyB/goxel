@@ -226,7 +226,7 @@ void clone_stamp_preview_source(volume_t *dest, const volume_t *sample,
     volume_accessor_t dest_acc, sample_acc;
     float mat[4][4], size[3];
     int aabb[2][3], x, y, source_z, lowest_z, highest_z, sample_pos[3];
-    uint8_t sample_c[4], dest_c[4], paint[4], out[4];
+    uint8_t sample_c[4], dest_c[4], out[4];
     clone_stamp_sample_t opts_tmp;
     const clone_stamp_sample_t *o = sample_opts_or_default(opts, &opts_tmp);
 
@@ -250,10 +250,8 @@ void clone_stamp_preview_source(volume_t *dest, const volume_t *sample,
             continue;
 
         volume_get_at(dest, &dest_acc, sample_pos, dest_c);
-        if (!dest_c[3]) continue;
-
-        memcpy(paint, marker_color, 4);
-        voxel_combine(dest_c, paint, MODE_PAINT, out);
+        /* Write solid markers (typically into a sparse overlay volume). */
+        memcpy(out, marker_color, 4);
         if (!vec4_equal(dest_c, out))
             volume_set_at(dest, &dest_acc, sample_pos, out);
     }
