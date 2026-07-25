@@ -289,7 +289,7 @@ int tool_gui_noise(void)
     return 0;
 }
 
-int tool_gui_color(void)
+int tool_gui_color(bool always_show_opacity)
 {
     if (gui_section_begin("Color", true)) {
         /* Skip the default label column so the checkbox sits on the left. */
@@ -299,7 +299,7 @@ int tool_gui_color(void)
         gui_label_size_pop();
         if (!goxel.painter.color_inherit) {
             gui_color_inline("", goxel.painter.color);
-            if (goxel.painter.mode == MODE_PAINT) {
+            if (always_show_opacity || goxel.painter.mode == MODE_PAINT) {
                 gui_color_opacity(goxel.painter.color);
             }
         }

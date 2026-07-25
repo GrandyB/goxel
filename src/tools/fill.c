@@ -368,7 +368,7 @@ static int gui(tool_t *tool)
             "Current layer only", &filler->current_layer_only,
             "Restrict floodfill to be within blocks only on the current layer");
 
-    tool_gui_color();
+    tool_gui_color(false);
     gui_section_end();
     return 0;
 }

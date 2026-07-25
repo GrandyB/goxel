@@ -359,7 +359,7 @@ static int gui(tool_t *tool)
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
     tool_gui_smoothness();
-    tool_gui_color();
+    tool_gui_color(false);
     gui_section_end();
 
     tool_gui_snap();

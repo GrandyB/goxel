@@ -22,6 +22,8 @@ typedef struct {
     tool_t tool;
     int threshold;
     int expand_distance;
+    float paint_smoothness;
+    float paint_dithering;
     bool global;
     struct {
         gesture3d_t click;
@@ -190,6 +192,124 @@ static void expand_selection_mask(int distance)
     goxel.mask = expanded;
 }
 
+/*
+ * Coverage mask for paint: full strength inside the selection; outside,
+ * Chebyshev distance from the selection edge drives brush-style AA/dither
+ * falloff so colour can bleed onto neighbouring existing voxels.
+ */
+static volume_t *build_paint_coverage_mask(const volume_t *mask,
+                                           float smoothness, float dithering)
+{
+    volume_t *out;
+    volume_iterator_t iter;
+    volume_accessor_t out_acc, mask_acc;
+    int pos[3], p[3], dx, dy, dz, dist, r;
+    int dims[3], start[3];
+    bool use_box;
+    float shape_sm, k, v, n;
+    uint8_t existing[4], cov[4];
+
+    out = volume_copy(mask);
+    shape_sm = smoothness + dithering;
+    if (shape_sm <= 0.f)
+        return out;
+
+    use_box = !box_is_null(goxel.image->box);
+    if (use_box) {
+        box_get_dimensions(goxel.image->box, dims);
+        box_get_start_pos(goxel.image->box, start);
+    }
+
+    r = (int)ceilf(shape_sm);
+    out_acc = volume_get_accessor(out);
+    mask_acc = volume_get_accessor(mask);
+    iter = volume_get_iterator(mask,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        if (!volume_get_alpha_at(mask, &mask_acc, pos))
+            continue;
+        for (dx = -r; dx <= r; dx++) {
+            for (dy = -r; dy <= r; dy++) {
+                for (dz = -r; dz <= r; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0)
+                        continue;
+                    dist = max3(abs(dx), abs(dy), abs(dz));
+                    if (dist > r)
+                        continue;
+                    p[0] = pos[0] + dx;
+                    p[1] = pos[1] + dy;
+                    p[2] = pos[2] + dz;
+                    if (use_box &&
+                        (p[0] < start[0] || p[0] >= start[0] + dims[0] ||
+                         p[1] < start[1] || p[1] >= start[1] + dims[1] ||
+                         p[2] < start[2] || p[2] >= start[2] + dims[2]))
+                        continue;
+                    if (volume_get_alpha_at(mask, &mask_acc, p))
+                        continue;
+
+                    k = 0.5f - (float)dist;
+                    if (dithering > 0.f) {
+                        n = uniform_noise((float)p[0], (float)p[1],
+                                          (float)p[2]);
+                        k += (n * 2.f - 1.f) * dithering;
+                    }
+                    if (smoothness > 0.f) {
+                        v = clamp(k / smoothness, -1.f, 1.f) / 2.f + 0.5f;
+                    } else {
+                        v = (k >= 0.f) ? 1.f : 0.f;
+                    }
+                    if (v <= 0.f)
+                        continue;
+
+                    volume_get_at(out, &out_acc, p, existing);
+                    cov[0] = 255;
+                    cov[1] = 255;
+                    cov[2] = 255;
+                    cov[3] = (uint8_t)(v * 255.f);
+                    if (cov[3] > existing[3])
+                        volume_set_at(out, &out_acc, p, cov);
+                }
+            }
+        }
+    }
+    return out;
+}
+
+/* Recolour existing voxels under the selection (and soft bleed) via MODE_PAINT. */
+static void paint_selection(float smoothness, float dithering)
+{
+    volume_t *volume = goxel.image->active_layer->volume;
+    volume_t *vol, *coverage;
+    float box[4][4];
+    painter_t p;
+    uint64_t k0;
+
+    if (!goxel.mask || volume_is_empty(goxel.mask))
+        return;
+
+    k0 = volume_get_key(volume);
+    image_history_push(goxel.image);
+
+    coverage = build_paint_coverage_mask(goxel.mask, smoothness, dithering);
+    vol = volume_new();
+    volume_get_box(coverage, true, box);
+    p = goxel.painter;
+    p.mode = MODE_OVER;
+    p.shape = &shape_cube;
+    p.box = NULL;
+    p.symmetry = 0;
+    p.smoothness = 0;
+    p.dithering = 0;
+    volume_op(vol, &p, box);
+    volume_merge(vol, coverage, MODE_INTERSECT, NULL);
+    volume_merge(volume, vol, MODE_PAINT, NULL);
+    volume_delete(vol);
+    volume_delete(coverage);
+
+    if (volume_get_key(volume) != k0)
+        image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+}
+
 static int gui(tool_t *tool_)
 {
     tool_fuzzy_select_t *tool = (void*)tool_;
@@ -218,7 +338,7 @@ static int gui(tool_t *tool_)
 
     volume_t *volume = goxel.image->active_layer->volume;
 
-    tool_gui_color();
+    tool_gui_color(true);
     gui_section_end();
     gui_group_begin(NULL);
     if (gui_button("Delete blocks", 1, 0)) {
@@ -256,6 +376,26 @@ static int gui(tool_t *tool_)
                          goxel.mask);
     }
     gui_group_end();
+
+    if (gui_section_begin("Paint", true)) {
+        int s = (int)tool->paint_smoothness;
+        if (gui_input_int("Antialiasing", &s, 0, 16)) {
+            s = clamp(s, 0, 16);
+            tool->paint_smoothness = (float)s;
+        }
+        gui_tooltip_if_hovered(
+            "0 = hard edges; higher softens paint into surrounding blocks");
+        float dither = tool->paint_dithering;
+        if (gui_input_float("Dithering", &dither, 0.1f, 0.f, 16.f, "%.1f")) {
+            tool->paint_dithering = clamp(dither, 0.f, 16.f);
+        }
+        gui_tooltip_if_hovered(
+            "0 = none; higher scatters paint colour into surroundings");
+        if (gui_button("Paint##paintbutton", -1, 0)) {
+            paint_selection(tool->paint_smoothness, tool->paint_dithering);
+        }
+    }
+    gui_section_end();
 
     if (tool->expand_distance < 1)
         tool->expand_distance = 1;
