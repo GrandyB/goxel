@@ -9,7 +9,7 @@
 /*
  * How to pick a colour in each source XY column.
  *
- * take_uppermost — first solid at or below source Z (inherit-style).
+ * take_uppermost — absolute top solid in the column (full map height).
  * Otherwise — only search Z in [source_z - depth, source_z + depth],
  * taking the uppermost solid in that window.  depth 0 = exact source Z.
  */
@@ -21,11 +21,14 @@ typedef struct clone_stamp_sample {
 /*
  * Paint colours from `sample` onto existing voxels in `dest` within the
  * brush shape centered at `target` (XY offset from source; Z via opts).
+ *
+ * smoothness / dithering match brush painter antialiasing (soft coverage
+ * and scattered SDF edges).
  */
 void clone_stamp_apply(volume_t *dest, const volume_t *sample,
                        const float target[3], const float source[3],
                        const float box[4][4], const shape_t *shape,
-                       float smoothness,
+                       float smoothness, float dithering,
                        const clone_stamp_sample_t *opts);
 
 /*
@@ -41,7 +44,6 @@ void clone_stamp_preview_source(volume_t *dest, const volume_t *sample,
 
 /*
  * MODE_PAINT a fixed tint onto existing voxels inside the brush shape.
- * Used for the no-source footprint hint.
  */
 void clone_stamp_highlight(volume_t *dest, const float center[3],
                            const float box[4][4], const shape_t *shape,

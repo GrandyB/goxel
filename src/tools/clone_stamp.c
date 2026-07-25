@@ -25,6 +25,13 @@ typedef struct {
     int  depth;          /* used when !take_uppermost; default 0 */
 
     float last_pos[3];
+
+    /* Stroke path (target centres) — rebuilt when antialiasing is on so
+     * soft MODE_PAINT does not harden on overlapping stamps. */
+    float (*path)[3];
+    int path_count;
+    int path_cap;
+
     struct {
         float    pos[3];
         bool     pressed;
@@ -34,6 +41,8 @@ typedef struct {
         float    radius_x, radius_y, radius_z;
         bool     take_uppermost;
         int      depth;
+        float    smoothness;
+        float    dithering;
     } last_op;
 
     struct {
@@ -72,6 +81,8 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
             cs->last_op.radius_z == goxel.radius_z &&
             cs->last_op.take_uppermost == cs->take_uppermost &&
             cs->last_op.depth == cs->depth &&
+            cs->last_op.smoothness == goxel.painter.smoothness &&
+            cs->last_op.dithering == goxel.painter.dithering &&
             vec3_equal(curs->pos, cs->last_op.pos) &&
             (!cs->has_source || vec3_equal(cs->source_pos, cs->last_op.source_pos))) {
         return true;
@@ -84,6 +95,8 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
     cs->last_op.radius_z = goxel.radius_z;
     cs->last_op.take_uppermost = cs->take_uppermost;
     cs->last_op.depth = cs->depth;
+    cs->last_op.smoothness = goxel.painter.smoothness;
+    cs->last_op.dithering = goxel.painter.dithering;
     vec3_copy(curs->pos, cs->last_op.pos);
     if (cs->has_source)
         vec3_copy(cs->source_pos, cs->last_op.source_pos);
@@ -115,7 +128,8 @@ static void apply_at(tool_clone_stamp_t *cs, volume_t *dest,
     clone_stamp_sample_t opts = sample_opts(cs);
 
     get_box3(target, goxel.radius_x, goxel.radius_y, goxel.radius_z, box);
-    clone_stamp_apply(dest, sample, target, source, box, clone_shape(), 0.f,
+    clone_stamp_apply(dest, sample, target, source, box, clone_shape(),
+                      goxel.painter.smoothness, goxel.painter.dithering,
                       &opts);
 }
 
@@ -130,6 +144,36 @@ static void preview_source_at(tool_clone_stamp_t *cs, volume_t *dest,
     get_box3(source, goxel.radius_x, goxel.radius_y, goxel.radius_z, box);
     clone_stamp_preview_source(dest, sample, source, box, clone_shape(), 0.f,
                                &opts, marker);
+}
+
+static void path_clear(tool_clone_stamp_t *cs)
+{
+    cs->path_count = 0;
+}
+
+static void path_push(tool_clone_stamp_t *cs, const float pos[3])
+{
+    if (cs->path_count >= cs->path_cap) {
+        int ncap = cs->path_cap ? cs->path_cap * 2 : 64;
+        cs->path = realloc(cs->path, (size_t)ncap * sizeof(*cs->path));
+        cs->path_cap = ncap;
+    }
+    vec3_copy(pos, cs->path[cs->path_count]);
+    cs->path_count++;
+}
+
+static void rebuild_stroke_from_path(tool_clone_stamp_t *cs)
+{
+    int i;
+    float src[3];
+
+    volume_set(cs->stroke, cs->volume_orig);
+    for (i = 0; i < cs->path_count; i++) {
+        vec3_add(cs->path[i], cs->offset, src);
+        apply_at(cs, cs->stroke, cs->volume_orig, cs->path[i], src);
+        if (i == cs->path_count - 1)
+            vec3_copy(src, cs->source_pos);
+    }
 }
 
 static void refresh_tool_preview(tool_clone_stamp_t *cs,
@@ -240,6 +284,8 @@ static int on_drag(gesture3d_t *gest, void *user)
 
         if (!cs->stroke) cs->stroke = volume_new();
         volume_set(cs->stroke, cs->volume_orig);
+        path_clear(cs);
+        path_push(cs, target);
         apply_at(cs, cs->stroke, cs->volume_orig, target, cs->source_pos);
         refresh_tool_preview(cs, cs->volume_orig);
         return 0;
@@ -261,10 +307,16 @@ static int on_drag(gesture3d_t *gest, void *user)
     for (i = 0; i < nb; i++) {
         float src[3];
         vec3_mix(cs->last_pos, curs->pos, (i + 1.0f) / nb, pos);
-        vec3_add(pos, cs->offset, src);
-        apply_at(cs, cs->stroke, cs->volume_orig, pos, src);
-        vec3_copy(src, cs->source_pos);
+        path_push(cs, pos);
+        if (goxel.painter.smoothness <= 0.f) {
+            vec3_add(pos, cs->offset, src);
+            apply_at(cs, cs->stroke, cs->volume_orig, pos, src);
+            vec3_copy(src, cs->source_pos);
+        }
     }
+
+    if (goxel.painter.smoothness > 0.f)
+        rebuild_stroke_from_path(cs);
 
     vec3_copy(target, cs->last_pos);
     refresh_tool_preview(cs, cs->volume_orig);
@@ -275,6 +327,7 @@ static int on_drag(gesture3d_t *gest, void *user)
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
         cs->offset_locked = false;
+        path_clear(cs);
     }
     return 0;
 }
@@ -379,19 +432,9 @@ static int gui(tool_t *tool)
     tool_gui_radius();
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
-    tool_gui_snap();
-    tool_gui_shape(NULL);
+    tool_gui_smoothness();
 
     if (gui_section_begin("Clone source", true)) {
-        gui_checkbox("Take uppermost block", &cs->take_uppermost,
-                     "Always take the uppermost block as the clone source");
-        if (!cs->take_uppermost) {
-            if (gui_input_int("Depth", &cs->depth, 0, 128))
-                cs->depth = clamp(cs->depth, 0, 128);
-            gui_tooltip_if_hovered(
-                "Distance from clone source location vertically we will "
-                "copy from");
-        }
 
         if (cs->has_source) {
             gui_text("Source set at %.0f, %.0f, %.0f",
@@ -402,11 +445,27 @@ static int gui(tool_t *tool)
                 cs->has_source = false;
                 cs->offset_locked = false;
             }
+            gui_separator();
+            gui_text("Choose how colors are chosen\nrelative to the clone source.");
+            gui_checkbox("Inherit infinitely", &cs->take_uppermost,
+                         "Always take the uppermost block in each column "
+                         "(full map height). As the source moves onto taller "
+                         "terrain, those higher blocks are used.");
+            if (!cs->take_uppermost) {
+                if (gui_input_int("Depth", &cs->depth, 0, 128))
+                    cs->depth = clamp(cs->depth, 0, 128);
+                gui_tooltip_if_hovered(
+                    "Distance from clone source location vertically we will "
+                    "copy/inherit color from; useful if under a roof/other structure");
+            }
         } else {
-            gui_text("Ctrl+Click on the map to set the source.");
+            gui_text("Ctrl+Click on the map to set\nthe clone source.");
         }
     }
     gui_section_end();
+    
+    tool_gui_shape(NULL);
+    tool_gui_snap();
     return 0;
 }
 
