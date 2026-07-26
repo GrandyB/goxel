@@ -19,13 +19,18 @@ typedef struct {
 
     bool has_source;
     float source_pos[3];
+    /* Face normal locked at Ctrl+Click (inherit axis / source UV). */
+    float source_normal[3];
+    /* Paint-face normal locked at drag begin (brush Z / target UV). */
+    float stroke_normal[3];
     bool offset_locked;
     float offset[3];
 
     /* Sampling options (GUI). */
     bool sample_inited;
-    bool take_uppermost;     /* default true once sample_inited */
-    int  depth;              /* used when !take_uppermost; default 0 */
+    bool wall_mode;          /* face-normal brush + inherit; static source */
+    bool take_uppermost;     /* default true once sample_inited; ignored in wall */
+    int  depth;              /* inherit distance; always used in wall mode */
     bool restrict_to_layer;  /* default false: sample all visible layers */
     float opacity;           /* MODE_PAINT strength 0..1; default 1 */
 
@@ -42,8 +47,11 @@ typedef struct {
         bool     pressed;
         bool     has_source;
         float    source_pos[3];
+        float    source_normal[3];
+        float    stroke_normal[3];
         uint64_t volume_key;
         float    radius_x, radius_y, radius_z;
+        bool     wall_mode;
         bool     take_uppermost;
         int      depth;
         bool     restrict_to_layer;
@@ -63,10 +71,13 @@ typedef struct {
 static void ensure_sample_defaults(tool_clone_stamp_t *cs)
 {
     if (cs->sample_inited) return;
+    cs->wall_mode = false;
     cs->take_uppermost = true;
     cs->depth = 0;
     cs->restrict_to_layer = false;
     cs->opacity = 1.f;
+    vec3_set(cs->source_normal, 0, 0, 1);
+    vec3_set(cs->stroke_normal, 0, 0, 1);
     cs->sample_inited = true;
 }
 
@@ -76,11 +87,41 @@ static bool needs_stroke_rebuild(const tool_clone_stamp_t *cs)
     return goxel.painter.smoothness > 0.f || cs->opacity < 1.f;
 }
 
-static clone_stamp_sample_t sample_opts(const tool_clone_stamp_t *cs)
+/* Match extrude/brush: nearest cube face for an axis-aligned normal. */
+static int clone_get_face(const float n[3])
 {
+    int f;
+    const int *n2;
+    for (f = 0; f < 6; f++) {
+        n2 = FACES_NORMALS[f];
+        if (vec3_dot(n, VEC(n2[0], n2[1], n2[2])) > 0.5)
+            return f;
+    }
+    return -1;
+}
+
+/*
+ * Wall mode: source_face from Ctrl+Click normal, target_face from paint
+ * face (drag-locked stroke_normal, or live hover normal).  Remaps UV so a
+ * forward-facing source previews correctly on a left-facing wall.
+ */
+static clone_stamp_sample_t sample_opts(const tool_clone_stamp_t *cs,
+                                        const float *target_n)
+{
+    int src_face = -1, tgt_face = -1;
+    if (cs->wall_mode) {
+        src_face = clone_get_face(cs->source_normal);
+        if (target_n)
+            tgt_face = clone_get_face(target_n);
+        else
+            tgt_face = clone_get_face(cs->stroke_normal);
+    }
     return (clone_stamp_sample_t){
-        .take_uppermost = cs->take_uppermost,
+        /* Wall mode: depth only — no infinite inherit along the normal. */
+        .take_uppermost = cs->wall_mode ? false : cs->take_uppermost,
         .depth = cs->depth,
+        .source_face = src_face,
+        .target_face = tgt_face,
     };
 }
 
@@ -103,6 +144,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
             cs->last_op.radius_x == goxel.radius_x &&
             cs->last_op.radius_y == goxel.radius_y &&
             cs->last_op.radius_z == goxel.radius_z &&
+            cs->last_op.wall_mode == cs->wall_mode &&
             cs->last_op.take_uppermost == cs->take_uppermost &&
             cs->last_op.depth == cs->depth &&
             cs->last_op.restrict_to_layer == cs->restrict_to_layer &&
@@ -110,7 +152,12 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
             cs->last_op.smoothness == goxel.painter.smoothness &&
             cs->last_op.dithering == goxel.painter.dithering &&
             vec3_equal(curs->pos, cs->last_op.pos) &&
-            (!cs->has_source || vec3_equal(cs->source_pos, cs->last_op.source_pos))) {
+            (!cs->has_source || vec3_equal(cs->source_pos, cs->last_op.source_pos)) &&
+            (!cs->wall_mode ||
+             (vec3_equal(cs->source_normal, cs->last_op.source_normal) &&
+              /* Drag locks paint face at begin; hover tracks live normal. */
+              (pressed ||
+               vec3_equal(curs->normal, cs->last_op.stroke_normal))))) {
         return true;
     }
     cs->last_op.pressed = pressed;
@@ -119,6 +166,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
     cs->last_op.radius_x = goxel.radius_x;
     cs->last_op.radius_y = goxel.radius_y;
     cs->last_op.radius_z = goxel.radius_z;
+    cs->last_op.wall_mode = cs->wall_mode;
     cs->last_op.take_uppermost = cs->take_uppermost;
     cs->last_op.depth = cs->depth;
     cs->last_op.restrict_to_layer = cs->restrict_to_layer;
@@ -128,13 +176,50 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
     vec3_copy(curs->pos, cs->last_op.pos);
     if (cs->has_source)
         vec3_copy(cs->source_pos, cs->last_op.source_pos);
+    vec3_copy(cs->source_normal, cs->last_op.source_normal);
+    if (pressed)
+        vec3_copy(cs->stroke_normal, cs->last_op.stroke_normal);
+    else
+        vec3_copy(curs->normal, cs->last_op.stroke_normal);
     return false;
 }
 
-static void get_box3(const float p0[3], float r_x, float r_y, float r_z,
-                     float out[4][4])
+/*
+ * Brush box at p0.  Wall mode: Diameter Z along face normal; Diameter X/Y
+ * use a stable UV frame (V = world-up on vertical walls) so remapping
+ * matches left and right faces — raw FACES_MATS swaps U/V on -X.
+ */
+static void get_box3(const float p0[3], const float n[3],
+                     float r_x, float r_y, float r_z,
+                     bool wall_mode, float out[4][4])
 {
     float box[4][4];
+    int face;
+    float u[3], v[3], nn[3];
+
+    if (wall_mode && n && (face = clone_get_face(n)) >= 0) {
+        const int *fn = FACES_NORMALS[face];
+        int n_axis = fn[0] ? 0 : (fn[1] ? 1 : 2);
+
+        vec3_set(nn, (float)fn[0], (float)fn[1], (float)fn[2]);
+        if (n_axis != 2) {
+            vec3_set(v, 0, 0, 1);
+            vec3_set(u, (float)(-fn[1]), (float)fn[0], 0);
+        } else {
+            vec3_set(u, 0, 1, 0);
+            vec3_set(v, (float)(-fn[2]), 0, 0);
+        }
+
+        mat4_set_identity(box);
+        vec3_mul(nn, r_z, box[0]);
+        vec3_mul(u, r_x, box[1]);
+        vec3_mul(v, r_y, box[2]);
+        vec3_copy(p0, box[3]);
+        if (goxel.brush_origin_at_base)
+            vec3_addk(box[3], nn, r_z - 0.5f, box[3]);
+        mat4_copy(box, out);
+        return;
+    }
 
     bbox_from_extents(box, p0, r_x, r_y, r_z);
     box_swap_axis(box, 2, 0, 1, box);
@@ -148,30 +233,52 @@ static const shape_t *clone_shape(void)
     return goxel.painter.shape ? goxel.painter.shape : &shape_sphere;
 }
 
+/*
+ * Paint stamp at target.  `paint_n` — wall-mode paint face (NULL → stroke_normal).
+ * Brush Diameter Z follows the paint face; inherit/UV source uses source_normal.
+ */
 static void apply_at(tool_clone_stamp_t *cs, volume_t *dest,
                      const volume_t *sample,
-                     const float target[3], const float source[3])
+                     const float target[3], const float source[3],
+                     const float *paint_n)
 {
     float box[4][4];
-    clone_stamp_sample_t opts = sample_opts(cs);
+    const float *n = NULL;
+    clone_stamp_sample_t opts;
 
-    get_box3(target, goxel.radius_x, goxel.radius_y, goxel.radius_z, box);
+    if (cs->wall_mode)
+        n = paint_n ? paint_n : cs->stroke_normal;
+    opts = sample_opts(cs, n);
+
+    get_box3(target, n, goxel.radius_x, goxel.radius_y, goxel.radius_z,
+             cs->wall_mode, box);
     clone_stamp_apply(dest, sample, target, source, box, clone_shape(),
                       goxel.painter.smoothness, goxel.painter.dithering,
                       cs->opacity, &opts);
 }
 
-/* Build / clear the on-top source-block highlight volume. */
+/* Build / clear the on-top source-block highlight volume.
+ * Markers always use the source face (pick normal or locked source_normal). */
 static void set_source_markers(tool_clone_stamp_t *cs, const volume_t *sample,
-                               const float source[3], const uint8_t marker[4])
+                               const float source[3], const float *orient_n,
+                               const uint8_t marker[4])
 {
     float box[4][4];
-    clone_stamp_sample_t opts = sample_opts(cs);
+    const float *n = orient_n ? orient_n
+                              : (cs->wall_mode ? cs->source_normal : NULL);
+    /* Preview markers: source and target face are the same (source space). */
+    clone_stamp_sample_t opts = {
+        .take_uppermost = cs->wall_mode ? false : cs->take_uppermost,
+        .depth = cs->depth,
+        .source_face = cs->wall_mode && n ? clone_get_face(n) : -1,
+        .target_face = cs->wall_mode && n ? clone_get_face(n) : -1,
+    };
 
     if (!cs->source_markers) cs->source_markers = volume_new();
     volume_clear(cs->source_markers);
     if (!sample) return;
-    get_box3(source, goxel.radius_x, goxel.radius_y, goxel.radius_z, box);
+    get_box3(source, n, goxel.radius_x, goxel.radius_y, goxel.radius_z,
+             cs->wall_mode, box);
     clone_stamp_preview_source(cs->source_markers, sample, source, box,
                                clone_shape(), 0.f, &opts, marker);
 }
@@ -215,10 +322,11 @@ static void rebuild_stroke_from_path(tool_clone_stamp_t *cs)
 
     volume_set(cs->stroke, cs->volume_orig);
     for (i = 0; i < cs->path_count; i++) {
-        vec3_add(cs->path[i], cs->offset, src);
-        apply_at(cs, cs->stroke, sample, cs->path[i], src);
-        if (i == cs->path_count - 1)
-            vec3_copy(src, cs->source_pos);
+        if (cs->wall_mode)
+            vec3_copy(cs->source_pos, src);
+        else
+            vec3_add(cs->path[i], cs->offset, src);
+        apply_at(cs, cs->stroke, sample, cs->path[i], src, NULL);
     }
 }
 
@@ -231,15 +339,17 @@ static void refresh_tool_preview(tool_clone_stamp_t *cs)
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, cs->stroke);
     if (cs->has_source)
-        set_source_markers(cs, sample, cs->source_pos, k_source_marker);
+        set_source_markers(cs, sample, cs->source_pos, NULL, k_source_marker);
     else
         clear_source_markers(cs);
     cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
 }
 
-/* Layer view + exact sample blocks at `at` with the given marker colour. */
+/* Layer view + exact sample blocks at `at` with the given marker colour.
+ * `orient_n` — wall-mode face while picking (live cursor). */
 static void show_exact_source_preview(tool_clone_stamp_t *cs,
                                       const float at[3],
+                                      const float *orient_n,
                                       const uint8_t marker[4])
 {
     volume_t *layer = goxel.image->active_layer->volume;
@@ -247,19 +357,24 @@ static void show_exact_source_preview(tool_clone_stamp_t *cs,
 
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, layer);
-    set_source_markers(cs, sample, at, marker);
+    set_source_markers(cs, sample, at, orient_n, marker);
     cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
     cs->last_op.has_source = cs->has_source;
     cs->last_op.restrict_to_layer = cs->restrict_to_layer;
+    cs->last_op.wall_mode = cs->wall_mode;
     vec3_copy(at, cs->last_op.pos);
     if (cs->has_source)
         vec3_copy(cs->source_pos, cs->last_op.source_pos);
+    vec3_copy(cs->source_normal, cs->last_op.source_normal);
+    if (orient_n)
+        vec3_copy(orient_n, cs->last_op.stroke_normal);
 }
 
 static void update_source_from_target(tool_clone_stamp_t *cs,
                                       const float target[3])
 {
-    if (!cs->offset_locked) return;
+    /* Wall mode keeps the clone source fixed after Ctrl+Click. */
+    if (cs->wall_mode || !cs->offset_locked) return;
     vec3_add(target, cs->offset, cs->source_pos);
 }
 
@@ -273,6 +388,7 @@ static int on_set_source(gesture3d_t *gest, void *user)
         gest->state == GESTURE_END) {
         if (gest->state != GESTURE_END) {
             vec3_copy(curs->pos, cs->source_pos);
+            vec3_copy(curs->normal, cs->source_normal);
             cs->has_source = true;
             cs->offset_locked = false;
             goxel_set_help_text(
@@ -280,7 +396,8 @@ static int on_set_source(gesture3d_t *gest, void *user)
         }
         /* Confirmed source: yellow exact-block highlight. */
         if (cs->has_source)
-            show_exact_source_preview(cs, cs->source_pos, k_source_marker);
+            show_exact_source_preview(cs, cs->source_pos, cs->source_normal,
+                                      k_source_marker);
     }
     return 0;
 }
@@ -298,7 +415,7 @@ static int on_ctrl_hover(gesture3d_t *gest, void *user)
         check_can_skip(cs, curs))
         return 0;
 
-    show_exact_source_preview(cs, curs->pos, k_pick_marker);
+    show_exact_source_preview(cs, curs->pos, curs->normal, k_pick_marker);
     return 0;
 }
 
@@ -324,9 +441,13 @@ static int on_drag(gesture3d_t *gest, void *user)
     vec3_copy(curs->pos, target);
 
     if (gest->state == GESTURE_BEGIN) {
-        vec3_sub(cs->source_pos, target, cs->offset);
+        if (!cs->wall_mode)
+            vec3_sub(cs->source_pos, target, cs->offset);
         cs->offset_locked = true;
         vec3_copy(target, cs->last_pos);
+        /* Lock paint-face orientation for the whole stroke. */
+        if (cs->wall_mode)
+            vec3_copy(curs->normal, cs->stroke_normal);
 
         if (!cs->volume_orig)
             cs->volume_orig = volume_new();
@@ -338,7 +459,7 @@ static int on_drag(gesture3d_t *gest, void *user)
         path_clear(cs);
         path_push(cs, target);
         apply_at(cs, cs->stroke, clone_sample_volume(cs, cs->volume_orig),
-                 target, cs->source_pos);
+                 target, cs->source_pos, NULL);
         refresh_tool_preview(cs);
         return 0;
     }
@@ -363,9 +484,13 @@ static int on_drag(gesture3d_t *gest, void *user)
             vec3_mix(cs->last_pos, curs->pos, (i + 1.0f) / nb, pos);
             path_push(cs, pos);
             if (!needs_stroke_rebuild(cs)) {
-                vec3_add(pos, cs->offset, src);
-                apply_at(cs, cs->stroke, sample, pos, src);
-                vec3_copy(src, cs->source_pos);
+                if (cs->wall_mode)
+                    vec3_copy(cs->source_pos, src);
+                else {
+                    vec3_add(pos, cs->offset, src);
+                    vec3_copy(src, cs->source_pos);
+                }
+                apply_at(cs, cs->stroke, sample, pos, src, NULL);
             }
         }
     }
@@ -383,10 +508,10 @@ static int on_drag(gesture3d_t *gest, void *user)
         goxel.tool_volume = NULL;
         cs->offset_locked = false;
         path_clear(cs);
-        /* Keep yellow source markers at the locked offset endpoint. */
+        /* Keep yellow source markers (wall: fixed; else: stroke endpoint). */
         if (cs->has_source)
             set_source_markers(cs, clone_sample_volume(cs, cs->volume_orig),
-                               cs->source_pos, k_source_marker);
+                               cs->source_pos, NULL, k_source_marker);
     }
     return 0;
 }
@@ -404,7 +529,7 @@ static int on_hover(gesture3d_t *gest, void *user)
             goxel.tool_volume = NULL;
             if (cs->has_source)
                 set_source_markers(cs, clone_sample_volume(cs, layer),
-                                   cs->source_pos, k_source_marker);
+                                   cs->source_pos, NULL, k_source_marker);
             else
                 clear_source_markers(cs);
         }
@@ -428,8 +553,10 @@ static int on_hover(gesture3d_t *gest, void *user)
     volume_set(goxel.tool_volume, layer);
     {
         const volume_t *sample = clone_sample_volume(cs, layer);
-        apply_at(cs, goxel.tool_volume, sample, curs->pos, cs->source_pos);
-        set_source_markers(cs, sample, cs->source_pos, k_source_marker);
+        /* Hover: remap source face → live paint face under the cursor. */
+        apply_at(cs, goxel.tool_volume, sample, curs->pos, cs->source_pos,
+                 curs->normal);
+        set_source_markers(cs, sample, cs->source_pos, NULL, k_source_marker);
     }
 
     cs->last_op.volume_key = volume_get_key(goxel.tool_volume);
@@ -470,12 +597,18 @@ static int iter(tool_t *tool, const painter_t *painter,
 
     if (cs->has_source) {
         goxel_set_help_text(
-            "Clone Stamp — click and drag to paint; Ctrl+Click to move the "
-            "source");
+            cs->wall_mode
+                ? "Wall Clone — click and drag to stamp; Ctrl+Click to move "
+                  "the source"
+                : "Clone Stamp — click and drag to paint; Ctrl+Click to move "
+                  "the source");
     } else {
         goxel_set_help_text(
-            "Clone Stamp — Ctrl+Click to set the clone source, then click "
-            "and drag to paint");
+            cs->wall_mode
+                ? "Wall Clone — Ctrl+Click a wall face to set the source, "
+                  "then click and drag to stamp"
+                : "Clone Stamp — Ctrl+Click to set the clone source, then "
+                  "click and drag to paint");
     }
 
     curs->snap_mask |= SNAP_ROUNDED;
@@ -501,6 +634,9 @@ static int gui(tool_t *tool)
     tool_gui_radius();
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
+    gui_checkbox("Wall mode", &cs->wall_mode,
+                 "Inherit along the source face normal; orient the brush to "
+                 "the paint face. Source stays fixed while painting.");
     tool_gui_smoothness();
 
     if (gui_section_begin("Clone source", true)) {
@@ -523,16 +659,22 @@ static int gui(tool_t *tool)
         gui_checkbox("Restrict to layer", &cs->restrict_to_layer,
                      "Only sample clone colours from the current layer. "
                      "When disabled, use all visible layers.");
-        gui_checkbox("Inherit infinitely", &cs->take_uppermost,
-                     "Always take the uppermost block in each column "
-                     "(full map height). As the source moves onto taller "
-                     "terrain, those higher blocks are used.");
-        if (!cs->take_uppermost) {
+        if (!cs->wall_mode) {
+            gui_checkbox("Inherit infinitely", &cs->take_uppermost,
+                         "Always take the uppermost block in each column "
+                         "(full map height). As the source moves onto taller "
+                         "terrain, those higher blocks are used.");
+        }
+        if (cs->wall_mode || !cs->take_uppermost) {
             if (gui_input_int("Depth", &cs->depth, 0, 128))
                 cs->depth = clamp(cs->depth, 0, 128);
             gui_tooltip_if_hovered(
-                "Distance from clone source location vertically we will "
-                "copy/inherit color from; useful if under a roof/other structure");
+                cs->wall_mode
+                    ? "Distance along the source face normal to search for "
+                      "a colour (into / out of the wall)"
+                    : "Distance from clone source location vertically we will "
+                      "copy/inherit color from; useful if under a roof/other "
+                      "structure");
         }
         {
             int opacity_pct = (int)(cs->opacity * 100.f + 0.5f);

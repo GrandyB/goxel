@@ -7,20 +7,27 @@
 #include "volume.h"
 
 /*
- * How to pick a colour in each source XY column.
+ * How to pick a colour in each source column.
  *
- * take_uppermost — absolute top solid in the column (full map height).
- * Otherwise — only search Z in [source_z - depth, source_z + depth],
- * taking the uppermost solid in that window.  depth 0 = exact source Z.
+ * take_uppermost — absolute outermost solid along the inherit axis
+ * (full map extent).  Otherwise — only search
+ * [source_depth ± depth] along that axis.
+ *
+ * When source_face / target_face are in 0..5 (cube faces), inheritance
+ * and column mapping follow those face normals/tangents (wall mode).
+ * When either is < 0, classic XY columns + world-Z inherit.
  */
 typedef struct clone_stamp_sample {
     bool take_uppermost;
     int  depth;
+    int  source_face; /* -1 = classic Z; else 0..5 */
+    int  target_face; /* -1 = classic Z; else 0..5 */
 } clone_stamp_sample_t;
 
 /*
  * Paint colours from `sample` onto existing voxels in `dest` within the
- * brush shape centered at `target` (XY offset from source; Z via opts).
+ * brush shape centered at `target` (tangential offset from source; depth
+ * via opts).
  *
  * smoothness / dithering match brush painter antialiasing (soft coverage
  * and scattered SDF edges).  opacity (0..1) scales MODE_PAINT strength.
