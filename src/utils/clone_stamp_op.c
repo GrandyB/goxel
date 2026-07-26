@@ -165,18 +165,21 @@ static bool column_in_brush(const shape_t *shape, const float mat[4][4],
 void clone_stamp_apply(volume_t *dest, const volume_t *sample,
                        const float target[3], const float source[3],
                        const float box[4][4], const shape_t *shape,
-                       float smoothness, float dithering,
+                       float smoothness, float dithering, float opacity,
                        const clone_stamp_sample_t *opts)
 {
     volume_iterator_t iter;
     volume_accessor_t dest_acc, sample_acc;
-    float mat[4][4], size[3], iter_box[4][4], v;
+    float mat[4][4], size[3], iter_box[4][4], v, opac;
     int vp[3], off[2], source_z, lowest_z, highest_z, hard_aabb[2][3];
     uint8_t dest_c[4], sample_c[4], out[4];
     clone_stamp_sample_t opts_tmp;
     const clone_stamp_sample_t *o = sample_opts_or_default(opts, &opts_tmp);
 
     assert(dest && sample && shape);
+    opac = clamp(opacity, 0.f, 1.f);
+    if (opac <= 0.f) return;
+
     shape_box_setup(box, mat, size);
     grow_box_for_aa(box, smoothness + dithering, iter_box);
     box_get_aabb(box, hard_aabb);
@@ -207,7 +210,7 @@ void clone_stamp_apply(volume_t *dest, const volume_t *sample,
                                sample_c, NULL))
             continue;
 
-        sample_c[3] = (uint8_t)(sample_c[3] * v);
+        sample_c[3] = (uint8_t)(sample_c[3] * v * opac);
         if (!sample_c[3]) continue;
 
         voxel_combine(dest_c, sample_c, MODE_PAINT, out);

@@ -27,11 +27,12 @@ typedef struct {
     bool take_uppermost;     /* default true once sample_inited */
     int  depth;              /* used when !take_uppermost; default 0 */
     bool restrict_to_layer;  /* default false: sample all visible layers */
+    float opacity;           /* MODE_PAINT strength 0..1; default 1 */
 
     float last_pos[3];
 
-    /* Stroke path (target centres) — rebuilt when antialiasing is on so
-     * soft MODE_PAINT does not harden on overlapping stamps. */
+    /* Stroke path (target centres) — rebuilt when antialiasing / partial
+     * opacity is on so soft MODE_PAINT does not harden on overlapping stamps. */
     float (*path)[3];
     int path_count;
     int path_cap;
@@ -46,6 +47,7 @@ typedef struct {
         bool     take_uppermost;
         int      depth;
         bool     restrict_to_layer;
+        float    opacity;
         float    smoothness;
         float    dithering;
     } last_op;
@@ -64,7 +66,14 @@ static void ensure_sample_defaults(tool_clone_stamp_t *cs)
     cs->take_uppermost = true;
     cs->depth = 0;
     cs->restrict_to_layer = false;
+    cs->opacity = 1.f;
     cs->sample_inited = true;
+}
+
+/* Soft MODE_PAINT needs a full path rebuild — overlapping stamps harden. */
+static bool needs_stroke_rebuild(const tool_clone_stamp_t *cs)
+{
+    return goxel.painter.smoothness > 0.f || cs->opacity < 1.f;
 }
 
 static clone_stamp_sample_t sample_opts(const tool_clone_stamp_t *cs)
@@ -97,6 +106,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
             cs->last_op.take_uppermost == cs->take_uppermost &&
             cs->last_op.depth == cs->depth &&
             cs->last_op.restrict_to_layer == cs->restrict_to_layer &&
+            cs->last_op.opacity == cs->opacity &&
             cs->last_op.smoothness == goxel.painter.smoothness &&
             cs->last_op.dithering == goxel.painter.dithering &&
             vec3_equal(curs->pos, cs->last_op.pos) &&
@@ -112,6 +122,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
     cs->last_op.take_uppermost = cs->take_uppermost;
     cs->last_op.depth = cs->depth;
     cs->last_op.restrict_to_layer = cs->restrict_to_layer;
+    cs->last_op.opacity = cs->opacity;
     cs->last_op.smoothness = goxel.painter.smoothness;
     cs->last_op.dithering = goxel.painter.dithering;
     vec3_copy(curs->pos, cs->last_op.pos);
@@ -147,7 +158,7 @@ static void apply_at(tool_clone_stamp_t *cs, volume_t *dest,
     get_box3(target, goxel.radius_x, goxel.radius_y, goxel.radius_z, box);
     clone_stamp_apply(dest, sample, target, source, box, clone_shape(),
                       goxel.painter.smoothness, goxel.painter.dithering,
-                      &opts);
+                      cs->opacity, &opts);
 }
 
 /* Build / clear the on-top source-block highlight volume. */
@@ -351,7 +362,7 @@ static int on_drag(gesture3d_t *gest, void *user)
             float src[3];
             vec3_mix(cs->last_pos, curs->pos, (i + 1.0f) / nb, pos);
             path_push(cs, pos);
-            if (goxel.painter.smoothness <= 0.f) {
+            if (!needs_stroke_rebuild(cs)) {
                 vec3_add(pos, cs->offset, src);
                 apply_at(cs, cs->stroke, sample, pos, src);
                 vec3_copy(src, cs->source_pos);
@@ -359,7 +370,7 @@ static int on_drag(gesture3d_t *gest, void *user)
         }
     }
 
-    if (goxel.painter.smoothness > 0.f)
+    if (needs_stroke_rebuild(cs))
         rebuild_stroke_from_path(cs);
 
     vec3_copy(target, cs->last_pos);
@@ -522,6 +533,16 @@ static int gui(tool_t *tool)
             gui_tooltip_if_hovered(
                 "Distance from clone source location vertically we will "
                 "copy/inherit color from; useful if under a roof/other structure");
+        }
+        {
+            int opacity_pct = (int)(cs->opacity * 100.f + 0.5f);
+            if (gui_input_int("Opacity %", &opacity_pct, 0, 100)) {
+                opacity_pct = clamp(opacity_pct, 0, 100);
+                cs->opacity = opacity_pct / 100.f;
+            }
+            gui_tooltip_if_hovered(
+                "How strongly cloned colours paint onto the destination "
+                "(100% = full replace, lower blends with existing colour)");
         }
     }
     gui_section_end();

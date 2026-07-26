@@ -23,12 +23,12 @@ typedef struct clone_stamp_sample {
  * brush shape centered at `target` (XY offset from source; Z via opts).
  *
  * smoothness / dithering match brush painter antialiasing (soft coverage
- * and scattered SDF edges).
+ * and scattered SDF edges).  opacity (0..1) scales MODE_PAINT strength.
  */
 void clone_stamp_apply(volume_t *dest, const volume_t *sample,
                        const float target[3], const float source[3],
                        const float box[4][4], const shape_t *shape,
-                       float smoothness, float dithering,
+                       float smoothness, float dithering, float opacity,
                        const clone_stamp_sample_t *opts);
 
 /*
