@@ -30,6 +30,8 @@ typedef struct {
     // Gesture start and last pos (should we put it in the 3d gesture?)
     float start_pos[3];
     float last_pos[3];
+    /* Face normal locked at drag begin (block face alignment). */
+    float stroke_normal[3];
     // Cache of the last operation (hover/drag skip).
     // XXX: could we remove this?
     struct     {
@@ -67,7 +69,8 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
                 goxel.brush_block_face_alignment &&
             brush->last_op.origin_at_base == goxel.brush_origin_at_base &&
             vec3_equal(curs->pos, brush->last_op.pos) &&
-            (!goxel.brush_block_face_alignment ||
+            /* Drag locks alignment at begin; only hover tracks live normal. */
+            (!goxel.brush_block_face_alignment || pressed ||
              vec3_equal(curs->normal, brush->last_op.normal))) {
         return true;
     }
@@ -197,6 +200,7 @@ static int on_drag(gesture3d_t *gest, void *user)
         volume_set(brush->volume_orig, goxel.image->active_layer->volume);
         brush->last_op.mode = 0; // Discard last op.
         vec3_copy(target, brush->last_pos);
+        vec3_copy(curs->normal, brush->stroke_normal);
         image_history_push(goxel.image);
         volume_clear(brush->volume);
         if (!brush->delta) brush->delta = volume_new();
@@ -234,13 +238,14 @@ static int on_drag(gesture3d_t *gest, void *user)
             nb = max(nb, 1);
             for (i = 0; i <= nb; i++) {
                 vec3_mix(brush->start_pos, target, (float)i / nb, pos);
-                get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
+                get_box3(pos, NULL, brush->stroke_normal,
+                         r_x, r_y, r_z, NULL, box);
                 volume_op(brush->delta, &painter, box);
             }
         } else if (painter.shape == &shape_sphere) {
             // Larger spheres: one tube along the segment (not stamped spheres).
             painter.shape = &shape_cylinder;
-            get_box3(brush->start_pos, target, curs->normal,
+            get_box3(brush->start_pos, target, brush->stroke_normal,
                      r_x, r_y, r_z, NULL, box);
             volume_op(brush->delta, &painter, box);
             painter.shape = &shape_sphere;
@@ -251,7 +256,8 @@ static int on_drag(gesture3d_t *gest, void *user)
             nb = max(nb, 1);
             for (i = 0; i <= nb; i++) {
                 vec3_mix(brush->start_pos, target, (float)i / nb, pos);
-                get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
+                get_box3(pos, NULL, brush->stroke_normal,
+                         r_x, r_y, r_z, NULL, box);
                 volume_op(brush->delta, &painter, box);
             }
         }
@@ -263,7 +269,8 @@ static int on_drag(gesture3d_t *gest, void *user)
     if (!alt) {
         for (i = 0; i < nb; i++) {
             vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
-            get_box3(pos, NULL, curs->normal, r_x, r_y, r_z, NULL, box);
+            get_box3(pos, NULL, brush->stroke_normal,
+                     r_x, r_y, r_z, NULL, box);
             volume_op(brush->delta, &painter, box);
         }
     }
