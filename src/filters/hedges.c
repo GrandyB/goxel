@@ -446,7 +446,7 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(hedges, filter_hedges_t,
-                .name = "Generation - Hedges",
+                .name = "Plan - Hedges",
                 .on_open = on_open,
                 .panel_width = 260,
                 .gui_fn = gui, )
