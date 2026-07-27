@@ -389,6 +389,7 @@ static int gui(filter_t *filter_)
     if (gui_collapsing_header("Hint", false))
         gui_text_wrapped(help_text);
 
+    gui_label_size_push(120.0f);
     gui_input_int("Thickness", &filter->thickness, 1, 64);
     gui_input_int("Anti-alias", &filter->anti_alias, 0, 16);
     gui_input_float("Dithering", &filter->dithering, 0.1f, 0.f, 16.f, "%.1f");
@@ -412,6 +413,7 @@ static int gui(filter_t *filter_)
         }
         gui_combo_end();
     }
+    gui_label_size_pop();
 
     gui_separator();
     if (gui_button("Reset to defaults", -1, 0))
