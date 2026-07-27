@@ -44,6 +44,7 @@ typedef struct {
      * saturation = how colourful that mix is (0 = luminance-only). */
     int noise_intensity;
     int noise_saturation;
+    bool current_layer;
 } filter_hedges_t;
 
 static const uint8_t k_default_color[4] = {48, 92, 38, 255};
@@ -57,6 +58,7 @@ static void reset_defaults(filter_hedges_t *filter)
     filter->seed = 0;
     filter->noise_intensity = 10;
     filter->noise_saturation = 10;
+    filter->current_layer = false;
     memcpy(filter->color, k_default_color, 4);
 }
 
@@ -336,9 +338,31 @@ static void stamp_seed(volume_t *vol, const hedge_seed_t *seeds, int nseeds,
     }
 }
 
+static layer_t *prepare_target_layer(filter_hedges_t *filter, layer_t *plan_layer)
+{
+    layer_t *target = plan_layer;
+    const char *suffix = " Hedges";
+    int max_base;
+
+    if (filter->current_layer)
+        return target;
+
+    target = image_add_layer(goxel.image, NULL);
+    if (!target)
+        return NULL;
+    target->visible = true;
+    max_base = (int)sizeof(target->name) - 1 - (int)strlen(suffix);
+    if (max_base < 0) max_base = 0;
+    snprintf(target->name, sizeof(target->name), "%.*s%s",
+             max_base, plan_layer->name, suffix);
+    plan_layer->visible = false;
+    return target;
+}
+
 static void apply_hedges(filter_hedges_t *filter, layer_t *layer)
 {
     volume_t *src;
+    layer_t *target_layer;
     hedge_seed_t *seeds = NULL;
     int nseeds = 0;
     int min_h, max_h, min_w, max_w;
@@ -366,20 +390,26 @@ static void apply_hedges(filter_hedges_t *filter, layer_t *layer)
     }
 
     image_history_push(goxel.image);
-    volume_clear(layer->volume);
+    target_layer = prepare_target_layer(filter, layer);
+    if (!target_layer) {
+        free(seeds);
+        volume_delete(src);
+        return;
+    }
+    volume_clear(target_layer->volume);
 
     for (i = 0; i < nseeds; i++)
-        stamp_seed(layer->volume, seeds, nseeds, i, min_h, max_h, min_w, max_w,
+        stamp_seed(target_layer->volume, seeds, nseeds, i, min_h, max_h, min_w, max_w,
                    filter);
 
     /* Keep the centreline populated if noise ate the seed column. */
     for (i = 0; i < nseeds; i++) {
         uint8_t probe[4];
         int pos[3] = {seeds[i].x, seeds[i].y, seeds[i].base_z};
-        volume_get_at(layer->volume, NULL, pos, probe);
+        volume_get_at(target_layer->volume, NULL, pos, probe);
         if (probe[3] != 0)
             continue;
-        paint_hedge_column(layer->volume, seeds[i].x, seeds[i].y, seeds[i].base_z,
+        paint_hedge_column(target_layer->volume, seeds[i].x, seeds[i].y, seeds[i].base_z,
                            clampi(lerpi(min_h, max_h,
                                         contrast01(hedge_noise_smooth(
                                             seeds[i].x, seeds[i].y,
@@ -421,6 +451,7 @@ static int gui(filter_t *filter_)
     gui_input_int("Saturation", &filter->noise_saturation, 0, 100);
     gui_tooltip_if_hovered(
         "How colourful the variation is. 0 = lightness-only mottling.");
+    gui_checkbox("Current layer", &filter->current_layer, NULL);
 
     gui_separator();
     gui_input_int("Seed", &filter->seed, 0, RAND_MAX);
