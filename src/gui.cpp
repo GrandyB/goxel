@@ -2780,7 +2780,8 @@ void gui_list(const gui_list_t *list)
             }
         }
         if (!move_dir && ImGui::IsItemActive() && !ImGui::IsItemHovered()) {
-            move_dir = ImGui::GetMouseDragDelta(0).y < 0.f ? +1 : -1;
+            /* DL_FOREACH_REVERSE: invert vs forward-order drag mapping. */
+            move_dir = ImGui::GetMouseDragDelta(0).y < 0.f ? -1 : +1;
             move_item = item;
         }
         i++;
