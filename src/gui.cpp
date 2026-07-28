@@ -670,12 +670,11 @@ static void render_view_cube(void)
 
     const float icon_size = 42.0f;
     const float icon_spacing = 6.0f;
-    const float icons_w = icon_size * 4 + icon_spacing * 3;
-    const float win_w = max(w, icons_w + 4.0f);
-    const float icon_x = max(2.0f, (win_w - icons_w) * 0.5f);
+    const float icons_h = icon_size * 4 + icon_spacing * 3;
+    const float win_w = w;
+    const float icon_x = max(2.0f, (win_w - icon_size) * 0.5f) + 15.0f;
     const float cube_x = goxel.gui.viewport[2] - GUI_PANEL_WIDTH_NORMAL - win_w;
     const float cube_y = goxel.gui.viewport[1];
-    const float icons_h = icon_size + 6.0f;
 
     /* ViewManipulate turns `length` into eye position (target + dir * length).
      * First-person modes stash dist as 0; passing 0 collapses the camera. */
@@ -690,12 +689,12 @@ static void render_view_cube(void)
     ImGui::Begin("Gizmo", NULL, ImGuiWindowFlags_NoDecoration);
     ImGuizmo::SetDrawlist();
 
-    ImGuizmo::SetRect(ImGui::GetWindowPos().x + (win_w - w), ImGui::GetWindowPos().y, w, h);
+    ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, w, h);
     ImGuizmo::ViewManipulate(
            (float*)view, projection,
            ImGuizmo::ROTATE, ImGuizmo::LOCAL,
            (float*)&mat4_identity, gizmo_dist,
-           ImGui::GetWindowPos() + ImVec2(win_w - w, 0),
+           ImGui::GetWindowPos(),
            ImVec2(w, h), 0x0);
 
     /* Orbit only: cube may rewrite the view. In FPV/Player, dist is not the
@@ -708,24 +707,27 @@ static void render_view_cube(void)
     ImGui::End();
 
     /* Separate window so preset clicks are outside ViewManipulate's hit rect. */
-    ImGui::SetNextWindowSize(ImVec2(win_w, icons_h));
-    ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y + h));
+    ImGui::SetNextWindowSize(ImVec2(win_w, icons_h + 4.0f));
+    ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y + h - 5.0f));
     ImGui::Begin("GizmoCameraPresets", NULL, ImGuiWindowFlags_NoDecoration);
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(icon_spacing, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, icon_spacing));
     ImGui::SetCursorPos(ImVec2(icon_x, 2.0f));
 
     if (gizmo_camera_icon_button("##camera_ptz", ICON_CAMERA_PTZ, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, false, false);
     gizmo_camera_tooltip_if_hovered("Orbit camera");
-    ImGui::SameLine();
+
+    ImGui::SetCursorPosX(icon_x);
     if (gizmo_camera_icon_button("##camera_fly", ICON_CAMERA_FLY, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_FPV, false, false);
     gizmo_camera_tooltip_if_hovered("Fly camera");
-    ImGui::SameLine();
+
+    ImGui::SetCursorPosX(icon_x);
     if (gizmo_camera_icon_button("##camera_player", ICON_CAMERA_PLAYER, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_PLAYER, false, false);
     gizmo_camera_tooltip_if_hovered("Player camera");
-    ImGui::SameLine();
+
+    ImGui::SetCursorPosX(icon_x);
     if (gizmo_camera_icon_button("##camera_topdown", ICON_CAMERA_TOPDOWN, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, true, true);
     gizmo_camera_tooltip_if_hovered("Top-down camera");
