@@ -671,17 +671,19 @@ static void render_view_cube(void)
     const float icon_size = 42.0f;
     const float icon_spacing = 6.0f;
     const float icons_w = icon_size * 4 + icon_spacing * 3;
-    const float icon_shift_x = -10.0f;
-    const float icon_shift_y = h - 15.0f;
-    const float win_w = max(w, icons_w + (-icon_shift_x) * 2.0f + 4.0f);
-    const float icon_x = max(2.0f, (win_w - icons_w) * 0.5f + icon_shift_x);
+    const float win_w = max(w, icons_w + 4.0f);
+    const float icon_x = max(2.0f, (win_w - icons_w) * 0.5f);
     const float cube_x = goxel.gui.viewport[2] - GUI_PANEL_WIDTH_NORMAL - win_w;
     const float cube_y = goxel.gui.viewport[1];
-
     const float icons_h = icon_size + 6.0f;
-    const float total_h = h + icons_h + 1.0f;
 
-    ImGui::SetNextWindowSize(ImVec2(win_w, total_h));
+    /* ViewManipulate turns `length` into eye position (target + dir * length).
+     * First-person modes stash dist as 0; passing 0 collapses the camera. */
+    float gizmo_dist = camera->dist;
+    if (gizmo_dist <= 0.f)
+        gizmo_dist = camera->prev_dist > 0.f ? camera->prev_dist : 128.f;
+
+    ImGui::SetNextWindowSize(ImVec2(win_w, h));
     ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
@@ -692,15 +694,25 @@ static void render_view_cube(void)
     ImGuizmo::ViewManipulate(
            (float*)view, projection,
            ImGuizmo::ROTATE, ImGuizmo::LOCAL,
-           (float*)&mat4_identity, camera->dist,
+           (float*)&mat4_identity, gizmo_dist,
            ImGui::GetWindowPos() + ImVec2(win_w - w, 0),
            ImVec2(w, h), 0x0);
 
-    mat4_invert(view, view);
-    mat4_mul(yup2zup, view, camera->mat);
+    /* Orbit only: cube may rewrite the view. In FPV/Player, dist is not the
+     * eye offset — writing back would yank the camera along the look axis. */
+    if (!camera_is_firstperson(camera)) {
+        mat4_invert(view, view);
+        mat4_mul(yup2zup, view, camera->mat);
+    }
 
+    ImGui::End();
+
+    /* Separate window so preset clicks are outside ViewManipulate's hit rect. */
+    ImGui::SetNextWindowSize(ImVec2(win_w, icons_h));
+    ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y + h));
+    ImGui::Begin("GizmoCameraPresets", NULL, ImGuiWindowFlags_NoDecoration);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(icon_spacing, 0));
-    ImGui::SetCursorPos(ImVec2(icon_x, icon_shift_y));
+    ImGui::SetCursorPos(ImVec2(icon_x, 2.0f));
 
     if (gizmo_camera_icon_button("##camera_ptz", ICON_CAMERA_PTZ, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, false, false);

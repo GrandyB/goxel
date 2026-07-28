@@ -343,6 +343,18 @@ bool camera_is_player(const camera_t *cam)
     return cam->mode == CAMERA_MODE_PLAYER;
 }
 
+/* Forward dolly amount so a subject at `orbit_depth` keeps the same size when
+ * FOV goes from orbit `fovy` to wider `fovy_fpv`. Fly→orbit applies the inverse. */
+static float camera_fov_dolly_delta(float orbit_depth, float fovy_deg, float fovy_fpv_deg)
+{
+    float t0, t1;
+    if (orbit_depth <= 0.f) return 0.f;
+    t0 = tanf(fovy_deg * (float)(M_PI / 180.0) * 0.5f);
+    t1 = tanf(fovy_fpv_deg * (float)(M_PI / 180.0) * 0.5f);
+    if (t1 < 1e-6f) return 0.f;
+    return orbit_depth * (1.f - t0 / t1);
+}
+
 void camera_set_mode(camera_t *cam, camera_mode_t m)
 {
     camera_mode_t old = cam->mode;
@@ -355,14 +367,30 @@ void camera_set_mode(camera_t *cam, camera_mode_t m)
 
     if (old == CAMERA_MODE_ORBIT &&
         (m == CAMERA_MODE_FPV || m == CAMERA_MODE_PLAYER)) {
+        float depth = cam->dist;
+        bool was_ortho = cam->ortho;
+        float delta;
         cam->prev_dist = cam->dist;
-        cam->dist = 0;
         cam->prev_ortho = cam->ortho;
         cam->ortho = false;
+        /* Wider fovy_fpv would look zoomed-out at the same eye; dolly forward. */
+        if (!was_ortho) {
+            delta = camera_fov_dolly_delta(depth, cam->fovy, cam->fovy_fpv);
+            if (delta != 0.f)
+                mat4_itranslate(cam->mat, 0, 0, -delta);
+        }
+        cam->dist = 0;
     } else if ((old == CAMERA_MODE_FPV || old == CAMERA_MODE_PLAYER) &&
                m == CAMERA_MODE_ORBIT) {
+        float delta;
         cam->dist = cam->prev_dist;
         cam->ortho = cam->prev_ortho;
+        /* Exact inverse of the orbit→FPV dolly (same delta, opposite sign). */
+        if (!cam->ortho) {
+            delta = camera_fov_dolly_delta(cam->prev_dist, cam->fovy, cam->fovy_fpv);
+            if (delta != 0.f)
+                mat4_itranslate(cam->mat, 0, 0, +delta);
+        }
     }
     cam->mode = m;
 }
