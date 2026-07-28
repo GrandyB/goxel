@@ -643,6 +643,18 @@ struct brush_texture {
     int w, h, bpp;   // Decoded image dimensions / channels.
     uint8_t *pixels; // CPU-side RGBA/RGB data, used for brush sampling.
     texture_t *preview; // Lazily-created GL texture for brush UI thumbnails.
+    /* Per-texture HSL / opacity (remembered when flicking between textures).
+     * Hue degrees [-180,+180], sat % [0,200] (100=identity),
+     * lightness % [-100,+100] (0=identity), opacity 0..255. */
+    float hue;
+    float saturation;
+    float lightness;
+    uint8_t opacity;
+    /* Last values baked into preview (for dirty detection). */
+    float preview_hue;
+    float preview_saturation;
+    float preview_lightness;
+    uint8_t preview_opacity;
 };
 
 // the global goxel instance.

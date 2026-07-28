@@ -23,6 +23,7 @@
 #include "../ext_src/stb/stb_ds.h"
 
 #include "shader_cache.h"
+#include "utils/color.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -384,6 +385,15 @@ static bool brush_texture_add_from_file(const char *path, const char *name)
         .bpp = bpp,
         .pixels = img,
         .preview = NULL,
+        .hue = 0.f,
+        .saturation = 100.f,
+        .lightness = 0.f,
+        .opacity = 255,
+        /* Force first preview bake (identity values differ from unset). */
+        .preview_hue = 1.f,
+        .preview_saturation = 0.f,
+        .preview_lightness = 1.f,
+        .preview_opacity = 0,
     }));
     goxel.brush_textures_count = arrlen(goxel.brush_textures);
     free(data);
@@ -595,20 +605,141 @@ bool goxel_brush_textures_dir(char *out, size_t out_size)
     return true;
 }
 
+typedef struct {
+    char *name;
+    float hue;
+    float saturation;
+    float lightness;
+    uint8_t opacity;
+} brush_texture_adj_t;
+
+static void brush_texture_store_adjustments(brush_texture_t *t)
+{
+    if (!t) return;
+    t->hue = goxel.brush_texture_hue;
+    t->saturation = goxel.brush_texture_saturation;
+    t->lightness = goxel.brush_texture_lightness;
+    t->opacity = goxel.painter.color[3];
+}
+
+static void brush_texture_load_adjustments(const brush_texture_t *t)
+{
+    if (!t) return;
+    goxel.brush_texture_hue = t->hue;
+    goxel.brush_texture_saturation = t->saturation;
+    goxel.brush_texture_lightness = t->lightness;
+    goxel.painter.color[3] = t->opacity;
+}
+
+static int brush_texture_name_eq(const char *a, const char *b)
+{
+    int i;
+    if (!a || !b) return 0;
+    for (i = 0; a[i] && b[i]; i++) {
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i]))
+            return 0;
+    }
+    return a[i] == b[i];
+}
+
+static void brush_textures_free_adj_snapshot(brush_texture_adj_t *saved,
+                                            char *current_name)
+{
+    int i;
+    for (i = 0; i < arrlen(saved); i++)
+        free(saved[i].name);
+    arrfree(saved);
+    free(current_name);
+}
+
+/* Snapshot HSL/opacity keyed by display name so Refresh can restore them. */
+static brush_texture_adj_t *brush_textures_snapshot_adjustments(
+        char **out_current_name)
+{
+    brush_texture_adj_t *saved = NULL;
+    int i;
+
+    *out_current_name = NULL;
+    if (goxel.brush_texture_index >= 0 &&
+        goxel.brush_texture_index < goxel.brush_textures_count) {
+        brush_texture_t *cur =
+            &goxel.brush_textures[goxel.brush_texture_index];
+        brush_texture_store_adjustments(cur);
+        if (cur->name)
+            *out_current_name = strdup(cur->name);
+    }
+    for (i = 0; i < goxel.brush_textures_count; i++) {
+        brush_texture_t *t = &goxel.brush_textures[i];
+        if (!t->name) continue;
+        arrput(saved, ((brush_texture_adj_t){
+            .name = strdup(t->name),
+            .hue = t->hue,
+            .saturation = t->saturation,
+            .lightness = t->lightness,
+            .opacity = t->opacity,
+        }));
+    }
+    return saved;
+}
+
+static void brush_textures_restore_adjustments(brush_texture_adj_t *saved,
+                                              const char *current_name)
+{
+    int i, j;
+    int saved_count = arrlen(saved);
+
+    for (i = 0; i < goxel.brush_textures_count; i++) {
+        brush_texture_t *t = &goxel.brush_textures[i];
+        if (!t->name) continue;
+        for (j = 0; j < saved_count; j++) {
+            if (!brush_texture_name_eq(t->name, saved[j].name))
+                continue;
+            t->hue = saved[j].hue;
+            t->saturation = saved[j].saturation;
+            t->lightness = saved[j].lightness;
+            t->opacity = saved[j].opacity;
+            break;
+        }
+    }
+
+    goxel.brush_texture_index = 0;
+    if (current_name) {
+        for (i = 0; i < goxel.brush_textures_count; i++) {
+            if (!brush_texture_name_eq(goxel.brush_textures[i].name,
+                                       current_name))
+                continue;
+            goxel.brush_texture_index = i;
+            break;
+        }
+    }
+    if (goxel.brush_texture_index >= goxel.brush_textures_count)
+        goxel.brush_texture_index = 0;
+    if (goxel.brush_textures_count > 0)
+        brush_texture_load_adjustments(
+                &goxel.brush_textures[goxel.brush_texture_index]);
+}
+
 void goxel_brush_textures_reload(void)
 {
     char dir[1024];
     char dir_create[1024];
     texture_load_ctx_t ctx;
     const char *user_dir = sys_get_user_dir();
+    brush_texture_adj_t *saved_adj = NULL;
+    char *saved_current_name = NULL;
 
+    saved_adj = brush_textures_snapshot_adjustments(&saved_current_name);
     brush_textures_clear(true);
-    if (!goxel_brush_textures_dir(dir, sizeof(dir)))
+    if (!goxel_brush_textures_dir(dir, sizeof(dir))) {
+        brush_textures_free_adj_snapshot(saved_adj, saved_current_name);
         return;
+    }
     {
         size_t n = strlen(dir);
-        if (n + 2 > sizeof(dir_create))
+        if (n + 2 > sizeof(dir_create)) {
+            brush_textures_free_adj_snapshot(saved_adj, saved_current_name);
             return;
+        }
         memcpy(dir_create, dir, n);
         dir_create[n] = '/';
         dir_create[n + 1] = '\0';
@@ -625,8 +756,8 @@ void goxel_brush_textures_reload(void)
     if (goxel.brush_textures_count > 1)
         qsort(goxel.brush_textures, goxel.brush_textures_count,
               sizeof(goxel.brush_textures[0]), brush_texture_cmp);
-    if (goxel.brush_texture_index >= goxel.brush_textures_count)
-        goxel.brush_texture_index = 0;
+    brush_textures_restore_adjustments(saved_adj, saved_current_name);
+    brush_textures_free_adj_snapshot(saved_adj, saved_current_name);
 }
 
 int goxel_brush_textures_count(void)
@@ -648,18 +779,73 @@ const brush_texture_t *goxel_brush_texture_current(void)
 void goxel_brush_texture_set_current(int idx)
 {
     if (idx < 0 || idx >= goxel.brush_textures_count) return;
+    if (idx == goxel.brush_texture_index) return;
+    /* Persist HSL/opacity onto the texture we are leaving. */
+    if (goxel.brush_texture_index >= 0 &&
+        goxel.brush_texture_index < goxel.brush_textures_count) {
+        brush_texture_store_adjustments(
+                &goxel.brush_textures[goxel.brush_texture_index]);
+    }
     goxel.brush_texture_index = idx;
+    brush_texture_load_adjustments(&goxel.brush_textures[idx]);
+}
+
+static void brush_texture_bake_preview(brush_texture_t *t)
+{
+    int i, n, bpp;
+    uint8_t *buf;
+
+    if (!t || !t->pixels || t->w <= 0 || t->h <= 0 ||
+        !goxel.graphics_initialized)
+        return;
+
+    bpp = t->bpp > 0 ? t->bpp : 4;
+    n = t->w * t->h;
+    buf = malloc((size_t)n * 4);
+    if (!buf) return;
+
+    for (i = 0; i < n; i++) {
+        const uint8_t *src = t->pixels + i * bpp;
+        uint8_t *dst = buf + i * 4;
+        dst[0] = src[0];
+        dst[1] = src[1];
+        dst[2] = src[2];
+        dst[3] = (bpp >= 4) ? src[3] : 255;
+        srgb8_adjust_hsl(dst, t->hue, t->saturation, t->lightness);
+        dst[3] = (uint8_t)(((int)dst[3] * (int)t->opacity) / 255);
+    }
+
+    if (!t->preview) {
+        t->preview = texture_new_from_buf(buf, t->w, t->h, 4, TF_NEAREST);
+    } else {
+        texture_set_data(t->preview, buf, t->w, t->h, 4);
+    }
+    free(buf);
+    t->preview_hue = t->hue;
+    t->preview_saturation = t->saturation;
+    t->preview_lightness = t->lightness;
+    t->preview_opacity = t->opacity;
 }
 
 texture_t *goxel_brush_texture_preview_get(int idx)
 {
     brush_texture_t *t;
+    bool dirty;
+
     if (idx < 0 || idx >= goxel.brush_textures_count) return NULL;
     t = &goxel.brush_textures[idx];
-    if (!t->preview && t->pixels && goxel.graphics_initialized) {
-        t->preview = texture_new_from_buf(
-                t->pixels, t->w, t->h, t->bpp, TF_NEAREST);
-    }
+
+    /* Keep the active texture's stored values in sync with the live sliders. */
+    if (idx == goxel.brush_texture_index)
+        brush_texture_store_adjustments(t);
+
+    dirty = !t->preview ||
+            t->preview_hue != t->hue ||
+            t->preview_saturation != t->saturation ||
+            t->preview_lightness != t->lightness ||
+            t->preview_opacity != t->opacity;
+    if (dirty)
+        brush_texture_bake_preview(t);
     return t->preview;
 }
 

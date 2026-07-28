@@ -432,7 +432,6 @@ static int gui(tool_t *tool)
     (void)tool;
     if (textures_reload_pending) {
         goxel_brush_textures_reload();
-        goxel.brush_texture_index = -1;
         textures_reload_pending = false;
     }
     has_textures_dir = goxel_brush_textures_dir(textures_dir, sizeof(textures_dir));
@@ -513,6 +512,16 @@ static int gui(tool_t *tool)
             goxel.brush_texture_saturation = 100.f;
             goxel.brush_texture_lightness = 0.f;
             goxel.painter.color[3] = 255;
+            /* Persist reset onto the active texture's remembered values. */
+            if (goxel.brush_texture_index >= 0 &&
+                goxel.brush_texture_index < goxel.brush_textures_count) {
+                brush_texture_t *cur =
+                    &goxel.brush_textures[goxel.brush_texture_index];
+                cur->hue = 0.f;
+                cur->saturation = 100.f;
+                cur->lightness = 0.f;
+                cur->opacity = 255;
+            }
         }
         gui_section_end();
     }
