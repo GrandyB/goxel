@@ -107,6 +107,7 @@ void gui_text(const char *label, ...);
 void gui_text_wrapped(const char *label, ...);
 bool gui_button(const char *label, float w, int icon);
 bool gui_button_right(const char *label, int icon);
+bool gui_open_in_shell(const char *path);
 
 // Group just lower the spacing between items.
 void gui_group_begin(const char *label);

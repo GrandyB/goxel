@@ -333,7 +333,8 @@ static void brush_textures_clear(bool clear_pixels)
         if (clear_pixels) free(t->pixels);
         if (t->preview) texture_delete(t->preview);
     }
-    free(goxel.brush_textures);
+    // brush_textures is an stb_ds array (arrput); free() would corrupt the heap.
+    arrfree(goxel.brush_textures);
     goxel.brush_textures = NULL;
     goxel.brush_textures_count = 0;
     goxel.brush_texture_index = 0;
@@ -584,6 +585,16 @@ static int brush_texture_load_from_user_dir(const char *dir, const char *name,
     return 0;
 }
 
+bool goxel_brush_textures_dir(char *out, size_t out_size)
+{
+    const char *user_dir = sys_get_user_dir();
+    if (!out || !out_size || !user_dir) return false;
+    if (!path_join2(out, out_size, user_dir, "textures"))
+        return false;
+    path_normalize_slashes(out);
+    return true;
+}
+
 void goxel_brush_textures_reload(void)
 {
     char dir[1024];
@@ -592,10 +603,8 @@ void goxel_brush_textures_reload(void)
     const char *user_dir = sys_get_user_dir();
 
     brush_textures_clear(true);
-    if (!user_dir) return;
-    if (!path_join2(dir, sizeof(dir), user_dir, "textures"))
+    if (!goxel_brush_textures_dir(dir, sizeof(dir)))
         return;
-    path_normalize_slashes(dir);
     {
         size_t n = strlen(dir);
         if (n + 2 > sizeof(dir_create))

@@ -2168,6 +2168,14 @@ bool gui_button_right(const char *label, int icon)
     return gui_button(label, 0, icon);
 }
 
+bool gui_open_in_shell(const char *path)
+{
+    ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
+    if (!path || !path[0] || !platform_io.Platform_OpenInShellFn)
+        return false;
+    return platform_io.Platform_OpenInShellFn(GImGui, path);
+}
+
 bool gui_input_text(const char *label, char *txt, int size)
 {
     bool ret;

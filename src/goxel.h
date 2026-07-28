@@ -705,6 +705,8 @@ void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path);
 void goxel_import_image_reference(const char *path);
 void goxel_import_image_volume(const char *path);
 void goxel_brush_textures_reload(void);
+/* Fill out with the user textures directory path. Returns false if unavailable. */
+bool goxel_brush_textures_dir(char *out, size_t out_size);
 int goxel_brush_textures_count(void);
 const brush_texture_t *goxel_brush_texture_get(int idx);
 const brush_texture_t *goxel_brush_texture_current(void);

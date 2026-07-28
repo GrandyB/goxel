@@ -405,8 +405,22 @@ static int gui(tool_t *tool)
 {
     int i, tex_count;
     float cell = 64.f;
+    char textures_dir[1024];
+    bool has_textures_dir;
     bool is_color = goxel.brush_source_mode == BRUSH_SOURCE_COLOR;
     bool is_texture = goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE;
+    /* Defer reload: swatches may already be in this frame's ImGui draw list. */
+    static bool textures_reload_pending = false;
+
+    (void)tool;
+    if (textures_reload_pending) {
+        goxel_brush_textures_reload();
+        goxel.brush_texture_index = -1;
+        textures_reload_pending = false;
+    }
+    has_textures_dir = goxel_brush_textures_dir(textures_dir, sizeof(textures_dir));
+    if (!has_textures_dir)
+        textures_dir[0] = '\0';
 
     tool_gui_radius();
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
@@ -457,6 +471,15 @@ static int gui(tool_t *tool)
                     }
                 }
             }
+            if (gui_button("Refresh", 0, 0))
+                textures_reload_pending = true;
+            gui_same_line_spaced(6.f);
+            gui_enabled_begin(has_textures_dir);
+            if (gui_button("Open folder", 0, 0)) {
+                if (!gui_open_in_shell(textures_dir))
+                    gui_alert("Open folder", "Could not open the textures folder.");
+            }
+            gui_enabled_end();
         }
         if (goxel.painter.mode == MODE_PAINT) {
             gui_color_opacity(goxel.painter.color);
