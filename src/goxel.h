@@ -68,6 +68,8 @@
 #include "utils/texture.h"
 #include "utils/vec.h"
 
+#include "brush_textures.h"
+
 #include <float.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -491,8 +493,6 @@ enum {
     SNAP_ROUNDED        = 1 << 8, // Round the result.
 };
 
-typedef struct brush_texture brush_texture_t;
-
 typedef struct goxel
 {
     int        screen_size[2];
@@ -632,31 +632,6 @@ typedef struct goxel
     const char* last_export_panel_path;
 } goxel_t;
 
-enum {
-    BRUSH_SOURCE_COLOR = 0,
-    BRUSH_SOURCE_TEXTURE = 1,
-};
-
-struct brush_texture {
-    char *name;      // Display name (derived from filename).
-    char *path;      // Absolute path in user texture directory.
-    int w, h, bpp;   // Decoded image dimensions / channels.
-    uint8_t *pixels; // CPU-side RGBA/RGB data, used for brush sampling.
-    texture_t *preview; // Lazily-created GL texture for brush UI thumbnails.
-    /* Per-texture HSL / opacity (remembered when flicking between textures).
-     * Hue degrees [-180,+180], sat % [0,200] (100=identity),
-     * lightness % [-100,+100] (0=identity), opacity 0..255. */
-    float hue;
-    float saturation;
-    float lightness;
-    uint8_t opacity;
-    /* Last values baked into preview (for dirty detection). */
-    float preview_hue;
-    float preview_saturation;
-    float preview_lightness;
-    uint8_t preview_opacity;
-};
-
 // the global goxel instance.
 extern goxel_t goxel;
 
@@ -726,14 +701,6 @@ void goxel_set_hint_text(const char *msg, ...);
 void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path);
 void goxel_import_image_reference(const char *path);
 void goxel_import_image_volume(const char *path);
-void goxel_brush_textures_reload(void);
-/* Fill out with the user textures directory path. Returns false if unavailable. */
-bool goxel_brush_textures_dir(char *out, size_t out_size);
-int goxel_brush_textures_count(void);
-const brush_texture_t *goxel_brush_texture_get(int idx);
-const brush_texture_t *goxel_brush_texture_current(void);
-void goxel_brush_texture_set_current(int idx);
-texture_t *goxel_brush_texture_preview_get(int idx);
 
 int goxel_import_file(const char *path, const char *format);
 int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume, void (*on_select)(const char *path, const char *file_name, const file_format_t *format));
