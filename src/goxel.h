@@ -459,6 +459,10 @@ enum {
     X(ICON_MATERIAL,                1, 6, THEME_GROUP_ICON_VIEW),
     X(ICON_LIGHT,                   2, 6, THEME_GROUP_ICON_VIEW),
     X(ICON_TOOL_SELECTION,          3, 6, 0),
+    X(ICON_CAMERA_PTZ,              0, 7, THEME_GROUP_ICON_VIEW),
+    X(ICON_CAMERA_FLY,              1, 7, THEME_GROUP_ICON_VIEW),
+    X(ICON_CAMERA_PLAYER,           2, 7, THEME_GROUP_ICON_VIEW),
+    X(ICON_CAMERA_TOPDOWN,          3, 7, THEME_GROUP_ICON_VIEW),
 };
 
 #undef X

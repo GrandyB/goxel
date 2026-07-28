@@ -581,6 +581,62 @@ static void render_fps(int fps) {
     draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), pos, IM_COL32(255, 255, 255, 255), buffer);
 }
 
+static void apply_camera_gizmo_preset(camera_t *camera, camera_mode_t mode,
+                                      bool ortho, bool top_down)
+{
+    camera_set_mode(camera, mode);
+    camera->ortho = ortho;
+
+    if (top_down) {
+        camera->dist = 580.0f;
+        mat4_set_identity(camera->mat);
+        mat4_itranslate(camera->mat, 0, 0, camera->dist);
+        camera_turntable(camera, 0, 0);
+    }
+}
+
+static bool gizmo_camera_icon_button(const char *id, int icon, float size)
+{
+    ImDrawList *draw_list = ImGui::GetWindowDrawList();
+    const ImVec2 button_size(size, size);
+    const ImVec4 bg = ImVec4(0.08f, 0.08f, 0.08f, 0.55f);
+    const ImVec4 bg_hover = ImVec4(0.14f, 0.14f, 0.14f, 0.72f);
+    const ImVec4 bg_active = ImVec4(0.20f, 0.20f, 0.20f, 0.82f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+    ImGui::PushStyleColor(ImGuiCol_Button, bg);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, bg_hover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, bg_active);
+    bool ret = ImGui::Button(id, button_size);
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar();
+
+    ImVec2 center = ImGui::GetItemRectMin() + ImGui::GetItemRectSize() * 0.5f;
+    const float icon_half_size = size * 0.52f;
+    const int icon_no_theme = icon & 0xffff;
+    const int ix = (icon_no_theme - 1) % 8;
+    const int iy = (icon_no_theme - 1) / 8;
+    const float cell = 1.0f / 8.0f;
+    ImVec2 uv0(ix * cell, iy * cell);
+    ImVec2 uv1(uv0.x + cell, uv0.y + cell);
+    draw_list->AddImage((intptr_t)g_tex_icons->tex,
+                        center - ImVec2(icon_half_size, icon_half_size),
+                        center + ImVec2(icon_half_size, icon_half_size),
+                        uv0, uv1, get_icon_color(icon, 0));
+    return ret;
+}
+
+static void gizmo_camera_tooltip_if_hovered(const char *info)
+{
+    if (!info || !ImGui::IsItemHovered() || gui->scrolling)
+        return;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, COLOR(TOOLTIP, BACKGROUND, 0));
+    ImGui::SetTooltip("%s", info);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
 static void render_view_cube(void)
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -612,25 +668,60 @@ static void render_view_cube(void)
     mat4_mul(zup2yup, camera->mat, view);
     mat4_invert(view, view);
 
-    ImGui::SetNextWindowSize(ImVec2(w, h));
-    ImGui::SetNextWindowPos(ImVec2(
-                goxel.gui.viewport[2] - GUI_PANEL_WIDTH_NORMAL - w, goxel.gui.viewport[1]));
+    const float icon_size = 42.0f;
+    const float icon_spacing = 6.0f;
+    const float icons_w = icon_size * 4 + icon_spacing * 3;
+    const float icon_shift_x = -10.0f;
+    const float icon_shift_y = h - 15.0f;
+    const float win_w = max(w, icons_w + (-icon_shift_x) * 2.0f + 4.0f);
+    const float icon_x = max(2.0f, (win_w - icons_w) * 0.5f + icon_shift_x);
+    const float cube_x = goxel.gui.viewport[2] - GUI_PANEL_WIDTH_NORMAL - win_w;
+    const float cube_y = goxel.gui.viewport[1];
+
+    const float icons_h = icon_size + 6.0f;
+    const float total_h = h + icons_h + 1.0f;
+
+    ImGui::SetNextWindowSize(ImVec2(win_w, total_h));
+    ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
     ImGui::Begin("Gizmo", NULL, ImGuiWindowFlags_NoDecoration);
     ImGuizmo::SetDrawlist();
 
-    ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, w, h);
+    ImGuizmo::SetRect(ImGui::GetWindowPos().x + (win_w - w), ImGui::GetWindowPos().y, w, h);
     ImGuizmo::ViewManipulate(
            (float*)view, projection,
            ImGuizmo::ROTATE, ImGuizmo::LOCAL,
            (float*)&mat4_identity, camera->dist,
-           ImGui::GetWindowPos(),
+           ImGui::GetWindowPos() + ImVec2(win_w - w, 0),
            ImVec2(w, h), 0x0);
 
     mat4_invert(view, view);
     mat4_mul(yup2zup, view, camera->mat);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(icon_spacing, 0));
+    ImGui::SetCursorPos(ImVec2(icon_x, icon_shift_y));
+
+    if (gizmo_camera_icon_button("##camera_ptz", ICON_CAMERA_PTZ, icon_size))
+        apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, false, false);
+    gizmo_camera_tooltip_if_hovered("Orbit camera");
+    ImGui::SameLine();
+    if (gizmo_camera_icon_button("##camera_fly", ICON_CAMERA_FLY, icon_size))
+        apply_camera_gizmo_preset(camera, CAMERA_MODE_FPV, false, false);
+    gizmo_camera_tooltip_if_hovered("Fly camera");
+    ImGui::SameLine();
+    if (gizmo_camera_icon_button("##camera_player", ICON_CAMERA_PLAYER, icon_size))
+        apply_camera_gizmo_preset(camera, CAMERA_MODE_PLAYER, false, false);
+    gizmo_camera_tooltip_if_hovered("Player camera");
+    ImGui::SameLine();
+    if (gizmo_camera_icon_button("##camera_topdown", ICON_CAMERA_TOPDOWN, icon_size))
+        apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, true, true);
+    gizmo_camera_tooltip_if_hovered("Top-down camera");
+    ImGui::PopStyleVar();
+
     ImGui::End();
     ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
 
 }
 
