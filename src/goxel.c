@@ -1393,32 +1393,12 @@ static int on_rotate(const gesture_t *gest, void *user)
                 voxel_pos, voxel_normal);
 
             if (found_voxel) {
-                // Found a voxel - calculate pivot point at center of view at same distance
-                float camera_pos[3], camera_to_voxel[3];
-                float viewport_center[2];
-                float ray_origin[3], ray_dir[3];
-
-                // Get camera position
-                vec3_copy(camera->mat[3], camera_pos);
-
-                // Calculate distance from camera to voxel
-                vec3_sub(voxel_pos, camera_pos, camera_to_voxel);
-                float distance = vec3_norm(camera_to_voxel);
-
-                // Get viewport center coordinates
-                viewport_center[0] = gest->viewport[0] + gest->viewport[2] / 2.0f;
-                viewport_center[1] = gest->viewport[1] + gest->viewport[3] / 2.0f;
-
-                // Get ray from center of viewport
-                camera_get_ray(camera, viewport_center, gest->viewport, ray_origin, ray_dir);
-
-                // Calculate pivot point at the same distance along the center ray
-                vec3_mul(ray_dir, distance, ray_dir);
-                vec3_add(ray_origin, ray_dir, goxel.move_origin.pivot_point);
-
+                /* Orbit around the voxel under the cursor; dist is set from
+                 * camera↔pivot depth inside camera_turntable_around_point. */
+                vec3_copy(voxel_pos, goxel.move_origin.pivot_point);
                 goxel.move_origin.has_pivot_point = true;
             } else {
-                // No voxel found - use default rotation
+                // No voxel found - use default rotation (view-axis target)
                 goxel.move_origin.has_pivot_point = false;
             }
         }

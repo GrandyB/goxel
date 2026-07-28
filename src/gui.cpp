@@ -715,22 +715,22 @@ static void render_view_cube(void)
 
     if (gizmo_camera_icon_button("##camera_ptz", ICON_CAMERA_PTZ, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, false, false);
-    gizmo_camera_tooltip_if_hovered("Orbit camera");
+    gizmo_camera_tooltip_if_hovered("Orbit camera - middle click to orbit, right click to pan, scroll to zoom");
 
     ImGui::SetCursorPosX(icon_x);
     if (gizmo_camera_icon_button("##camera_fly", ICON_CAMERA_FLY, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_FPV, false, false);
-    gizmo_camera_tooltip_if_hovered("Fly camera");
+    gizmo_camera_tooltip_if_hovered("Fly camera - use arrow keys to move, right click to look");
 
     ImGui::SetCursorPosX(icon_x);
     if (gizmo_camera_icon_button("##camera_player", ICON_CAMERA_PLAYER, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_PLAYER, false, false);
-    gizmo_camera_tooltip_if_hovered("Player camera");
+    gizmo_camera_tooltip_if_hovered("Player camera - WASD to move, right click look, space jump and ctrl crouch; hold alt to fly");
 
     ImGui::SetCursorPosX(icon_x);
     if (gizmo_camera_icon_button("##camera_topdown", ICON_CAMERA_TOPDOWN, icon_size))
         apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, true, true);
-    gizmo_camera_tooltip_if_hovered("Top-down camera");
+    gizmo_camera_tooltip_if_hovered("Top-down camera - right click to pan, scroll to zoom");
     ImGui::PopStyleVar();
 
     ImGui::End();

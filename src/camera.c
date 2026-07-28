@@ -289,26 +289,27 @@ void camera_turntable_around_point(
         camera_t *camera, float rz, float rx, const float pivot[3])
 {
     float mat[4][4] = MAT4_IDENTITY;
-    float camera_to_pivot[3];
+    float axis[3];
 
-    // Calculate vector from camera to pivot point
-    vec3_sub(pivot, camera->mat[3], camera_to_pivot);
-    float new_dist = vec3_norm(camera_to_pivot);
-
-    // Apply horizontal rotation around the pivot point
+    /* Yaw around world Z through the pivot (works off view-axis). */
     mat4_itranslate(mat, pivot[0], pivot[1], pivot[2]);
     mat4_irotate(mat, rz, 0, 0, 1);
     mat4_itranslate(mat, -pivot[0], -pivot[1], -pivot[2]);
     mat4_imul(mat, camera->mat);
     mat4_copy(mat, camera->mat);
 
-    // Apply vertical rotation around the pivot point
-    mat4_itranslate(camera->mat, 0, 0, -new_dist);
-    mat4_irotate(camera->mat, rx, 1, 0, 0);
-    mat4_itranslate(camera->mat, 0, 0, new_dist);
+    /* Pitch around camera right through the same pivot — not local-Z
+     * translate-by-dist, which only orbits a point on the view axis. */
+    vec3_normalize(camera->mat[0], axis);
+    mat4_set_identity(mat);
+    mat4_itranslate(mat, pivot[0], pivot[1], pivot[2]);
+    mat4_irotate(mat, rx, axis[0], axis[1], axis[2]);
+    mat4_itranslate(mat, -pivot[0], -pivot[1], -pivot[2]);
+    mat4_imul(mat, camera->mat);
+    mat4_copy(mat, camera->mat);
 
-    // Update camera distance to match the new distance to pivot
-    camera->dist = new_dist;
+    /* dist is view-axis depth of the pivot (same as zoom / set_target). */
+    camera_set_target(camera, pivot);
 }
 
 /* First person move
