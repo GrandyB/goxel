@@ -487,6 +487,8 @@ enum {
     SNAP_ROUNDED        = 1 << 8, // Round the result.
 };
 
+typedef struct brush_texture brush_texture_t;
+
 typedef struct goxel
 {
     int        screen_size[2];
@@ -546,6 +548,13 @@ typedef struct goxel
     float      radius_z;
     /* Brush: shape lowest Z sits on cursor instead of center (Z-up). */
     bool       brush_origin_at_base;
+    /* Brush: align local Z axis to snapped block face normal. */
+    bool       brush_block_face_alignment;
+    /* Brush source: solid color or tiled texture sampling. */
+    int        brush_source_mode;
+    int        brush_texture_index;
+    brush_texture_t *brush_textures;
+    int        brush_textures_count;
     bool       pathtrace; // Render pathtraced mode.
 
     // Some state for the tool iter functions.
@@ -612,6 +621,19 @@ typedef struct goxel
     // Last save path specified in the Export panel
     const char* last_export_panel_path;
 } goxel_t;
+
+enum {
+    BRUSH_SOURCE_COLOR = 0,
+    BRUSH_SOURCE_TEXTURE = 1,
+};
+
+struct brush_texture {
+    char *name;      // Display name (derived from filename).
+    char *path;      // Absolute path in user texture directory.
+    int w, h, bpp;   // Decoded image dimensions / channels.
+    uint8_t *pixels; // CPU-side RGBA/RGB data, used for brush sampling.
+    texture_t *preview; // Lazily-created GL texture for brush UI thumbnails.
+};
 
 // the global goxel instance.
 extern goxel_t goxel;
@@ -682,6 +704,12 @@ void goxel_set_hint_text(const char *msg, ...);
 void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path);
 void goxel_import_image_reference(const char *path);
 void goxel_import_image_volume(const char *path);
+void goxel_brush_textures_reload(void);
+int goxel_brush_textures_count(void);
+const brush_texture_t *goxel_brush_texture_get(int idx);
+const brush_texture_t *goxel_brush_texture_current(void);
+void goxel_brush_texture_set_current(int idx);
+texture_t *goxel_brush_texture_preview_get(int idx);
 
 int goxel_import_file(const char *path, const char *format);
 int goxel_import_file_to_volume(const char *path, const char *format, volume_t *volume, void (*on_select)(const char *path, const char *file_name, const file_format_t *format));

@@ -403,14 +403,68 @@ static int iter(tool_t *tool, const painter_t *painter,
 
 static int gui(tool_t *tool)
 {
+    int i, tex_count;
+    float cell = 72.f;
+    bool is_color = goxel.brush_source_mode == BRUSH_SOURCE_COLOR;
+    bool is_texture = goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE;
+
+    (void)tool;
+
+    gui_text("Source");
+    gui_group_begin(NULL);
+    if (gui_toolbar_segment("Color", is_color))
+        goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
+    gui_same_line_spaced(6.f);
+    if (gui_toolbar_segment("Texture", is_texture))
+        goxel.brush_source_mode = BRUSH_SOURCE_TEXTURE;
+    gui_group_end();
+
+    if (goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE) {
+        tex_count = goxel_brush_textures_count();
+        if (gui_section_begin("Textures", true)) {
+            if (tex_count == 0) {
+                gui_text("No textures found in your goxel/textures folder.");
+            } else {
+                int cols = max(1, (int)((gui_content_avail_x() + 6.f) / (cell + 6.f)));
+                for (i = 0; i < tex_count; i++) {
+                    const brush_texture_t *tex = goxel_brush_texture_get(i);
+                    texture_t *preview = goxel_brush_texture_preview_get(i);
+                    char id[64];
+                    snprintf(id, sizeof(id), "brush_tex_%d", i);
+                    if (i && (i % cols))
+                        gui_same_line_spaced(6.f);
+                    if (gui_texture_swatch_entry(
+                                id,
+                                preview ? preview->tex : 0,
+                                preview ? preview->tex_w : 0,
+                                preview ? preview->tex_h : 0,
+                                preview ? preview->w : 0,
+                                preview ? preview->h : 0,
+                                tex ? tex->name : NULL,
+                                goxel.brush_texture_index == i,
+                                cell)) {
+                        goxel_brush_texture_set_current(i);
+                    }
+                }
+            }
+        }
+        gui_section_end();
+    }
+
     tool_gui_radius();
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
     gui_checkbox("Block face align", &goxel.brush_block_face_alignment,
                  "Diameter Z follows the block face normal (paint walls side-on)");
     tool_gui_smoothness();
-    tool_gui_color(false);
-    gui_section_end();
+    if (goxel.brush_source_mode == BRUSH_SOURCE_COLOR) {
+        tool_gui_color(false);
+        gui_section_end();
+    } else if (goxel.painter.mode == MODE_PAINT) {
+        if (gui_section_begin("Opacity", true))
+            gui_color_opacity(goxel.painter.color);
+        gui_section_end();
+    }
 
     tool_gui_snap();
     tool_gui_shape(NULL);

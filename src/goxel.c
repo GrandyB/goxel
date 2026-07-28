@@ -27,6 +27,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <math.h>
+#include <ctype.h>
 
 // The global goxel instance.
 goxel_t goxel = {};
@@ -267,6 +268,391 @@ static void gxl_player_frame(camera_t *cam, const inputs_t *inputs,
 }
 
 static void (*post_reset_func)() = NULL;
+
+static bool str_endswith_case(const char *str, const char *end)
+{
+    int i, n, m;
+    if (!str || !end) return false;
+    n = strlen(str);
+    m = strlen(end);
+    if (m > n) return false;
+    for (i = 0; i < m; i++) {
+        char a = str[n - m + i];
+        char b = end[i];
+        if (tolower((unsigned char)a) != tolower((unsigned char)b))
+            return false;
+    }
+    return true;
+}
+
+static bool path_join2(char *out, size_t out_sz,
+                       const char *a, const char *b)
+{
+    size_t na, nb;
+    if (!out || !out_sz || !a || !b) return false;
+    na = strlen(a);
+    nb = strlen(b);
+    if (na + 1 + nb + 1 > out_sz) return false;
+    memcpy(out, a, na);
+    out[na] = '/';
+    memcpy(out + na + 1, b, nb);
+    out[na + 1 + nb] = '\0';
+    return true;
+}
+
+static void path_normalize_slashes(char *path)
+{
+    int i;
+    if (!path) return;
+    for (i = 0; path[i]; i++) {
+        if (path[i] == '\\')
+            path[i] = '/';
+    }
+}
+
+static const char *path_basename_ptr(const char *path)
+{
+    const char *p = path;
+    const char *last = path;
+    if (!path) return "";
+    while (*p) {
+        if (*p == '/' || *p == '\\')
+            last = p + 1;
+        p++;
+    }
+    return last;
+}
+
+static void brush_textures_clear(bool clear_pixels)
+{
+    int i;
+    for (i = 0; i < goxel.brush_textures_count; i++) {
+        brush_texture_t *t = &goxel.brush_textures[i];
+        free(t->name);
+        free(t->path);
+        if (clear_pixels) free(t->pixels);
+        if (t->preview) texture_delete(t->preview);
+    }
+    free(goxel.brush_textures);
+    goxel.brush_textures = NULL;
+    goxel.brush_textures_count = 0;
+    goxel.brush_texture_index = 0;
+}
+
+static int brush_texture_cmp(const void *a, const void *b)
+{
+    const brush_texture_t *ta = a;
+    const brush_texture_t *tb = b;
+    const char *sa = ta->name ?: "";
+    const char *sb = tb->name ?: "";
+    int i = 0;
+    while (sa[i] && sb[i]) {
+        int da = tolower((unsigned char)sa[i]);
+        int db = tolower((unsigned char)sb[i]);
+        if (da != db) return da - db;
+        i++;
+    }
+    return (unsigned char)sa[i] - (unsigned char)sb[i];
+}
+
+static bool brush_texture_add_from_file(const char *path, const char *name)
+{
+    char *data = NULL, *name_copy = NULL, *path_copy = NULL;
+    uint8_t *img = NULL;
+    int size = 0, w = 0, h = 0, bpp = 4;
+
+    data = read_file(path, &size);
+    if (!data || size <= 0)
+        goto fail;
+    // Decode all brush textures to RGBA to keep preview/upload and sampling stride consistent.
+    img = img_read_from_mem(data, size, &w, &h, &bpp);
+    if (!img || w <= 0 || h <= 0)
+        goto fail;
+    bpp = 4;
+
+    name_copy = strdup(name);
+    path_copy = strdup(path);
+    if (!name_copy || !path_copy)
+        goto fail;
+
+    arrput(goxel.brush_textures, ((brush_texture_t){
+        .name = name_copy,
+        .path = path_copy,
+        .w = w,
+        .h = h,
+        .bpp = bpp,
+        .pixels = img,
+        .preview = NULL,
+    }));
+    goxel.brush_textures_count = arrlen(goxel.brush_textures);
+    free(data);
+    return true;
+fail:
+    free(data);
+    free(name_copy);
+    free(path_copy);
+    free(img);
+    return false;
+}
+
+typedef struct {
+    const char *target_dir;
+    int copied_count;
+} texture_seed_ctx_t;
+
+typedef struct {
+    int png_count;
+} texture_png_count_ctx_t;
+
+static int brush_texture_count_png(const char *dir, const char *name, void *user)
+{
+    texture_png_count_ctx_t *ctx = user;
+    (void)dir;
+    if (str_endswith_case(name, ".png"))
+        ctx->png_count++;
+    return 0;
+}
+
+static int brush_texture_seed_copy_asset(int idx, const char *path, void *user)
+{
+    texture_seed_ctx_t *ctx = user;
+    const char *name = path_basename_ptr(path);
+    char dst[1024];
+    FILE *f = NULL;
+    const void *data;
+    int sz = 0;
+
+    (void)idx;
+    if (!str_endswith_case(path, ".png"))
+        return 0;
+    LOG_I("[brush-tex][asset] candidate: '%s'", path);
+    if (!path_join2(dst, sizeof(dst), ctx->target_dir, name)) {
+        LOG_I("[brush-tex][asset] skip (join failed): '%s'", path);
+        return 0;
+    }
+    path_normalize_slashes(dst);
+    LOG_I("[brush-tex][asset] destination: '%s'", dst);
+    f = fopen(dst, "rb");
+    if (f) { // Keep user file if already present.
+        fclose(f);
+        ctx->copied_count++;
+        LOG_I("[brush-tex][asset] already exists: '%s'", dst);
+        return 0;
+    }
+    data = assets_get(path, &sz);
+    if (!data || sz <= 0) {
+        LOG_I("[brush-tex][asset] assets_get failed: '%s' (size=%d)", path, sz);
+        return 0;
+    }
+    f = fopen(dst, "wb");
+    if (!f) {
+        LOG_I("[brush-tex][asset] open write failed: '%s' (errno=%d)", dst, errno);
+        return 0;
+    }
+    fwrite(data, sz, 1, f);
+    fclose(f);
+    ctx->copied_count++;
+    LOG_I("[brush-tex][asset] copied: '%s' bytes=%d", dst, sz);
+    return 0;
+}
+
+static int brush_texture_seed_copy_from_disk(const char *dir, const char *name,
+                                             void *user)
+{
+    texture_seed_ctx_t *ctx = user;
+    char src[1024], dst[1024];
+    const char *base_name = NULL;
+    char *data = NULL;
+    int size = 0;
+    FILE *f = NULL;
+
+    (void)dir;
+    if (!str_endswith_case(name, ".png"))
+        return 0;
+    LOG_I("[brush-tex][disk] candidate: '%s'", name);
+    if (!path_join2(src, sizeof(src), "data/textures", name))
+        return 0;
+    path_normalize_slashes(src);
+    base_name = path_basename_ptr(src);
+    if (!path_join2(dst, sizeof(dst), ctx->target_dir, base_name)) {
+        return 0;
+    }
+    path_normalize_slashes(dst);
+    LOG_I("[brush-tex][disk] src='%s' dst='%s'", src, dst);
+    f = fopen(dst, "rb");
+    if (f) {
+        fclose(f);
+        ctx->copied_count++;
+        LOG_I("[brush-tex][disk] already exists: '%s'", dst);
+        return 0;
+    }
+    data = read_file(src, &size);
+    if (!data || size <= 0) {
+        LOG_I("[brush-tex][disk] read failed: '%s' size=%d", src, size);
+        free(data);
+        return 0;
+    }
+    f = fopen(dst, "wb");
+    if (!f) {
+        LOG_I("[brush-tex][disk] open write failed: '%s' (errno=%d)", dst, errno);
+        free(data);
+        return 0;
+    }
+    fwrite(data, size, 1, f);
+    fclose(f);
+    free(data);
+    ctx->copied_count++;
+    LOG_I("[brush-tex][disk] copied: '%s' bytes=%d", dst, size);
+    return 0;
+}
+
+static void brush_textures_seed_user_dir_once(const char *dir)
+{
+    char marker[1024];
+    FILE *f;
+    texture_seed_ctx_t ctx = {.target_dir = dir, .copied_count = 0};
+    texture_png_count_ctx_t count_ctx = {0};
+
+    if (!path_join2(marker, sizeof(marker), dir, ".seeded_textures"))
+        return;
+    path_normalize_slashes(marker);
+    LOG_I("[brush-tex] marker path: '%s'", marker);
+    f = fopen(marker, "rb");
+    if (f) {
+        fclose(f);
+        LOG_I("[brush-tex] marker exists; checking directory contents");
+        sys_list_dir(dir, brush_texture_count_png, &count_ctx);
+        LOG_I("[brush-tex] png files currently in dir: %d", count_ctx.png_count);
+        if (count_ctx.png_count > 0)
+            return;
+        LOG_I("[brush-tex] marker exists but dir empty; forcing reseed");
+    }
+
+    LOG_I("[brush-tex] seeding from embedded assets");
+    assets_list("data/textures", &ctx, brush_texture_seed_copy_asset);
+    if (ctx.copied_count == 0) {
+        // Fallback for builds where textures are not embedded in assets.
+        LOG_I("[brush-tex] embedded assets unavailable; trying disk fallback");
+        sys_list_dir("data/textures", brush_texture_seed_copy_from_disk, &ctx);
+    }
+    LOG_I("Brush texture seeding: target='%s' copied_or_existing=%d",
+          dir, ctx.copied_count);
+    if (ctx.copied_count == 0)
+        return;
+    f = fopen(marker, "wb");
+    if (f) {
+        static const char marker_data[] = "seeded-from-assets\n";
+        fwrite(marker_data, sizeof(marker_data) - 1, 1, f);
+        fclose(f);
+        LOG_I("[brush-tex] marker written");
+    } else {
+        LOG_I("[brush-tex] marker write failed (errno=%d)", errno);
+    }
+}
+
+typedef struct {
+    const char *dir;
+} texture_load_ctx_t;
+
+static int brush_texture_load_from_user_dir(const char *dir, const char *name,
+                                            void *user)
+{
+    texture_load_ctx_t *ctx = user;
+    char path[1024];
+    char label[256];
+    size_t len;
+
+    (void)dir;
+    if (!str_endswith_case(name, ".png"))
+        return 0;
+    LOG_I("[brush-tex][load] found png: '%s'", name);
+    if (!path_join2(path, sizeof(path), ctx->dir, name))
+        return 0;
+    len = strlen(name);
+    if (len >= sizeof(label))
+        len = sizeof(label) - 1;
+    memcpy(label, name, len);
+    label[len] = '\0';
+    len = strlen(label);
+    if (len > 4 && str_endswith_case(label, ".png"))
+        label[len - 4] = '\0';
+    if (!brush_texture_add_from_file(path, label)) {
+        LOG_I("[brush-tex][load] decode failed: '%s'", path);
+    } else {
+        LOG_I("[brush-tex][load] loaded: '%s' as '%s'", path, label);
+    }
+    return 0;
+}
+
+void goxel_brush_textures_reload(void)
+{
+    char dir[1024];
+    char dir_create[1024];
+    texture_load_ctx_t ctx;
+    const char *user_dir = sys_get_user_dir();
+
+    brush_textures_clear(true);
+    if (!user_dir) return;
+    if (!path_join2(dir, sizeof(dir), user_dir, "textures"))
+        return;
+    path_normalize_slashes(dir);
+    {
+        size_t n = strlen(dir);
+        if (n + 2 > sizeof(dir_create))
+            return;
+        memcpy(dir_create, dir, n);
+        dir_create[n] = '/';
+        dir_create[n + 1] = '\0';
+    }
+    path_normalize_slashes(dir_create);
+    LOG_I("[brush-tex] user_dir='%s'", user_dir);
+    LOG_I("Brush textures dir: '%s'", dir);
+    sys_make_dir(dir_create);
+    brush_textures_seed_user_dir_once(dir);
+    ctx = (texture_load_ctx_t){.dir = dir};
+    sys_list_dir(dir, brush_texture_load_from_user_dir, &ctx);
+    goxel.brush_textures_count = arrlen(goxel.brush_textures);
+    LOG_I("[brush-tex] runtime textures loaded: %d", goxel.brush_textures_count);
+    if (goxel.brush_textures_count > 1)
+        qsort(goxel.brush_textures, goxel.brush_textures_count,
+              sizeof(goxel.brush_textures[0]), brush_texture_cmp);
+    if (goxel.brush_texture_index >= goxel.brush_textures_count)
+        goxel.brush_texture_index = 0;
+}
+
+int goxel_brush_textures_count(void)
+{
+    return goxel.brush_textures_count;
+}
+
+const brush_texture_t *goxel_brush_texture_get(int idx)
+{
+    if (idx < 0 || idx >= goxel.brush_textures_count) return NULL;
+    return &goxel.brush_textures[idx];
+}
+
+const brush_texture_t *goxel_brush_texture_current(void)
+{
+    return goxel_brush_texture_get(goxel.brush_texture_index);
+}
+
+void goxel_brush_texture_set_current(int idx)
+{
+    if (idx < 0 || idx >= goxel.brush_textures_count) return;
+    goxel.brush_texture_index = idx;
+}
+
+texture_t *goxel_brush_texture_preview_get(int idx)
+{
+    brush_texture_t *t;
+    if (idx < 0 || idx >= goxel.brush_textures_count) return NULL;
+    t = &goxel.brush_textures[idx];
+    if (!t->preview && t->pixels && goxel.graphics_initialized) {
+        t->preview = texture_new_from_buf(
+                t->pixels, t->w, t->h, t->bpp, TF_NEAREST);
+    }
+    return t->preview;
+}
 
 texture_t *texture_new_image(const char *path, int flags)
 {
@@ -666,6 +1052,7 @@ void goxel_init(void)
     shapes_init();
     goxel_init_sound();
     script_init();
+    goxel_brush_textures_reload();
 
     // Load and set default palette.
     palette_load_all(&goxel.palettes);
@@ -709,6 +1096,9 @@ void goxel_reset(void)
     goxel.radius_z = 0.5;
     goxel.brush_origin_at_base = false;
     goxel.brush_block_face_alignment = false;
+    goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
+    if (goxel.brush_texture_index >= goxel.brush_textures_count)
+        goxel.brush_texture_index = 0;
     goxel.painter = (painter_t) {
         .shape = &shape_cube,
         .mode = MODE_OVER,
@@ -769,6 +1159,7 @@ void goxel_reset(void)
 void goxel_release(void)
 {
     pathtracer_stop(&goxel.pathtracer);
+    brush_textures_clear(true);
     gui_release();
 }
 
@@ -788,12 +1179,17 @@ void goxel_create_graphics(void)
  */
 void goxel_release_graphics(void)
 {
+    int i;
     render_deinit();
     model3d_release_graphics();
     gui_release_graphics();
     shaders_release_all();
     texture_delete(goxel.pick_fbo);
     goxel.pick_fbo = NULL;
+    for (i = 0; i < goxel.brush_textures_count; i++) {
+        texture_delete(goxel.brush_textures[i].preview);
+        goxel.brush_textures[i].preview = NULL;
+    }
     invalidate_pick_cache();
     g_unproject_cache.valid = false;
     goxel.graphics_initialized = false;

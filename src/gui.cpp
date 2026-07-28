@@ -1859,6 +1859,54 @@ bool gui_placer_past_details_row(
     return load;
 }
 
+bool gui_texture_swatch_entry(
+        const char *id, uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
+        const char *label, bool selected, float cell_w)
+{
+    bool clicked;
+    ImVec2 uv0(0, 0);
+    ImVec2 uv1(1, 1);
+    const float s = cell_w > 0.f ? cell_w : 64.f;
+    ImDrawList *dl;
+    ImVec2 mn, mx;
+
+    if (!gui)
+        return false;
+
+    if (tex_w > 0 && tex_h > 0) {
+        uv1.x = (float)img_w / (float)tex_w;
+        uv1.y = (float)img_h / (float)tex_h;
+    }
+
+    ImGui::BeginGroup();
+    if (gl_tex) {
+        ImGui::Image((ImTextureID)(intptr_t)gl_tex, ImVec2(s, s), uv0, uv1);
+    } else {
+        ImGui::Dummy(ImVec2(s, s));
+    }
+
+    mn = ImGui::GetItemRectMin();
+    mx = ImGui::GetItemRectMax();
+    dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(mn, mx, IM_COL32(30, 30, 30, 255));
+    if (gl_tex)
+        dl->AddImage((ImTextureID)(intptr_t)gl_tex, mn, mx, uv0, uv1);
+    dl->AddRect(mn, mx, selected ? IM_COL32(255, 200, 80, 255)
+                                 : IM_COL32(90, 90, 90, 255),
+                0.f, 0, selected ? 2.f : 1.f);
+
+    ImGui::SetCursorScreenPos(mn);
+    clicked = ImGui::InvisibleButton(id, ImVec2(s, s));
+    if (!gui->scrolling && ImGui::IsItemHovered() && label && *label)
+        gui_tooltip(label);
+
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + s);
+    ImGui::TextUnformatted(label && *label ? label : "Unnamed");
+    ImGui::PopTextWrapPos();
+    ImGui::EndGroup();
+    return clicked;
+}
+
 void gui_same_line(void)
 {
     ImGui::SameLine();

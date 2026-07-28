@@ -44,7 +44,7 @@ TYPES = {
 }
 GROUPS = ['fonts', 'icons', 'images', 'other', 'palettes', 'progs',
           'shaders', 'sounds', 'themes', 'samples', 'mobile',
-          'scripts']
+          'scripts', 'textures']
 TEMPLATE = '{{.path = "{path}", .size = {size}, .data =\n{data}\n}},'
 File = namedtuple('File', 'path name data size')
 

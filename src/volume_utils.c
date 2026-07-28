@@ -398,6 +398,32 @@ static inline int noise_tex_coord(int w)
     return m;
 }
 
+static inline int wrap_tex_coord(int v, int size)
+{
+    int m;
+    if (size <= 0) return 0;
+    m = v % size;
+    if (m < 0) m += size;
+    return m;
+}
+
+static bool brush_sample_texture_color(const int vp[3], uint8_t out[4])
+{
+    const brush_texture_t *tex = goxel_brush_texture_current();
+    int x, y, idx, bpp;
+    if (!tex || !tex->pixels || tex->w <= 0 || tex->h <= 0)
+        return false;
+    x = wrap_tex_coord(vp[0], tex->w);
+    y = wrap_tex_coord(vp[1], tex->h);
+    bpp = tex->bpp > 0 ? tex->bpp : 4;
+    idx = (y * tex->w + x) * bpp;
+    out[0] = tex->pixels[idx + 0];
+    out[1] = tex->pixels[idx + 1];
+    out[2] = tex->pixels[idx + 2];
+    out[3] = (bpp >= 4) ? tex->pixels[idx + 3] : 255;
+    return true;
+}
+
 void apply_noise_if_applicable(const painter_t* painter, float global_p[3], uint8_t col[4]) {
     if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
         float noise_value = uniform_noise(global_p[0], global_p[1], global_p[2]);
@@ -563,7 +589,12 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         // Apply colours
         uint8_t col[4];
         memcpy(col, painter->color, 4);
-        if (painter->color_inherit) {
+        if (goxel.tool && goxel.tool->id == TOOL_BRUSH &&
+                goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE &&
+                brush_sample_texture_color(vp, col)) {
+            // Apply shared brush opacity to sampled texture alpha.
+            col[3] = ((int)col[3] * (int)painter->color[3]) / 255;
+        } else if (painter->color_inherit) {
             get_color_beneath(vp, col);
         }
 
@@ -588,7 +619,11 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         //         //col[3] = (uint8_t)clamp(col[3] * (1.0f - noise_factor), 0.0f, 255.0f);
         //     }
         // }
-        apply_noise_if_applicable(painter, global_p, col);
+        // Texture mode should not inherit hidden color-noise settings.
+        if (!(goxel.tool && goxel.tool->id == TOOL_BRUSH &&
+              goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE)) {
+            apply_noise_if_applicable(painter, global_p, col);
+        }
         
         memcpy(c, col, 4);
 

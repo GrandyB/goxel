@@ -198,6 +198,10 @@ bool gui_placer_past_entry(
         uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
         const char *file_name, const char *path_tooltip, bool *out_remove,
         float cell_w, float label_font_scale);
+/* Square swatch with preview + label, returns true on click. */
+bool gui_texture_swatch_entry(
+        const char *id, uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
+        const char *label, bool selected, float cell_w);
 /* One history row: clickable file name (load) + remove. Use gui_push_id first. */
 bool gui_placer_past_details_row(
         const char *file_name, const char *path_tooltip, bool *out_remove);
