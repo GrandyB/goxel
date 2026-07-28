@@ -404,20 +404,30 @@ static int iter(tool_t *tool, const painter_t *painter,
 static int gui(tool_t *tool)
 {
     int i, tex_count;
-    float cell = 72.f;
+    float cell = 64.f;
     bool is_color = goxel.brush_source_mode == BRUSH_SOURCE_COLOR;
     bool is_texture = goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE;
 
-    (void)tool;
+    tool_gui_radius();
+    gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
+                 "Lowest Z of the shape is at the cursor (Z-up), not the center");
+    gui_checkbox("Block face align", &goxel.brush_block_face_alignment,
+                 "Diameter Z follows the block face normal (paint walls side-on)");
+    tool_gui_smoothness();
 
     gui_text("Source");
     gui_group_begin(NULL);
     if (gui_toolbar_segment("Color", is_color))
         goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
-    gui_same_line_spaced(6.f);
+    gui_same_line_spaced(9.f);
     if (gui_toolbar_segment("Texture", is_texture))
         goxel.brush_source_mode = BRUSH_SOURCE_TEXTURE;
     gui_group_end();
+
+    if (goxel.brush_source_mode == BRUSH_SOURCE_COLOR) {
+        tool_gui_color(false);
+        gui_section_end();
+    }
 
     if (goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE) {
         tex_count = goxel_brush_textures_count();
@@ -448,21 +458,9 @@ static int gui(tool_t *tool)
                 }
             }
         }
-        gui_section_end();
-    }
-
-    tool_gui_radius();
-    gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
-                 "Lowest Z of the shape is at the cursor (Z-up), not the center");
-    gui_checkbox("Block face align", &goxel.brush_block_face_alignment,
-                 "Diameter Z follows the block face normal (paint walls side-on)");
-    tool_gui_smoothness();
-    if (goxel.brush_source_mode == BRUSH_SOURCE_COLOR) {
-        tool_gui_color(false);
-        gui_section_end();
-    } else if (goxel.painter.mode == MODE_PAINT) {
-        if (gui_section_begin("Opacity", true))
+        if (goxel.painter.mode == MODE_PAINT) {
             gui_color_opacity(goxel.painter.color);
+        }
         gui_section_end();
     }
 
