@@ -62,7 +62,8 @@ struct camera
 
     float  fovy_fpv; // FOV to use in first person (FPV and Player).
     camera_mode_t mode;
-    float  speed; // Move speed (FPV arrow strafe, Player walk).
+    float  fly_speed;    // Move speed for Fly (FPV) and Player Alt-fly.
+    float  player_speed; // Walk speed for Player mode.
     bool   prev_ortho;   // Remember if camera was previously in ortho mode.
     float  prev_dist; // Stashed dist when in first person (FPV or Player).
 
@@ -149,8 +150,9 @@ void camera_turntable_around_point(camera_t *camera, float rz, float rx, const f
  * rz: up is +ve, down is -ve.
  * ry: forward is +ve, backwards is -ve.
  * rx - right is +ve, left is -ve.
+ * speed - fly_speed or player_speed (caller selects).
  */
-void camera_move(camera_t *camera, float rx, float ry, float rz);
+void camera_move(camera_t *camera, float rx, float ry, float rz, float speed);
 
 bool camera_is_firstperson(const camera_t *camera);
 bool camera_is_player(const camera_t *camera);

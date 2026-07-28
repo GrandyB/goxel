@@ -68,8 +68,9 @@ void gui_cameras_panel(void)
     gui_group_end();
 
     if (camera_is_firstperson(cam)) {
-        // Change camera speed
-        gui_input_float("Speed", &cam->speed, 0.5, 0, 30.0, NULL);
+        float *speed = cam->mode == CAMERA_MODE_PLAYER ? &cam->player_speed
+                                                       : &cam->fly_speed;
+        gui_input_float("Speed", speed, 0.5, 0, 30.0, NULL);
 
         // Manual X/Y/Z editing
         float xyz[4][4], x, y, z;

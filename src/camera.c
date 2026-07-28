@@ -27,7 +27,8 @@ camera_t *camera_new(const char *name)
     mat4_set_identity(cam->mat);
     cam->dist = 96;
     cam->aspect = 1;
-    cam->speed = 2.5;
+    cam->fly_speed = 8.f;
+    cam->player_speed = 2.5f;
     cam->fovy = 40.;
     cam->fovy_fpv = 100.;
     cam->mode = CAMERA_MODE_ORBIT;
@@ -60,7 +61,8 @@ void camera_set(camera_t *cam, const camera_t *other)
     cam->ortho = other->ortho;
     cam->dist = other->dist;
     cam->mode = other->mode;
-    cam->speed = other->speed;
+    cam->fly_speed = other->fly_speed;
+    cam->player_speed = other->player_speed;
     cam->fovy = other->fovy;
     cam->fovy_fpv = other->fovy_fpv;
     cam->prev_dist = other->prev_dist;
@@ -317,12 +319,12 @@ void camera_turntable_around_point(
  * ry: forward is +ve, backwards is -ve.
  * rx - right is +ve, left is -ve.
  */
-void camera_move(camera_t *cam, float rx, float ry, float rz)
+void camera_move(camera_t *cam, float rx, float ry, float rz, float speed)
 {
     float mat[4][4];
     mat4_copy(cam->mat, mat);
 
-    float multiplier = cam->speed / 20;
+    float multiplier = speed / 20;
 
     mat4_itranslate(mat, 0, 0, ry*multiplier);
     mat4_itranslate(mat, rx*multiplier, 0, 0);

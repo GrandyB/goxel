@@ -183,7 +183,7 @@ static void gxl_player_frame(camera_t *cam, const inputs_t *inputs,
 
     float save[4][4];
     mat4_copy(cam->mat, save);
-    camera_move(cam, rx, ry, 0);
+    camera_move(cam, rx, ry, 0, cam->player_speed);
     float dx = cam->mat[3][0] - save[3][0];
     float dy = cam->mat[3][1] - save[3][1];
     mat4_copy(save, cam->mat);
@@ -1540,57 +1540,58 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         gxl_player_frame(camera, inputs, deltaTime, t);
     } else {
         const bool fly_move = camera->mode == CAMERA_MODE_FPV || player_alt_fly;
+        const float fly_speed = camera->fly_speed;
         if (inputs->keys[KEY_LEFT]) {
             if (fly_move) {
-                camera_move(camera, -t, 0, 0);
+                camera_move(camera, -t, 0, 0, fly_speed);
             } else {
                 camera_turntable(camera, +0.05, 0);
             }
         }
         if (inputs->keys[KEY_RIGHT]) {
             if (fly_move) {
-                camera_move(camera, +t, 0, 0);
+                camera_move(camera, +t, 0, 0, fly_speed);
             } else {
                 camera_turntable(camera, -0.05, 0);
             }
         }
         if (inputs->keys[KEY_UP]) {
             if (fly_move) {
-                camera_move(camera, 0, -t, 0);
+                camera_move(camera, 0, -t, 0, fly_speed);
             } else {
                 camera_turntable(camera, +0.05, 0);
             }
         }
         if (inputs->keys[KEY_DOWN]) {
             if (fly_move) {
-                camera_move(camera, 0, +t, 0);
+                camera_move(camera, 0, +t, 0, fly_speed);
             } else {
                 camera_turntable(camera, 0, -0.05);
             }
         }
         if (inputs->keys[KEY_PAGE_UP]) {
             if (fly_move) {
-                camera_move(camera, 0, 0, +t);
+                camera_move(camera, 0, 0, +t, fly_speed);
             } else {
                 camera_turntable(camera, 0, +0.05);
             }
         }
         if (inputs->keys[KEY_PAGE_DOWN]) {
             if (fly_move) {
-                camera_move(camera, 0, 0, -t);
+                camera_move(camera, 0, 0, -t, fly_speed);
             } else {
                 camera_turntable(camera, 0, -0.05);
             }
         }
         if (player_alt_fly) {
             if (inputs->keys['W'] || inputs->keys['w'])
-                camera_move(camera, 0, -t, 0);
+                camera_move(camera, 0, -t, 0, fly_speed);
             if (inputs->keys['S'] || inputs->keys['s'])
-                camera_move(camera, 0, +t, 0);
+                camera_move(camera, 0, +t, 0, fly_speed);
             if (inputs->keys['A'] || inputs->keys['a'])
-                camera_move(camera, -t, 0, 0);
+                camera_move(camera, -t, 0, 0, fly_speed);
             if (inputs->keys['D'] || inputs->keys['d'])
-                camera_move(camera, +t, 0, 0);
+                camera_move(camera, +t, 0, 0, fly_speed);
         }
     }
     if (acc_fpv_key) {
