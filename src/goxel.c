@@ -1108,6 +1108,9 @@ void goxel_reset(void)
     goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
     if (goxel.brush_texture_index >= goxel.brush_textures_count)
         goxel.brush_texture_index = 0;
+    goxel.brush_texture_hue = 0.f;
+    goxel.brush_texture_saturation = 100.f;
+    goxel.brush_texture_lightness = 0.f;
     goxel.painter = (painter_t) {
         .shape = &shape_cube,
         .mode = MODE_OVER,

@@ -559,6 +559,12 @@ typedef struct goxel
     int        brush_texture_index;
     brush_texture_t *brush_textures;
     int        brush_textures_count;
+    /* Texture paint: HSL adjust after sampling.
+     * Hue degrees [-180,+180], sat % [0,200] (100=identity),
+     * lightness % [-100,+100] (0=identity). */
+    float      brush_texture_hue;
+    float      brush_texture_saturation;
+    float      brush_texture_lightness;
     bool       pathtrace; // Render pathtraced mode.
 
     // Some state for the tool iter functions.

@@ -43,6 +43,11 @@ typedef struct {
         float      radius_x, radius_y, radius_z;
         bool       block_face_alignment;
         bool       origin_at_base;
+        int        brush_source_mode;
+        int        brush_texture_index;
+        float      brush_texture_hue;
+        float      brush_texture_saturation;
+        float      brush_texture_lightness;
     } last_op;
     /* Active layer before this stroke; used to add map-color history on commit. */
     uint64_t   layer_key_at_stroke_start;
@@ -68,6 +73,13 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
             brush->last_op.block_face_alignment ==
                 goxel.brush_block_face_alignment &&
             brush->last_op.origin_at_base == goxel.brush_origin_at_base &&
+            brush->last_op.brush_source_mode == goxel.brush_source_mode &&
+            brush->last_op.brush_texture_index == goxel.brush_texture_index &&
+            brush->last_op.brush_texture_hue == goxel.brush_texture_hue &&
+            brush->last_op.brush_texture_saturation ==
+                goxel.brush_texture_saturation &&
+            brush->last_op.brush_texture_lightness ==
+                goxel.brush_texture_lightness &&
             vec3_equal(curs->pos, brush->last_op.pos) &&
             /* Drag locks alignment at begin; only hover tracks live normal. */
             (!goxel.brush_block_face_alignment || pressed ||
@@ -82,6 +94,11 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
     brush->last_op.radius_z = goxel.radius_z;
     brush->last_op.block_face_alignment = goxel.brush_block_face_alignment;
     brush->last_op.origin_at_base = goxel.brush_origin_at_base;
+    brush->last_op.brush_source_mode = goxel.brush_source_mode;
+    brush->last_op.brush_texture_index = goxel.brush_texture_index;
+    brush->last_op.brush_texture_hue = goxel.brush_texture_hue;
+    brush->last_op.brush_texture_saturation = goxel.brush_texture_saturation;
+    brush->last_op.brush_texture_lightness = goxel.brush_texture_lightness;
     vec3_copy(curs->pos, brush->last_op.pos);
     vec3_copy(curs->normal, brush->last_op.normal);
     return false;
@@ -481,8 +498,21 @@ static int gui(tool_t *tool)
             }
             gui_enabled_end();
         }
+        gui_dummy(0, 8);
+        gui_input_float("Hue", &goxel.brush_texture_hue, 1.f, -180.f, 180.f,
+                        "%.1f");
+        gui_input_float("Saturation", &goxel.brush_texture_saturation, 1.f,
+                        0.f, 200.f, "%.1f");
+        gui_input_float("Lightness", &goxel.brush_texture_lightness, 1.f,
+                        -100.f, 100.f, "%.1f");
         if (goxel.painter.mode == MODE_PAINT) {
             gui_color_opacity(goxel.painter.color);
+        }
+        if (gui_button("Reset", 0, 0)) {
+            goxel.brush_texture_hue = 0.f;
+            goxel.brush_texture_saturation = 100.f;
+            goxel.brush_texture_lightness = 0.f;
+            goxel.painter.color[3] = 255;
         }
         gui_section_end();
     }

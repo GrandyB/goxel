@@ -17,6 +17,7 @@
  */
 
 #include "goxel.h"
+#include "utils/color.h"
 #include "xxhash.h"
 
 #include <limits.h>
@@ -421,6 +422,9 @@ static bool brush_sample_texture_color(const int vp[3], uint8_t out[4])
     out[1] = tex->pixels[idx + 1];
     out[2] = tex->pixels[idx + 2];
     out[3] = (bpp >= 4) ? tex->pixels[idx + 3] : 255;
+    srgb8_adjust_hsl(out, goxel.brush_texture_hue,
+                     goxel.brush_texture_saturation,
+                     goxel.brush_texture_lightness);
     return true;
 }
 
@@ -482,11 +486,23 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         uint64_t  id;
         float     box[4][4];
         painter_t painter;
+        /* Texture brush state is outside painter_t; include it so cache
+         * does not reuse stamps after switching texture / HSL. */
+        int       brush_source_mode;
+        int       brush_texture_index;
+        float     brush_texture_hue;
+        float     brush_texture_saturation;
+        float     brush_texture_lightness;
     } key;
     memset(&key, 0, sizeof(key));
     key.id = volume_get_key(volume);
     mat4_copy(box, key.box);
     key.painter = *painter;
+    key.brush_source_mode = goxel.brush_source_mode;
+    key.brush_texture_index = goxel.brush_texture_index;
+    key.brush_texture_hue = goxel.brush_texture_hue;
+    key.brush_texture_saturation = goxel.brush_texture_saturation;
+    key.brush_texture_lightness = goxel.brush_texture_lightness;
     cached = cache_get(cache, &key, sizeof(key));
     if (cached) {
         volume_set(volume, cached);
