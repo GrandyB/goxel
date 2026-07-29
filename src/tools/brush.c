@@ -43,6 +43,7 @@ typedef struct {
         float      radius_x, radius_y, radius_z;
         bool       block_face_alignment;
         bool       origin_at_base;
+        bool       surface_paint;
         int        brush_source_mode;
         int        brush_texture_index;
         float      brush_texture_hue;
@@ -73,6 +74,7 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
             brush->last_op.block_face_alignment ==
                 goxel.brush_block_face_alignment &&
             brush->last_op.origin_at_base == goxel.brush_origin_at_base &&
+            brush->last_op.surface_paint == goxel.brush_surface_paint &&
             brush->last_op.brush_source_mode == goxel.brush_source_mode &&
             brush->last_op.brush_texture_index == goxel.brush_texture_index &&
             brush->last_op.brush_texture_hue == goxel.brush_texture_hue &&
@@ -94,6 +96,7 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
     brush->last_op.radius_z = goxel.radius_z;
     brush->last_op.block_face_alignment = goxel.brush_block_face_alignment;
     brush->last_op.origin_at_base = goxel.brush_origin_at_base;
+    brush->last_op.surface_paint = goxel.brush_surface_paint;
     brush->last_op.brush_source_mode = goxel.brush_source_mode;
     brush->last_op.brush_texture_index = goxel.brush_texture_index;
     brush->last_op.brush_texture_hue = goxel.brush_texture_hue;
@@ -204,6 +207,7 @@ static int on_drag(gesture3d_t *gest, void *user)
     bool alt = curs->flags & CURSOR_LEFT_ALT;
     int merge_mode;
     float spacing;
+    bool surface_paint_mode;
 
     float target[3];
     vec3_copy(curs->pos, target);
@@ -232,6 +236,7 @@ static int on_drag(gesture3d_t *gest, void *user)
     }
 
     merge_mode = painter.mode;
+    surface_paint_mode = (merge_mode == MODE_PAINT && goxel.brush_surface_paint);
     // MODE_PAINT of soft/partial coverage is not idempotent: merging each
     // frame's stamps re-applies falloff onto already-painted voxels and
     // hardens AA edges vs one merge of the accumulated mask (commit path).
@@ -244,7 +249,8 @@ static int on_drag(gesture3d_t *gest, void *user)
 
     // Step ~ brush radius (min axis): small brushes stay 1-voxel dense;
     // large brushes avoid a volume_op per voxel of travel.
-    spacing = max(0.7f, min3(r_x, r_y, r_z));
+    spacing = surface_paint_mode ? max(0.7f, min(r_x, r_y))
+                                 : max(0.7f, min3(r_x, r_y, r_z));
 
     // Shift+click: connect previous stroke end → target.
     if (gest->state == GESTURE_BEGIN && shift) {
@@ -255,11 +261,17 @@ static int on_drag(gesture3d_t *gest, void *user)
             nb = max(nb, 1);
             for (i = 0; i <= nb; i++) {
                 vec3_mix(brush->start_pos, target, (float)i / nb, pos);
-                get_box3(pos, NULL, brush->stroke_normal,
-                         r_x, r_y, r_z, NULL, box);
-                volume_op(brush->delta, &painter, box);
+                if (surface_paint_mode) {
+                    volume_brush_surface_stamp(brush->delta, brush->volume_orig,
+                                               &painter, pos, r_x, r_y,
+                                               MODE_MAX);
+                } else {
+                    get_box3(pos, NULL, brush->stroke_normal,
+                             r_x, r_y, r_z, NULL, box);
+                    volume_op(brush->delta, &painter, box);
+                }
             }
-        } else if (painter.shape == &shape_sphere) {
+        } else if (!surface_paint_mode && painter.shape == &shape_sphere) {
             // Larger spheres: one tube along the segment (not stamped spheres).
             painter.shape = &shape_cylinder;
             get_box3(brush->start_pos, target, brush->stroke_normal,
@@ -273,9 +285,15 @@ static int on_drag(gesture3d_t *gest, void *user)
             nb = max(nb, 1);
             for (i = 0; i <= nb; i++) {
                 vec3_mix(brush->start_pos, target, (float)i / nb, pos);
-                get_box3(pos, NULL, brush->stroke_normal,
-                         r_x, r_y, r_z, NULL, box);
-                volume_op(brush->delta, &painter, box);
+                if (surface_paint_mode) {
+                    volume_brush_surface_stamp(brush->delta, brush->volume_orig,
+                                               &painter, pos, r_x, r_y,
+                                               MODE_MAX);
+                } else {
+                    get_box3(pos, NULL, brush->stroke_normal,
+                             r_x, r_y, r_z, NULL, box);
+                    volume_op(brush->delta, &painter, box);
+                }
             }
         }
     }
@@ -286,14 +304,25 @@ static int on_drag(gesture3d_t *gest, void *user)
     if (!alt) {
         for (i = 0; i < nb; i++) {
             vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
-            get_box3(pos, NULL, brush->stroke_normal,
-                     r_x, r_y, r_z, NULL, box);
-            volume_op(brush->delta, &painter, box);
+            if (surface_paint_mode) {
+                volume_brush_surface_stamp(brush->delta, brush->volume_orig,
+                                           &painter, pos, r_x, r_y, MODE_MAX);
+            } else {
+                get_box3(pos, NULL, brush->stroke_normal,
+                         r_x, r_y, r_z, NULL, box);
+                volume_op(brush->delta, &painter, box);
+            }
         }
     }
 
     // Keep full stroke mask via cheap tile merge.
-    volume_merge_from(brush->volume, brush->delta, MODE_MAX, NULL);
+    if (surface_paint_mode) {
+        // Surface stamps are sparse: a tile-wide MODE_MAX would take the
+        // source RGB of untouched (empty) voxels and blacken the mask.
+        volume_merge_sparse_from(brush->volume, brush->delta, MODE_MAX);
+    } else {
+        volume_merge_from(brush->volume, brush->delta, MODE_MAX, NULL);
+    }
 
     if (gest->state == GESTURE_END || rebuild_preview) {
         // Authoritative result: one merge of the full mask onto the layer.
@@ -339,6 +368,8 @@ static int on_hover(gesture3d_t *gest, void *user)
     float box[4][4];
     bool shift = curs->flags & CURSOR_SHIFT;
     bool alt = curs->flags & CURSOR_LEFT_ALT;
+    bool surface_paint_mode = (painter->mode == MODE_PAINT &&
+                               goxel.brush_surface_paint);
 
     if (gest->state == GESTURE_END || !curs->snaped) {
         // Drag runs before hover; on press hover ENDs after drag BEGIN and
@@ -366,11 +397,16 @@ static int on_hover(gesture3d_t *gest, void *user)
     if (goxel.tool_volume && check_can_skip(brush, curs, painter->mode))
         return 0;
 
-    get_box3(curs->pos, NULL, curs->normal, goxel.radius_x, goxel.radius_y, goxel.radius_z, NULL, box);
-
     if (!goxel.tool_volume) goxel.tool_volume = volume_new();
     volume_set(goxel.tool_volume, volume);
-    volume_op(goxel.tool_volume, painter, box);
+    if (surface_paint_mode) {
+        volume_brush_surface_stamp(goxel.tool_volume, volume, painter, curs->pos,
+                                   goxel.radius_x, goxel.radius_y, painter->mode);
+    } else {
+        get_box3(curs->pos, NULL, curs->normal,
+                 goxel.radius_x, goxel.radius_y, goxel.radius_z, NULL, box);
+        volume_op(goxel.tool_volume, painter, box);
+    }
 
     brush->last_op.volume_key = volume_get_key(goxel.tool_volume);
 
@@ -426,6 +462,7 @@ static int gui(tool_t *tool)
     bool has_textures_dir;
     bool is_color = goxel.brush_source_mode == BRUSH_SOURCE_COLOR;
     bool is_texture = goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE;
+    bool is_paint_mode = (goxel.painter.mode == MODE_PAINT);
     /* Defer reload: swatches may already be in this frame's ImGui draw list. */
     static bool textures_reload_pending = false;
 
@@ -438,11 +475,21 @@ static int gui(tool_t *tool)
     if (!has_textures_dir)
         textures_dir[0] = '\0';
 
-    tool_gui_radius();
+    if (is_paint_mode && goxel.brush_surface_paint)
+        tool_gui_radius_xy();
+    else
+        tool_gui_radius();
+
+    if (is_paint_mode) {
+        gui_checkbox("Surface paint", &goxel.brush_surface_paint,
+                     "Ignore Diameter Z; paint air-exposed surface down each column under the X/Y shape");
+    }
+    gui_enabled_begin(!(is_paint_mode && goxel.brush_surface_paint));
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
     gui_checkbox("Block face align", &goxel.brush_block_face_alignment,
                  "Diameter Z follows the block face normal (paint walls side-on)");
+    gui_enabled_end();
     tool_gui_smoothness();
 
     gui_text("Source");

@@ -92,6 +92,7 @@ int tool_gui_snap(void);
 int tool_gui_mask_mode(void);
 int tool_gui_shape(const shape_t **shape);
 int tool_gui_radius(void);
+int tool_gui_radius_xy(void);
 int tool_gui_smoothness(void);
 int tool_gui_inherit(void);
 int tool_gui_noise(void);

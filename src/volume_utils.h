@@ -163,6 +163,13 @@ void volume_get_heights_in_box(const volume_t *volume, int dimensions[3], int st
 void volume_op(volume_t *volume, const painter_t *painter,
                const float box[4][4]);
 
+/* Brush paint helper: top-down paint exposed surface shell per XY column. */
+void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
+                                const painter_t *painter,
+                                const float center[3],
+                                float radius_x, float radius_y,
+                                int mode);
+
 // XXX: to cleanup.
 // If inherit_from is non-NULL, newly extruded voxels keep the source-face
 // colour until the column meets a voxel in inherit_from (e.g. merged layers),
@@ -237,6 +244,17 @@ void volume_merge(volume_t *volume, const volume_t *other, int mode,
  */
 void volume_merge_from(volume_t *volume, const volume_t *other, int mode,
                        const uint8_t color[4]);
+
+/*
+ * Function: volume_merge_sparse_from
+ * Like volume_merge_from, but only applies source voxels that have alpha.
+ *
+ * Needed for sparse masks: MODE_MAX (and MODE_OVER) take the source RGB even
+ * where the source voxel is empty, so a tile-wide merge would overwrite the
+ * colors of already accumulated voxels with black.
+ */
+void volume_merge_sparse_from(volume_t *volume, const volume_t *other,
+                              int mode);
 
 /*
  * Function: voxel_combine

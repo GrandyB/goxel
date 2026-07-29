@@ -457,6 +457,192 @@ void apply_noise_if_applicable(const painter_t* painter, float global_p[3], uint
     }
 }
 
+static bool brush_surface_voxel_is_solid(const uint8_t color[4])
+{
+    return color[3] != 0;
+}
+
+static bool brush_surface_pos_in_aabb(const int pos[3], const int start_pos[3],
+                                      const int dimensions[3])
+{
+    return pos[0] >= start_pos[0] && pos[0] < start_pos[0] + dimensions[0] &&
+           pos[1] >= start_pos[1] && pos[1] < start_pos[1] + dimensions[1] &&
+           pos[2] >= start_pos[2] && pos[2] < start_pos[2] + dimensions[2];
+}
+
+static bool brush_surface_column_membership(const painter_t *painter,
+                                            const float center[3],
+                                            float radius_x, float radius_y,
+                                            int x, int y, float *out_alpha)
+{
+    float dx = (x + 0.5f) - center[0];
+    float dy = (y + 0.5f) - center[1];
+    float k;
+    float v;
+
+    /* 2D cross sections of the shape SDFs in src/shape.c, so the signed
+     * distance (and therefore the AA band width) is in voxels like volume_op. */
+    if (painter->shape == &shape_cube) {
+        float ratio = INFINITY;
+        k = INFINITY;
+        if (dx != 0) {
+            ratio = radius_x / fabsf(dx);
+            k = radius_x - fabsf(dx);
+        }
+        if (dy != 0 && radius_y / fabsf(dy) < ratio) {
+            k = radius_y - fabsf(dy);
+        }
+    } else {
+        float d = sqrtf(dx * dx + dy * dy);
+        if (d == 0) {
+            k = max(radius_x, radius_y);
+        } else {
+            /* Ellipse radius along (dx, dy), matching sphere_func. */
+            float ex = radius_y * dx / d;
+            float ey = radius_x * dy / d;
+            float r = radius_x * radius_y / sqrtf(ex * ex + ey * ey);
+            k = r - d;
+        }
+    }
+
+    if (painter->dithering > 0) {
+        k += (uniform_noise((float)x, (float)y, center[2]) * 2.f - 1.f) *
+             painter->dithering;
+    }
+    if (painter->smoothness > 0) {
+        v = clamp(k / painter->smoothness, -1.0f, 1.0f) / 2.0f + 0.5f;
+    } else {
+        v = (k >= 0.f) ? 1.f : 0.f;
+    }
+    if (v <= 0.f) return false;
+
+    *out_alpha = v;
+    return true;
+}
+
+static bool brush_surface_is_exposed(const volume_t *src,
+                                     volume_iterator_t *src_iter,
+                                     const int pos[3],
+                                     const int start_pos[3],
+                                     const int dimensions[3])
+{
+    static const int offsets[6][3] = {
+        {1, 0, 0}, {-1, 0, 0},
+        {0, 1, 0}, {0, -1, 0},
+        {0, 0, 1}, {0, 0, -1},
+    };
+    uint8_t cur[4], neigh[4];
+    int i, npos[3];
+
+    volume_get_at(src, src_iter, pos, cur);
+    if (!brush_surface_voxel_is_solid(cur))
+        return false;
+
+    for (i = 0; i < 6; i++) {
+        npos[0] = pos[0] + offsets[i][0];
+        npos[1] = pos[1] + offsets[i][1];
+        npos[2] = pos[2] + offsets[i][2];
+        if (!brush_surface_pos_in_aabb(npos, start_pos, dimensions))
+            continue;
+        volume_get_at(src, src_iter, npos, neigh);
+        if (!brush_surface_voxel_is_solid(neigh))
+            return true;
+    }
+    return false;
+}
+
+void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
+                                const painter_t *painter,
+                                const float center[3],
+                                float radius_x, float radius_y,
+                                int mode)
+{
+    int start_pos[3], dimensions[3];
+    float box[4][4];
+    float band;
+    int min_x, max_x, min_y, max_y;
+    int x, y, z;
+    int pos[3];
+    bool seen_solid;
+    uint8_t src_voxel[4], dst_voxel[4], paint_voxel[4], new_voxel[4];
+    volume_iterator_t src_iter = {0};
+    volume_accessor_t dst_accessor;
+
+    if (!src || !dst) return;
+
+    mat4_copy(goxel.image->box, box);
+    if (box_is_null(box))
+        volume_get_box(src, true, box);
+    box_get_start_pos(box, start_pos);
+    box_get_dimensions(box, dimensions);
+    if (dimensions[0] <= 0 || dimensions[1] <= 0 || dimensions[2] <= 0)
+        return;
+
+    // The AA / dither band straddles the nominal edge, so grow the footprint
+    // like volume_op grows its iteration box; otherwise the outward half of
+    // the feather is never visited and the edge only blurs inwards.
+    band = painter->smoothness + painter->dithering;
+
+    min_x = max(start_pos[0], (int)floorf(center[0] - radius_x - band));
+    max_x = min(start_pos[0] + dimensions[0] - 1,
+                (int)ceilf(center[0] + radius_x + band));
+    min_y = max(start_pos[1], (int)floorf(center[1] - radius_y - band));
+    max_y = min(start_pos[1] + dimensions[1] - 1,
+                (int)ceilf(center[1] + radius_y + band));
+    if (min_x > max_x || min_y > max_y)
+        return;
+
+    dst_accessor = volume_get_accessor(dst);
+    for (x = min_x; x <= max_x; x++) {
+        for (y = min_y; y <= max_y; y++) {
+            float edge_alpha = 0.f;
+            float global_p[3];
+            if (!brush_surface_column_membership(painter, center, radius_x, radius_y,
+                                                 x, y, &edge_alpha))
+                continue;
+
+            seen_solid = false;
+            for (z = start_pos[2] + dimensions[2] - 1; z >= start_pos[2]; z--) {
+                pos[0] = x; pos[1] = y; pos[2] = z;
+                volume_get_at(src, &src_iter, pos, src_voxel);
+                if (!brush_surface_voxel_is_solid(src_voxel)) {
+                    if (seen_solid)
+                        break;
+                    continue;
+                }
+                seen_solid = true;
+                if (!brush_surface_is_exposed(src, &src_iter, pos,
+                                              start_pos, dimensions)) {
+                    break;
+                }
+                memcpy(paint_voxel, painter->color, 4);
+                if (goxel.tool && goxel.tool->id == TOOL_BRUSH &&
+                        goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE &&
+                        brush_sample_texture_color(pos, paint_voxel)) {
+                    paint_voxel[3] = ((int)paint_voxel[3] * (int)painter->color[3]) / 255;
+                } else if (painter->color_inherit) {
+                    get_color_beneath(pos, paint_voxel);
+                }
+                if (!(goxel.tool && goxel.tool->id == TOOL_BRUSH &&
+                      goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE)) {
+                    vec3_set(global_p,
+                             (float)noise_tex_coord(pos[0]),
+                             (float)noise_tex_coord(pos[1]),
+                             (float)noise_tex_coord(pos[2]));
+                    apply_noise_if_applicable(painter, global_p, paint_voxel);
+                }
+                paint_voxel[3] = (uint8_t)((float)paint_voxel[3] * edge_alpha);
+                if (paint_voxel[3] == 0)
+                    continue;
+                volume_get_at(dst, &dst_accessor, pos, dst_voxel);
+                voxel_combine(dst_voxel, paint_voxel, mode, new_voxel);
+                if (!vec4_equal(dst_voxel, new_voxel))
+                    volume_set_at(dst, &dst_accessor, pos, new_voxel);
+            }
+        }
+    }
+}
+
 void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4])
 {   
     // box[1][0] = 1/2 x size
@@ -874,6 +1060,27 @@ void volume_merge_from(volume_t *volume, const volume_t *other, int mode,
     iter = volume_get_iterator(other, VOLUME_ITER_TILES);
     while (volume_iter(&iter, bpos)) {
         tile_merge(volume, other, bpos, mode, color);
+    }
+}
+
+void volume_merge_sparse_from(volume_t *volume, const volume_t *other, int mode)
+{
+    volume_iterator_t iter;
+    volume_accessor_t accessor;
+    int pos[3];
+    uint8_t src[4], dst[4], out[4];
+
+    assert(volume && other);
+    iter = volume_get_iterator(other,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    accessor = volume_get_accessor(volume);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(other, &iter, pos, src);
+        if (!src[3]) continue;
+        volume_get_at(volume, &accessor, pos, dst);
+        voxel_combine(dst, src, mode, out);
+        if (!vec4_equal(dst, out))
+            volume_set_at(volume, &accessor, pos, out);
     }
 }
 

@@ -237,6 +237,24 @@ int tool_gui_radius(void)
     return 0;
 }
 
+int tool_gui_radius_xy(void)
+{
+    gui_text("Size");
+    gui_group_begin(NULL);
+    int x = goxel.radius_x * 2;
+    if (gui_input_int("Diameter X", &x, 1, 128)) {
+        x = clamp(x, 1, 128);
+        goxel.radius_x = x / 2.0;
+    }
+    int y = goxel.radius_y * 2;
+    if (gui_input_int("Diameter Y", &y, 1, 128)) {
+        y = clamp(y, 1, 128);
+        goxel.radius_y = y / 2.0;
+    }
+    gui_group_end();
+    return 0;
+}
+
 int tool_gui_smoothness(void)
 {
     int s = (int)goxel.painter.smoothness;
