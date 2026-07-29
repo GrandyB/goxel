@@ -48,6 +48,11 @@ typedef struct {
     int max_building_size; /* longest-side length per undivided section */
     int max_roof_height;   /* roof stops and stays flat past this */
     bool generate_roofs;   /* when false, stop at the top slab */
+    bool generate_windows;
+    int window_width;
+    int window_height;
+    int window_min_gap;
+    int window_above_floor; /* clear height from slab top to window sill */
     uint8_t floor_colors[BUILDING_FLOOR_COUNTS][4];
     uint8_t roof_colors[BUILDING_MAX_ROOF_PAIRS][2][4];
     int roof_pair_count;
@@ -94,6 +99,11 @@ static void reset_defaults(filter_buildings_t *filter)
     filter->max_building_size = 16;
     filter->max_roof_height = 8;
     filter->generate_roofs = true;
+    filter->generate_windows = true;
+    filter->window_width = 2;
+    filter->window_height = 2;
+    filter->window_min_gap = 3;
+    filter->window_above_floor = 2;
     for (i = 0; i < BUILDING_FLOOR_COUNTS; i++)
         memcpy(filter->floor_colors[i], k_default_colors[i], 4);
     filter->roof_pair_count = (int)ARRAY_SIZE(k_default_roof_colors);
@@ -419,7 +429,7 @@ static bool analyze_rectangle(const building_group_t *g, building_obb_t *obb)
     return true;
 }
 
-/* Longest axis of the building's own oriented frame, in cells. */
+/* Longest-axis slice used by chunk partitioning. */
 typedef struct {
     float dx, dy; /* unit direction along the axis */
     float min_p;  /* smallest cell-centre projection on it */
@@ -530,6 +540,396 @@ static void paint_walls(volume_t *vol, const building_group_t *g,
             z = z0 + t;
             paint_voxel(vol, x, y, z);
         }
+    }
+}
+
+/*
+ * A façade is the run of exterior wall cells sharing one outward direction,
+ * ordered along the wall.  Grouping by direction keeps a staircased (rotated
+ * or diagonal) wall in a single run, so window widths and gaps can be counted
+ * in voxels along it instead of measured in oriented-frame units.
+ */
+typedef struct {
+    building_xy_t *cells;
+    int *ranks; /* position along the run; cells sharing one step share it */
+    int ncells;
+    int nranks;
+    int dir;    /* index into k_facade_dirs */
+    int dx, dy; /* outward direction */
+    bool is_end; /* faces along the building's length: a short end wall */
+} building_facade_t;
+
+/*
+ * Four straight faces followed by four diagonal ones.  A cell on a 45° wall is
+ * exposed in two perpendicular directions; giving those their own bucket keeps
+ * each wall cell in exactly one run.  Sharing cells between two runs used to
+ * cut two different sets of voxels and produce openings wider than requested.
+ */
+static const int k_facade_dirs[8][2] = {
+    {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+    {1, 1}, {1, -1}, {-1, 1}, {-1, -1},
+};
+
+/* Position along the run: rows for ±X faces, columns for ±Y, the
+ * perpendicular diagonal for the diagonal faces. */
+static int facade_tangent(int dir, int x, int y)
+{
+    if (dir < 2)
+        return y;
+    if (dir < 4)
+        return x;
+    return k_facade_dirs[dir][0] * k_facade_dirs[dir][1] > 0 ? x - y : x + y;
+}
+
+typedef struct {
+    int t;
+    building_xy_t cell;
+} facade_sort_t;
+
+static int compare_facade_sort(const void *a_, const void *b_)
+{
+    const facade_sort_t *a = a_;
+    const facade_sort_t *b = b_;
+
+    if (a->t != b->t) return a->t < b->t ? -1 : 1;
+    if (a->cell.y != b->cell.y) return a->cell.y < b->cell.y ? -1 : 1;
+    if (a->cell.x != b->cell.x) return a->cell.x < b->cell.x ? -1 : 1;
+    return 0;
+}
+
+/* True if the wall keeps going sideways with the same face exposed. */
+static bool wall_continues(const building_group_t *g, int x, int y, int dir)
+{
+    int s;
+
+    for (s = -1; s <= 1; s += 2) {
+        int nx = x + (dir < 2 ? 0 : s);
+        int ny = y + (dir < 2 ? s : 0);
+
+        if (!occ_get(g, nx, ny))
+            continue;
+        if (!occ_get(g, nx + k_facade_dirs[dir][0],
+                     ny + k_facade_dirs[dir][1]))
+            return true;
+    }
+    return false;
+}
+
+/*
+ * Which façade runs a wall cell belongs to, as a bitmask over k_facade_dirs.
+ * Straight faces win where the wall continues sideways; otherwise the cell
+ * sits on a diagonal wall and joins the matching diagonal run.  A convex
+ * corner continues both ways and joins both runs as their end cell.
+ */
+static int facade_dirs_for_cell(const building_group_t *g, int x, int y)
+{
+    int exposed = 0, out = 0, d;
+
+    for (d = 0; d < 4; d++) {
+        if (!occ_get(g, x + k_facade_dirs[d][0], y + k_facade_dirs[d][1]))
+            exposed |= 1 << d;
+    }
+    if (!exposed)
+        return 0;
+
+    for (d = 0; d < 4; d++) {
+        if ((exposed & (1 << d)) && wall_continues(g, x, y, d))
+            out |= 1 << d;
+    }
+    if (out)
+        return out;
+
+    for (d = 4; d < 8; d++) {
+        int bit_x = k_facade_dirs[d][0] > 0 ? 0 : 1;
+        int bit_y = k_facade_dirs[d][1] > 0 ? 2 : 3;
+
+        if ((exposed & (1 << bit_x)) && (exposed & (1 << bit_y)))
+            out |= 1 << d;
+    }
+    return out;
+}
+
+static void free_facades(building_facade_t *facades, int nfacades)
+{
+    int i;
+
+    if (!facades)
+        return;
+    for (i = 0; i < nfacades; i++) {
+        free(facades[i].cells);
+        free(facades[i].ranks);
+    }
+    free(facades);
+}
+
+/* Order a run along its wall and number the steps it spans. */
+static bool facade_finish(building_facade_t *f)
+{
+    facade_sort_t *sorted;
+    int i, rank = 0;
+
+    if (f->ncells <= 0)
+        return true;
+
+    sorted = malloc((size_t)f->ncells * sizeof(*sorted));
+    f->ranks = malloc((size_t)f->ncells * sizeof(*f->ranks));
+    if (!sorted || !f->ranks) {
+        free(sorted);
+        return false;
+    }
+    for (i = 0; i < f->ncells; i++) {
+        sorted[i].cell = f->cells[i];
+        sorted[i].t = facade_tangent(f->dir, f->cells[i].x, f->cells[i].y);
+    }
+    qsort(sorted, (size_t)f->ncells, sizeof(*sorted), compare_facade_sort);
+    for (i = 0; i < f->ncells; i++) {
+        if (i > 0 && sorted[i].t != sorted[i - 1].t)
+            rank++;
+        f->cells[i] = sorted[i].cell;
+        f->ranks[i] = rank;
+    }
+    f->nranks = rank + 1;
+    free(sorted);
+    return true;
+}
+
+/*
+ * A wall facing along the building's length caps one of its ends, so its own
+ * width is the building's short side.  Windows skip those.
+ */
+static bool facade_is_end_wall(const building_facade_t *f,
+                               const building_axis_t *axis)
+{
+    float n = sqrtf((float)(f->dx * f->dx + f->dy * f->dy));
+    float ox = (float)f->dx / n;
+    float oy = (float)f->dy / n;
+    float along = fabsf(ox * axis->dx + oy * axis->dy);
+    float across = fabsf(ox * -axis->dy + oy * axis->dx);
+
+    return along > across;
+}
+
+/*
+ * Collect exterior wall runs.  Cells sharing an outward face are split into
+ * diagonally connected components, so separate stretches of the same wall (an
+ * L-shape, a courtyard) stay apart.
+ */
+static building_facade_t *build_facades(const building_group_t *g,
+                                        const int *chunks, int wall_t,
+                                        const building_axis_t *axis,
+                                        int *out_nfacades)
+{
+    building_facade_t *facades = NULL;
+    int nfacades = 0, cap = 0;
+    int *dirs = NULL;
+    uint8_t *visited = NULL;
+    building_xy_t *queue = NULL;
+    int area, d, i;
+
+    *out_nfacades = 0;
+    if (g->ncells <= 0)
+        return NULL;
+
+    area = (g->xmax - g->xmin + 1) * (g->ymax - g->ymin + 1);
+    dirs = calloc((size_t)area, sizeof(*dirs));
+    visited = malloc((size_t)area);
+    queue = malloc((size_t)g->ncells * sizeof(*queue));
+    if (!dirs || !visited || !queue)
+        goto fail;
+
+    for (i = 0; i < g->ncells; i++) {
+        int x = g->cells[i].x;
+        int y = g->cells[i].y;
+
+        /* Interior partitions stay solid where they meet the façade. */
+        if (is_partition_wall_cell(g, chunks, x, y, wall_t))
+            continue;
+        dirs[occ_index(g, x, y)] = facade_dirs_for_cell(g, x, y);
+    }
+
+    for (d = 0; d < 8; d++) {
+        int mask = 1 << d;
+
+        memset(visited, 0, (size_t)area);
+        for (i = 0; i < g->ncells; i++) {
+            int seed_x = g->cells[i].x;
+            int seed_y = g->cells[i].y;
+            int seed_i = occ_index(g, seed_x, seed_y);
+            int qhead = 0, qtail = 0;
+            building_facade_t *f;
+
+            if (!(dirs[seed_i] & mask) || visited[seed_i])
+                continue;
+
+            if (nfacades >= cap) {
+                int ncap = cap ? cap * 2 : 8;
+                building_facade_t *next =
+                    realloc(facades, (size_t)ncap * sizeof(*next));
+                if (!next)
+                    goto fail;
+                facades = next;
+                cap = ncap;
+            }
+            f = &facades[nfacades++];
+            memset(f, 0, sizeof(*f));
+            f->dir = d;
+            f->dx = k_facade_dirs[d][0];
+            f->dy = k_facade_dirs[d][1];
+            f->is_end = facade_is_end_wall(f, axis);
+            f->cells = malloc((size_t)g->ncells * sizeof(*f->cells));
+            if (!f->cells)
+                goto fail;
+
+            visited[seed_i] = 1;
+            queue[qtail++] = (building_xy_t){seed_x, seed_y};
+            while (qhead < qtail) {
+                building_xy_t p = queue[qhead++];
+                int ndx, ndy;
+
+                f->cells[f->ncells++] = p;
+                for (ndy = -1; ndy <= 1; ndy++) {
+                    for (ndx = -1; ndx <= 1; ndx++) {
+                        int nx = p.x + ndx;
+                        int ny = p.y + ndy;
+                        int ni;
+
+                        if (!ndx && !ndy)
+                            continue;
+                        if (!occ_get(g, nx, ny))
+                            continue;
+                        ni = occ_index(g, nx, ny);
+                        if (!(dirs[ni] & mask) || visited[ni])
+                            continue;
+                        visited[ni] = 1;
+                        queue[qtail++] = (building_xy_t){nx, ny};
+                    }
+                }
+            }
+            if (!facade_finish(f))
+                goto fail;
+        }
+    }
+
+    free(dirs);
+    free(visited);
+    free(queue);
+    *out_nfacades = nfacades;
+    return facades;
+
+fail:
+    free(dirs);
+    free(visited);
+    free(queue);
+    free_facades(facades, nfacades);
+    return NULL;
+}
+
+/*
+ * Windows of width `win_w` spaced at least `min_gap` apart and centred in a
+ * run of `len` cells.  The same gap is held back at both ends, so a window
+ * never lands against a corner and a wall too short for one stays solid.
+ */
+static int window_layout(int len, int win_w, int min_gap, int *out_start)
+{
+    int margin = min_gap > 0 ? min_gap : 1;
+    int avail = len - 2 * margin;
+    int n, span;
+
+    *out_start = 0;
+    if (win_w <= 0 || avail < win_w)
+        return 0;
+    n = (avail + min_gap) / (win_w + min_gap);
+    if (n < 1)
+        return 0;
+    span = n * win_w + (n - 1) * min_gap;
+    *out_start = margin + (avail - span) / 2;
+    return n;
+}
+
+/* Mark which positions along a run fall inside a window opening. */
+static void mark_window_ranks(uint8_t *marks, int nranks, int win_w,
+                              int min_gap, int max_building_size)
+{
+    int nsections, s;
+
+    nsections = max_building_size > 0 ? nranks / max_building_size : 0;
+    if (nsections < 1)
+        nsections = 1;
+
+    for (s = 0; s < nsections; s++) {
+        int lo = s * nranks / nsections;
+        int hi = (s + 1) * nranks / nsections;
+        int start, n, k, j;
+
+        n = window_layout(hi - lo, win_w, min_gap, &start);
+        for (k = 0; k < n; k++) {
+            int base = lo + start + k * (win_w + min_gap);
+
+            for (j = 0; j < win_w; j++) {
+                if (base + j < hi)
+                    marks[base + j] = 1;
+            }
+        }
+    }
+}
+
+/* Clear one opening through the wall band, inward from the exterior cell. */
+static void clear_window_column(volume_t *vol, const building_group_t *g,
+                                const int *chunks, int x, int y,
+                                int dx, int dy, int z0, int win_h, int wall_t)
+{
+    int k, t;
+
+    for (k = 0; k < wall_t; k++) {
+        int cx = x - k * dx;
+        int cy = y - k * dy;
+
+        if (!occ_get(g, cx, cy))
+            break;
+        if (k > 0 && is_partition_wall_cell(g, chunks, cx, cy, wall_t))
+            break;
+        for (t = 0; t < win_h; t++)
+            clear_voxel(vol, cx, cy, z0 + t);
+    }
+}
+
+static void cut_windows_floor(volume_t *vol, const building_group_t *g,
+                              const building_facade_t *facades, int nfacades,
+                              const int *chunks, int z0, int floor_h,
+                              int wall_t, int win_w, int win_h, int min_gap,
+                              int above, int max_building_size)
+{
+    int f, i;
+    int win_z0, win_h_use;
+
+    if (win_w <= 0 || win_h <= 0 || above >= floor_h)
+        return;
+    win_h_use = win_h;
+    if (above + win_h_use > floor_h)
+        win_h_use = floor_h - above;
+    if (win_h_use <= 0)
+        return;
+    win_z0 = z0 + above;
+
+    for (f = 0; f < nfacades; f++) {
+        const building_facade_t *fac = &facades[f];
+        uint8_t *marks;
+
+        if (fac->nranks <= 0 || fac->is_end)
+            continue;
+        marks = calloc((size_t)fac->nranks, 1);
+        if (!marks)
+            return;
+        mark_window_ranks(marks, fac->nranks, win_w, min_gap,
+                          max_building_size);
+        for (i = 0; i < fac->ncells; i++) {
+            if (!marks[fac->ranks[i]])
+                continue;
+            clear_window_column(vol, g, chunks, fac->cells[i].x,
+                                fac->cells[i].y, fac->dx, fac->dy,
+                                win_z0, win_h_use, wall_t);
+        }
+        free(marks);
     }
 }
 
@@ -677,13 +1077,17 @@ static void paint_pyramid_roof(volume_t *vol, const building_group_t *g, int z0,
 static void generate_group(volume_t *vol, const building_group_t *g,
                            int floor_h, int floor_t, int wall_t,
                            int max_building_size, bool generate_roofs,
-                           int max_roof_h, const uint8_t roof_colors[2][4])
+                           int max_roof_h, const uint8_t roof_colors[2][4],
+                           bool generate_windows, int win_w, int win_h,
+                           int win_gap, int win_above)
 {
     int i;
     int total_h;
     int z;
     int nchunks;
     int *chunks;
+    building_facade_t *facades = NULL;
+    int nfacades = 0;
     building_axis_t axis;
 
     if (g->ncells <= 0)
@@ -695,6 +1099,10 @@ static void generate_group(volume_t *vol, const building_group_t *g,
               (int)(axis.len / (float)max_building_size) : 0;
     chunks = nchunks > 1 ? build_chunk_map(g, nchunks, &axis) : NULL;
 
+    /* Façades depend only on the footprint, so every storey shares them. */
+    if (generate_windows)
+        facades = build_facades(g, chunks, wall_t, &axis, &nfacades);
+
     total_h = g->floors * floor_h + (g->floors + 1) * floor_t;
     clear_building_column_range(vol, g, g->base_z, total_h);
 
@@ -704,6 +1112,11 @@ static void generate_group(volume_t *vol, const building_group_t *g,
 
     for (i = 0; i < g->floors; i++) {
         paint_walls(vol, g, z, floor_h, wall_t, chunks);
+        if (facades) {
+            cut_windows_floor(vol, g, facades, nfacades, chunks, z, floor_h,
+                              wall_t, win_w, win_h, win_gap, win_above,
+                              max_building_size);
+        }
         z += floor_h;
         /* Intermediate floor, or flat roof after the last storey. */
         paint_slab(vol, g, z, floor_t);
@@ -719,6 +1132,7 @@ static void generate_group(volume_t *vol, const building_group_t *g,
         else
             paint_pyramid_roof(vol, g, z, roof_colors, max_roof_h);
     }
+    free_facades(facades, nfacades);
     free(chunks);
 }
 
@@ -1009,6 +1423,7 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     int ngroups = 0;
     int i;
     int floor_h, floor_t, wall_t, max_building_size, max_roof_h;
+    int win_w, win_h, win_gap, win_above;
 
     if (!layer || !layer->volume || volume_is_empty(layer->volume)) {
         gui_alert("Plan - Buildings", "Active layer has no voxels.");
@@ -1020,11 +1435,19 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     wall_t = clampi(filter->wall_thickness, 1, 64);
     max_building_size = clampi(filter->max_building_size, 0, 1024);
     max_roof_h = clampi(filter->max_roof_height, 1, 256);
+    win_w = clampi(filter->window_width, 1, 64);
+    win_h = clampi(filter->window_height, 1, 64);
+    win_gap = clampi(filter->window_min_gap, 0, 64);
+    win_above = clampi(filter->window_above_floor, 0, 256);
     filter->floor_height = floor_h;
     filter->floor_thickness = floor_t;
     filter->wall_thickness = wall_t;
     filter->max_building_size = max_building_size;
     filter->max_roof_height = max_roof_h;
+    filter->window_width = win_w;
+    filter->window_height = win_h;
+    filter->window_min_gap = win_gap;
+    filter->window_above_floor = win_above;
 
     src = volume_copy(layer->volume);
     if (!src) {
@@ -1061,7 +1484,9 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
         generate_group(target_layer->volume, &groups[i],
                        floor_h, floor_t, wall_t, max_building_size,
                        filter->generate_roofs, max_roof_h,
-                       filter->roof_colors[roof_pair]);
+                       filter->roof_colors[roof_pair],
+                       filter->generate_windows, win_w, win_h, win_gap,
+                       win_above);
     }
 
     free_groups(groups, ngroups);
@@ -1107,9 +1532,32 @@ static int gui(filter_t *filter_)
         "along the longest side. 0 disables splitting. Default 16.");
     gui_checkbox("Generate roofs", &filter->generate_roofs,
                  "When off, buildings stop at the top floor slab.");
-    gui_input_int("Max roof height", &filter->max_roof_height, 1, 256);
-    gui_tooltip_if_hovered(
-        "Roof slope stops at this height and finishes flat. Default 8.");
+    if (filter->generate_roofs) {
+        gui_input_int("Max roof height", &filter->max_roof_height, 1, 256);
+        gui_tooltip_if_hovered(
+            "Roof slope stops at this height and finishes flat. Default 8.");
+    }
+    gui_separator();
+    gui_checkbox("Generate windows", &filter->generate_windows,
+                 "Punch window openings into exterior walls on every storey.");
+    if (filter->generate_windows) {
+        gui_input_int("Window width", &filter->window_width, 1, 64);
+        gui_tooltip_if_hovered(
+            "Horizontal size of each window opening, in blocks along the "
+            "wall. Default 2.");
+        gui_input_int("Window height", &filter->window_height, 1, 64);
+        gui_tooltip_if_hovered(
+            "Vertical size of each window opening. Clamped to fit the floor "
+            "height. Default 2.");
+        gui_input_int("Min gap between windows", &filter->window_min_gap, 0, 64);
+        gui_tooltip_if_hovered(
+            "Minimum solid blocks between two windows on the same wall. "
+            "Default 3.");
+        gui_input_int("Distance above floor", &filter->window_above_floor,
+                      0, 256);
+        gui_tooltip_if_hovered(
+            "Blocks from the floor slab up to the window sill. Default 2.");
+    }
     gui_label_size_pop();
 
     gui_separator();
