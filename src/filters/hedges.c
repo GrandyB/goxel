@@ -45,6 +45,8 @@ typedef struct {
     int noise_intensity;
     int noise_saturation;
     bool current_layer;
+    bool exact_placement;
+    layer_t *surface_layer;
 } filter_hedges_t;
 
 static const uint8_t k_default_color[4] = {48, 92, 38, 255};
@@ -59,6 +61,8 @@ static void reset_defaults(filter_hedges_t *filter)
     filter->noise_intensity = 10;
     filter->noise_saturation = 10;
     filter->current_layer = false;
+    filter->exact_placement = true;
+    filter->surface_layer = NULL;
     memcpy(filter->color, k_default_color, 4);
 }
 
@@ -204,6 +208,42 @@ static bool collect_seeds(const volume_t *vol, hedge_seed_t **out, int *nout)
     *out = seeds;
     *nout = n;
     return true;
+}
+
+/*
+ * Project each plan XY column onto the free voxel directly above the highest
+ * occupied voxel of the selected layer, so the hedge rests on the surface
+ * instead of replacing it. Columns without a surface are removed.
+ */
+static void project_seeds(hedge_seed_t *seeds, int *nseeds,
+                          const volume_t *surface)
+{
+    int bbox[2][3];
+    int i, n = 0;
+    uint8_t c[4];
+
+    if (!volume_get_bbox(surface, bbox, true)) {
+        *nseeds = 0;
+        return;
+    }
+
+    for (i = 0; i < *nseeds; i++) {
+        int pos[3] = {seeds[i].x, seeds[i].y, 0};
+
+        for (pos[2] = bbox[1][2] - 1; pos[2] >= bbox[0][2]; pos[2]--) {
+            volume_get_at(surface, NULL, pos, c);
+            if (c[3])
+                break;
+        }
+        if (pos[2] < bbox[0][2])
+            continue;
+
+        seeds[n].x = pos[0];
+        seeds[n].y = pos[1];
+        seeds[n].base_z = pos[2] + 1;
+        n++;
+    }
+    *nseeds = n;
 }
 
 static void paint_hedge_column(volume_t *vol, int x, int y, int base_z,
@@ -370,6 +410,9 @@ static void apply_hedges(filter_hedges_t *filter, layer_t *layer)
 
     if (!layer || !layer->volume || volume_is_empty(layer->volume))
         return;
+    if (!filter->exact_placement &&
+        (!filter->surface_layer || !filter->surface_layer->volume))
+        return;
 
     min_h = filter->min_height;
     max_h = filter->max_height;
@@ -387,6 +430,16 @@ static void apply_hedges(filter_hedges_t *filter, layer_t *layer)
         volume_delete(src);
         free(seeds);
         return;
+    }
+    if (!filter->exact_placement) {
+        project_seeds(seeds, &nseeds, filter->surface_layer->volume);
+        if (nseeds == 0) {
+            gui_alert("Plan - Hedges",
+                      "No plan columns intersect the selected layer.");
+            volume_delete(src);
+            free(seeds);
+            return;
+        }
     }
 
     image_history_push(goxel.image);
@@ -452,6 +505,28 @@ static int gui(filter_t *filter_)
     gui_tooltip_if_hovered(
         "How colourful the variation is. 0 = lightness-only mottling.");
     gui_checkbox("Current layer", &filter->current_layer, NULL);
+    gui_checkbox("Exact placement", &filter->exact_placement,
+                 "Use each plan column's Z coordinate. When disabled, use only "
+                 "its X/Y coordinate and project it down to the top surface of "
+                 "the selected layer.");
+    if (!filter->exact_placement) {
+        if (!filter->surface_layer && goxel.image)
+            filter->surface_layer = goxel.image->layers;
+        gui_text("Layer");
+        gui_same_line();
+        if (gui_combo_begin("##hedges_surface_layer",
+                            filter->surface_layer ? filter->surface_layer->name
+                                                  : "(none)")) {
+            layer_t *cur;
+            DL_FOREACH_REVERSE(goxel.image->layers, cur) {
+                if (gui_combo_item(cur->name, cur == filter->surface_layer))
+                    filter->surface_layer = cur;
+            }
+            gui_combo_end();
+        }
+        gui_tooltip_if_hovered(
+            "Layer whose heights determine where the plan is enacted.");
+    }
 
     gui_separator();
     gui_input_int("Seed", &filter->seed, 0, RAND_MAX);

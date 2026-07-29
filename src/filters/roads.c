@@ -50,6 +50,7 @@ typedef struct {
     int noise_saturation;
     layer_t *source_layer;
     bool current_layer;
+    bool exact_placement;
 } filter_roads_t;
 
 static const uint8_t k_default_color[4] = {61, 61, 61, 255};
@@ -63,6 +64,7 @@ static void reset_defaults(filter_roads_t *filter)
     filter->noise_saturation = 10;
     filter->source_layer = NULL;
     filter->current_layer = false;
+    filter->exact_placement = true;
     memcpy(filter->color, k_default_color, 4);
 }
 
@@ -103,6 +105,53 @@ static bool collect_plan_voxels(const volume_t *vol, road_vox_t **out, int *nout
     *out = voxels;
     *nout = n;
     return true;
+}
+
+/*
+ * Collapse the plan to one seed per XY column and project each seed onto the
+ * free voxel directly above the highest occupied voxel of the selected layer,
+ * matching a plan drawn on top of that terrain. Columns without terrain are
+ * omitted.
+ */
+static void project_plan_voxels(road_vox_t *plan, int *nplan,
+                                const volume_t *surface)
+{
+    int bbox[2][3];
+    int i, j, n = 0;
+    uint8_t c[4];
+
+    if (!volume_get_bbox(surface, bbox, true)) {
+        *nplan = 0;
+        return;
+    }
+
+    for (i = 0; i < *nplan; i++) {
+        int pos[3] = {plan[i].x, plan[i].y, 0};
+        bool duplicate = false;
+
+        for (j = 0; j < n; j++) {
+            if (plan[j].x == plan[i].x && plan[j].y == plan[i].y) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate)
+            continue;
+
+        for (pos[2] = bbox[1][2] - 1; pos[2] >= bbox[0][2]; pos[2]--) {
+            volume_get_at(surface, NULL, pos, c);
+            if (c[3])
+                break;
+        }
+        if (pos[2] < bbox[0][2])
+            continue;
+
+        plan[n].x = pos[0];
+        plan[n].y = pos[1];
+        plan[n].z = pos[2] + 1;
+        n++;
+    }
+    *nplan = n;
 }
 
 /* Nearest plan in XY; returns that plan voxel's Z. */
@@ -253,6 +302,15 @@ static void apply_roads(filter_roads_t *filter, layer_t *layer)
         free(plan);
         return;
     }
+    if (!filter->exact_placement) {
+        project_plan_voxels(plan, &nplan, filter->source_layer->volume);
+        if (nplan == 0) {
+            gui_alert("Plan - Roads",
+                      "No plan columns intersect the selected layer.");
+            free(plan);
+            return;
+        }
+    }
 
     thickness = clampi(filter->thickness, 1, 64);
     aa = (float)clampi(filter->anti_alias, 0, 16);
@@ -398,6 +456,10 @@ static int gui(filter_t *filter_)
     gui_input_int("Noise intensity", &filter->noise_intensity, 0, 100);
     gui_input_int("Noise saturation", &filter->noise_saturation, 0, 100);
     gui_checkbox("Current layer", &filter->current_layer, NULL);
+    gui_checkbox("Exact placement", &filter->exact_placement,
+                 "Use each plan block's Z coordinate. When disabled, use only "
+                 "its X/Y coordinate and project it down to the top surface of "
+                 "the selected layer.");
 
     if (!filter->source_layer && goxel.image)
         filter->source_layer = goxel.image->layers;
@@ -413,6 +475,8 @@ static int gui(filter_t *filter_)
         }
         gui_combo_end();
     }
+    gui_tooltip_if_hovered(
+        "Layer whose heights determine where the plan is enacted.");
     gui_label_size_pop();
 
     gui_separator();
