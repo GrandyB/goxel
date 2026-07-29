@@ -19,6 +19,7 @@
  */
 typedef struct clone_stamp_sample {
     bool take_uppermost;
+    bool surface_mode; /* top-down exposed destination shell; ignores brush Z */
     int  depth;
     int  source_face; /* -1 = classic Z; else 0..5 */
     int  target_face; /* -1 = classic Z; else 0..5 */

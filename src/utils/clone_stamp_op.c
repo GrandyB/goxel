@@ -106,6 +106,7 @@ static const clone_stamp_sample_t *sample_opts_or_default(
 {
     if (opts) return opts;
     tmp->take_uppermost = true;
+    tmp->surface_mode = false;
     tmp->depth = 0;
     tmp->source_face = -1;
     tmp->target_face = -1;
@@ -223,6 +224,83 @@ static bool column_in_brush(const shape_t *shape, const float mat[4][4],
     return false;
 }
 
+static bool volume_bounds(const volume_t *volume, int low[3], int high[3])
+{
+    float box[4][4];
+    int start[3], dimensions[3], bbox[2][3], i;
+
+    mat4_copy(goxel.image->box, box);
+    if (!box_is_null(box)) {
+        box_get_start_pos(box, start);
+        box_get_dimensions(box, dimensions);
+        for (i = 0; i < 3; i++) {
+            low[i] = start[i];
+            high[i] = start[i] + dimensions[i] - 1;
+        }
+        return dimensions[0] > 0 && dimensions[1] > 0 && dimensions[2] > 0;
+    }
+    if (!volume_get_bbox(volume, bbox, true))
+        return false;
+    for (i = 0; i < 3; i++) {
+        low[i] = bbox[0][i];
+        high[i] = bbox[1][i] - 1;
+    }
+    return true;
+}
+
+static bool pos_in_bounds(const int pos[3], const int low[3],
+                          const int high[3])
+{
+    return pos[0] >= low[0] && pos[0] <= high[0] &&
+           pos[1] >= low[1] && pos[1] <= high[1] &&
+           pos[2] >= low[2] && pos[2] <= high[2];
+}
+
+static bool surface_voxel_is_exposed(const volume_t *volume,
+                                     volume_accessor_t *acc,
+                                     const int pos[3], const int low[3],
+                                     const int high[3])
+{
+    static const int offsets[6][3] = {
+        {1, 0, 0}, {-1, 0, 0},
+        {0, 1, 0}, {0, -1, 0},
+        {0, 0, 1}, {0, 0, -1},
+    };
+    uint8_t color[4];
+    int i, neigh[3];
+
+    for (i = 0; i < 6; i++) {
+        neigh[0] = pos[0] + offsets[i][0];
+        neigh[1] = pos[1] + offsets[i][1];
+        neigh[2] = pos[2] + offsets[i][2];
+        if (!pos_in_bounds(neigh, low, high))
+            return true;
+        volume_get_at(volume, acc, neigh, color);
+        if (!color[3])
+            return true;
+    }
+    return false;
+}
+
+/* Maximum shape coverage in an XY column (the surface footprint). */
+static float surface_column_coverage(const shape_t *shape,
+                                     const float mat[4][4],
+                                     const float size[3], float smoothness,
+                                     float dithering, const int aabb[2][3],
+                                     int x, int y)
+{
+    float coverage = 0.f;
+    int z, pos[3] = {x, y, 0};
+
+    for (z = aabb[0][2]; z < aabb[1][2]; z++) {
+        float v;
+        pos[2] = z;
+        v = shape_coverage(shape, mat, size, smoothness, dithering, pos);
+        coverage = max(coverage, v);
+    }
+    return coverage;
+}
+
 /* Map dest voxel → source column coords using face tangents (or classic XY). */
 static void source_column_for_dest(const float target[3], const float source[3],
                                    const int vp[3],
@@ -272,7 +350,7 @@ void clone_stamp_apply(volume_t *dest, const volume_t *sample,
     volume_accessor_t dest_acc, sample_acc;
     float mat[4][4], size[3], iter_box[4][4], v, opac;
     int vp[3], col[3], depth_axis, n_sign, source_d, lowest, highest;
-    int hard_aabb[2][3];
+    int hard_aabb[2][3], iter_aabb[2][3];
     uint8_t dest_c[4], sample_c[4], out[4];
     clone_stamp_sample_t opts_tmp;
     const clone_stamp_sample_t *o = sample_opts_or_default(opts, &opts_tmp);
@@ -297,6 +375,54 @@ void clone_stamp_apply(volume_t *dest, const volume_t *sample,
 
     dest_acc = volume_get_accessor(dest);
     sample_acc = volume_get_accessor(sample);
+
+    if (o->surface_mode) {
+        int low[3], high[3], x, y, z;
+
+        if (!volume_bounds(dest, low, high))
+            return;
+        box_get_aabb(iter_box, iter_aabb);
+        for (x = max(low[0], iter_aabb[0][0]);
+             x <= min(high[0], iter_aabb[1][0] - 1); x++) {
+            for (y = max(low[1], iter_aabb[0][1]);
+                 y <= min(high[1], iter_aabb[1][1] - 1); y++) {
+                bool seen_solid = false;
+
+                v = surface_column_coverage(shape, mat, size, smoothness,
+                                            dithering, iter_aabb, x, y);
+                if (v <= 0.f) continue;
+                for (z = high[2]; z >= low[2]; z--) {
+                    vp[0] = x;
+                    vp[1] = y;
+                    vp[2] = z;
+                    volume_get_at(dest, &dest_acc, vp, dest_c);
+                    if (!dest_c[3]) {
+                        if (seen_solid) break;
+                        continue;
+                    }
+                    seen_solid = true;
+                    if (!surface_voxel_is_exposed(dest, &dest_acc, vp,
+                                                  low, high))
+                        break;
+
+                    source_column_for_dest(target, source, vp, o, col,
+                                           &depth_axis, &n_sign, &source_d);
+                    if (!find_sample_voxel(sample, &sample_acc, col,
+                                           depth_axis, n_sign, source_d,
+                                           lowest, highest, o, sample_c, NULL))
+                        continue;
+
+                    sample_c[3] = (uint8_t)(sample_c[3] * v * opac);
+                    if (!sample_c[3]) continue;
+                    voxel_combine(dest_c, sample_c, MODE_PAINT, out);
+                    if (!vec4_equal(dest_c, out))
+                        volume_set_at(dest, &dest_acc, vp, out);
+                }
+            }
+        }
+        return;
+    }
+
     iter = volume_get_box_iterator(dest, iter_box, VOLUME_ITER_SKIP_EMPTY);
 
     while (volume_iter(&iter, vp)) {

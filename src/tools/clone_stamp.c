@@ -29,6 +29,7 @@ typedef struct {
     /* Sampling options (GUI). */
     bool sample_inited;
     bool wall_mode;          /* face-normal brush + inherit */
+    bool surface_mode;       /* top-down exposed shell; ignores Diameter Z */
     bool static_source;      /* when true, source stays fixed while dragging */
     bool take_uppermost;     /* default true once sample_inited; ignored in wall */
     int  depth;              /* inherit distance; always used in wall mode */
@@ -53,6 +54,7 @@ typedef struct {
         uint64_t volume_key;
         float    radius_x, radius_y, radius_z;
         bool     wall_mode;
+        bool     surface_mode;
         bool     static_source;
         bool     take_uppermost;
         int      depth;
@@ -74,6 +76,7 @@ static void ensure_sample_defaults(tool_clone_stamp_t *cs)
 {
     if (cs->sample_inited) return;
     cs->wall_mode = false;
+    cs->surface_mode = false;
     cs->static_source = false;
     cs->take_uppermost = true;
     cs->depth = 0;
@@ -122,6 +125,7 @@ static clone_stamp_sample_t sample_opts(const tool_clone_stamp_t *cs,
     return (clone_stamp_sample_t){
         /* Wall mode: depth only — no infinite inherit along the normal. */
         .take_uppermost = cs->wall_mode ? false : cs->take_uppermost,
+        .surface_mode = cs->surface_mode,
         .depth = cs->depth,
         .source_face = src_face,
         .target_face = tgt_face,
@@ -148,6 +152,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
             cs->last_op.radius_y == goxel.radius_y &&
             cs->last_op.radius_z == goxel.radius_z &&
             cs->last_op.wall_mode == cs->wall_mode &&
+            cs->last_op.surface_mode == cs->surface_mode &&
             cs->last_op.static_source == cs->static_source &&
             cs->last_op.take_uppermost == cs->take_uppermost &&
             cs->last_op.depth == cs->depth &&
@@ -171,6 +176,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
     cs->last_op.radius_y = goxel.radius_y;
     cs->last_op.radius_z = goxel.radius_z;
     cs->last_op.wall_mode = cs->wall_mode;
+    cs->last_op.surface_mode = cs->surface_mode;
     cs->last_op.static_source = cs->static_source;
     cs->last_op.take_uppermost = cs->take_uppermost;
     cs->last_op.depth = cs->depth;
@@ -255,7 +261,8 @@ static void apply_at(tool_clone_stamp_t *cs, volume_t *dest,
         n = paint_n ? paint_n : cs->stroke_normal;
     opts = sample_opts(cs, n);
 
-    get_box3(target, n, goxel.radius_x, goxel.radius_y, goxel.radius_z,
+    get_box3(target, n, goxel.radius_x, goxel.radius_y,
+             cs->surface_mode ? 0.5f : goxel.radius_z,
              cs->wall_mode, box);
     clone_stamp_apply(dest, sample, target, source, box, clone_shape(),
                       goxel.painter.smoothness, goxel.painter.dithering,
@@ -274,6 +281,7 @@ static void set_source_markers(tool_clone_stamp_t *cs, const volume_t *sample,
     /* Preview markers: source and target face are the same (source space). */
     clone_stamp_sample_t opts = {
         .take_uppermost = cs->wall_mode ? false : cs->take_uppermost,
+        .surface_mode = cs->surface_mode,
         .depth = cs->depth,
         .source_face = cs->wall_mode && n ? clone_get_face(n) : -1,
         .target_face = cs->wall_mode && n ? clone_get_face(n) : -1,
@@ -282,7 +290,8 @@ static void set_source_markers(tool_clone_stamp_t *cs, const volume_t *sample,
     if (!cs->source_markers) cs->source_markers = volume_new();
     volume_clear(cs->source_markers);
     if (!sample) return;
-    get_box3(source, n, goxel.radius_x, goxel.radius_y, goxel.radius_z,
+    get_box3(source, n, goxel.radius_x, goxel.radius_y,
+             cs->surface_mode ? 0.5f : goxel.radius_z,
              cs->wall_mode, box);
     clone_stamp_preview_source(cs->source_markers, sample, source, box,
                                clone_shape(), 0.f, &opts, marker);
@@ -367,6 +376,7 @@ static void show_exact_source_preview(tool_clone_stamp_t *cs,
     cs->last_op.has_source = cs->has_source;
     cs->last_op.restrict_to_layer = cs->restrict_to_layer;
     cs->last_op.wall_mode = cs->wall_mode;
+    cs->last_op.surface_mode = cs->surface_mode;
     vec3_copy(at, cs->last_op.pos);
     if (cs->has_source)
         vec3_copy(cs->source_pos, cs->last_op.source_pos);
@@ -478,7 +488,8 @@ static int on_drag(gesture3d_t *gest, void *user)
 
     update_source_from_target(cs, target);
 
-    spacing = max(0.7f, min3(r_x, r_y, r_z));
+    spacing = cs->surface_mode ? max(0.7f, min(r_x, r_y))
+                               : max(0.7f, min3(r_x, r_y, r_z));
     nb = ceil(vec3_dist(curs->pos, cs->last_pos) / spacing);
     nb = max(nb, 1);
     {
@@ -635,12 +646,23 @@ static int gui(tool_t *tool)
 
     ensure_sample_defaults(cs);
 
-    tool_gui_radius();
+    if (cs->surface_mode)
+        tool_gui_radius_xy();
+    else
+        tool_gui_radius();
+    if (gui_checkbox("Surface mode", &cs->surface_mode,
+                     "Ignore Diameter Z; clone onto the air-exposed surface "
+                     "down each column under the X/Y shape") &&
+        cs->surface_mode) {
+        cs->wall_mode = false;
+    }
+    gui_enabled_begin(!cs->surface_mode);
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
     gui_checkbox("Wall mode", &cs->wall_mode,
                  "Inherit along the source face normal; orient the brush to "
                  "the paint face.");
+    gui_enabled_end();
     tool_gui_smoothness();
 
     if (gui_section_begin("Clone source", true)) {
