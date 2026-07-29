@@ -27,6 +27,7 @@
 typedef struct {
     tool_t tool;
     float  box[4][4];
+    int color_threshold;
     /* When true (checkbox ticked), boundaries come from the active layer only.
      * When false (default), boundaries use the merged visible layers volume. */
     bool current_layer_only;
@@ -57,6 +58,18 @@ typedef struct visited_voxel {
 static bool rgba_is_empty(const uint8_t rgba[4])
 {
     return rgba[3] == 0;
+}
+
+static bool color_within_threshold(const uint8_t color[4],
+                                   const uint8_t reference[4], int threshold)
+{
+    int diff;
+
+    if (rgba_is_empty(color) || rgba_is_empty(reference)) return false;
+    diff = max3(abs(color[0] - reference[0]),
+                abs(color[1] - reference[1]),
+                abs(color[2] - reference[2]));
+    return diff <= threshold;
 }
 
 static void queue_init(queue_t *queue)
@@ -166,16 +179,20 @@ static bool in_box(int dims[3], int start_pos[3], int pos[3]) {
     return true;
 }
 
-bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
-                       const float start_pos[3], const uint8_t fill_color[4])
+static bool flood_fill_volume(volume_t *paint_volume,
+                              const volume_t *sample_volume,
+                              const float start_pos[3],
+                              const uint8_t fill_color[4],
+                              int painter_mode, int color_threshold)
 {
     queue_t queue;
     visited_voxel_t *visited = NULL;
     volume_iterator_t iter_sample, new_vol_iter;
-    uint8_t voxel[4];
+    uint8_t voxel[4], reference_color[4];
     int box_dimensions[3], box_start_pos[3];
     uint64_t layer_key0 = volume_get_key(paint_volume);
     volume_t *new_vol = volume_new();
+    bool paint_mode = painter_mode == MODE_PAINT;
 
     const int start[3] = {
         (int)floorf(start_pos[0]),
@@ -183,12 +200,15 @@ bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
         (int)floorf(start_pos[2])
     };
 
-    static const int directions[4][3] = {
+    static const int directions[6][3] = {
         {  1,  0,  0 },
         { -1,  0,  0 },
         {  0,  1,  0 },
-        {  0, -1,  0 }
+        {  0, -1,  0 },
+        {  0,  0,  1 },
+        {  0,  0, -1 }
     };
+    const int direction_count = paint_mode ? 6 : 4;
 
     box_get_dimensions(goxel.image->box, box_dimensions);
     box_get_start_pos(goxel.image->box, box_start_pos);
@@ -200,21 +220,22 @@ bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
 
     iter_sample = volume_get_iterator(sample_volume, VOLUME_ITER_VOXELS);
     new_vol_iter = volume_get_iterator(new_vol, VOLUME_ITER_VOXELS);
-    volume_get_at(sample_volume, &iter_sample, start, voxel);
+    volume_get_at(sample_volume, &iter_sample, start, reference_color);
 
-    if (!rgba_is_empty(voxel)) {
-        //LOG_D("flood_fill: start voxel is not empty -> abort");
+    if (paint_mode ? rgba_is_empty(reference_color)
+                   : !rgba_is_empty(reference_color)) {
+        volume_delete(new_vol);
         return true;
     }
 
     if (!queue_push(&queue, start)) {
-        //LOG_D("flood_fill: failed to enqueue start");
+        volume_delete(new_vol);
         return false;
     }
 
     if (!visited_add(&visited, start)) {
-        //LOG_D("flood_fill: failed to add start to visited");
         queue_destroy(&queue);
+        volume_delete(new_vol);
         return false;
     }
 
@@ -229,19 +250,23 @@ bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
 
         volume_get_at(sample_volume, &iter_sample, pos, voxel);
 
-        if (!rgba_is_empty(voxel)) {
-            LOG_D("skip: (%i,%i,%i) not empty", pos[0], pos[1], pos[2]);
+        if (paint_mode
+                ? !color_within_threshold(voxel, reference_color,
+                                          color_threshold)
+                : !rgba_is_empty(voxel)) {
+            LOG_D("skip: (%i,%i,%i) outside fill region",
+                  pos[0], pos[1], pos[2]);
             continue;
         }
 
         //LOG_D("fill: (%i,%i,%i)", pos[0], pos[1], pos[2]);
         volume_set_at(new_vol, &new_vol_iter, pos, fill_color);
 
-        for (int d = 0; d < 4; d++) {
+        for (int d = 0; d < direction_count; d++) {
             int next[3] = {
                 pos[0] + directions[d][0],
                 pos[1] + directions[d][1],
-                pos[2]
+                pos[2] + directions[d][2]
             };
 
             if (!in_box(box_dimensions, box_start_pos, next)){
@@ -258,18 +283,23 @@ bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
                 //LOG_D("error: failed to add visited (%i,%i,%i)", next[0], next[1], next[2]);
                 visited_destroy(&visited);
                 queue_destroy(&queue);
+                volume_delete(new_vol);
                 return false;
             }
 
             volume_get_at(sample_volume, &iter_sample, next, voxel);
 
-            if (rgba_is_empty(voxel)) {
+            if (paint_mode
+                    ? color_within_threshold(voxel, reference_color,
+                                             color_threshold)
+                    : rgba_is_empty(voxel)) {
                 //LOG_D("enqueue: (%i,%i,%i)", next[0], next[1], next[2]);
 
                 if (!queue_push(&queue, next)) {
                     LOG_D("error: failed to enqueue (%i,%i,%i)", next[0], next[1], next[2]);
                     visited_destroy(&visited);
                     queue_destroy(&queue);
+                    volume_delete(new_vol);
                     return false;
                 }
             } else {
@@ -285,7 +315,8 @@ bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
     goxel.painter.mode = MODE_PAINT;
     goxel.painter.shape = &shape_cube;
     volume_op(new_vol, &goxel.painter, box);
-    volume_merge(paint_volume, new_vol, MODE_OVER, NULL);
+    volume_merge(paint_volume, new_vol,
+                 paint_mode ? MODE_PAINT : MODE_OVER, NULL);
     goxel.painter.mode = existing_mode;
     goxel.painter.shape = existing_shape;
     if (volume_get_key(paint_volume) != layer_key0)
@@ -301,13 +332,17 @@ bool flood_fill_volume(volume_t *paint_volume, const volume_t *sample_volume,
 
 static int on_hover(gesture3d_t *gest, void *user)
 {
+    const painter_t *painter = USER_GET(user, 1);
     float box[4][4] = MAT4_IDENTITY;
     mat4_iscale(box, 0.5, 0.5, 0.5);
     cursor_t *curs = gest->cursor;
     uint8_t box_color[4] = {0, 255, 255, 255};
     vec3_to_mat4(curs->pos, box);
 
-    goxel_set_help_text("Click to floodfill this z level");
+    if (painter->mode == MODE_PAINT)
+        goxel_set_help_text("Click to paint connected blocks");
+    else
+        goxel_set_help_text("Click to floodfill this z level");
     render_box(&goxel.rend, box, box_color, EFFECT_WIREFRAME);
     return 0;
 }
@@ -327,7 +362,8 @@ static int on_drag(gesture3d_t *gest, void *user)
             ? paint_volume
             : goxel_get_layers_volume(goxel.image);
         flood_fill_volume(paint_volume, sample_volume, curs->pos,
-                          painter->color);
+                          painter->color, painter->mode,
+                          filler->color_threshold);
     }
 
     return 0;
@@ -340,10 +376,16 @@ int tool_fill_iter(tool_t *tool, const painter_t *painter,
     tool_fill_t *filler = (tool_fill_t*)tool;
     cursor_t *curs = &goxel.cursor;
     
-    curs->snap_mask |= SNAP_ROUNDED;
     curs->snap_mask &= ~(SNAP_SELECTION_IN | SNAP_SELECTION_OUT);
-    curs->snap_offset = 0.5;
-    curs->snap_mask |= SNAP_SELECTION_OUT;
+    if (painter->mode == MODE_PAINT) {
+        curs->snap_mask &= ~SNAP_ROUNDED;
+        curs->snap_mask |= SNAP_VOLUME;
+        curs->snap_offset = -0.5;
+    } else {
+        curs->snap_mask |= SNAP_ROUNDED;
+        curs->snap_mask |= SNAP_SELECTION_OUT;
+        curs->snap_offset = 0.5;
+    }
 
     if (!filler->gestures.drag.type) {
         filler->gestures.drag = (gesture3d_t) {
@@ -367,6 +409,10 @@ static int gui(tool_t *tool)
     gui_checkbox(
             "Current layer only", &filler->current_layer_only,
             "Restrict floodfill to be within blocks only on the current layer");
+
+    if (goxel.painter.mode == MODE_PAINT) {
+        gui_input_int("Threshold", &filler->color_threshold, 0, 255);
+    }
 
     tool_gui_color(false);
     gui_section_end();
