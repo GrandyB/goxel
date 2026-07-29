@@ -49,6 +49,7 @@ typedef struct {
     int max_roof_height;   /* roof stops and stays flat past this */
     bool generate_roofs;   /* when false, stop at the top slab */
     bool generate_windows;
+    bool all_one_layer;
     int window_width;
     int window_height;
     int window_min_gap;
@@ -100,6 +101,7 @@ static void reset_defaults(filter_buildings_t *filter)
     filter->max_roof_height = 8;
     filter->generate_roofs = true;
     filter->generate_windows = true;
+    filter->all_one_layer = true;
     filter->window_width = 2;
     filter->window_height = 2;
     filter->window_min_gap = 3;
@@ -1074,7 +1076,8 @@ static void paint_pyramid_roof(volume_t *vol, const building_group_t *g, int z0,
     }
 }
 
-static void generate_group(volume_t *vol, const building_group_t *g,
+static void generate_group(volume_t *floor_volumes[], volume_t *roof_volume,
+                           const building_group_t *g,
                            int floor_h, int floor_t, int wall_t,
                            int max_building_size, bool generate_roofs,
                            int max_roof_h, const uint8_t roof_colors[2][4],
@@ -1082,7 +1085,6 @@ static void generate_group(volume_t *vol, const building_group_t *g,
                            int win_gap, int win_above)
 {
     int i;
-    int total_h;
     int z;
     int nchunks;
     int *chunks;
@@ -1103,34 +1105,43 @@ static void generate_group(volume_t *vol, const building_group_t *g,
     if (generate_windows)
         facades = build_facades(g, chunks, wall_t, &axis, &nfacades);
 
-    total_h = g->floors * floor_h + (g->floors + 1) * floor_t;
-    clear_building_column_range(vol, g, g->base_z, total_h);
-
-    /* Base slab. */
-    paint_slab(vol, g, g->base_z, floor_t);
-    z = g->base_z + floor_t;
+    /*
+     * Each floor layer owns the slab beneath that storey and its walls.  The
+     * final top slab belongs with the roof, so hiding the roofs layer opens
+     * the top storey as well.
+     */
+    z = g->base_z;
+    for (i = 0; i < g->floors; i++) {
+        clear_building_column_range(floor_volumes[i], g, z,
+                                    floor_t + floor_h);
+        z += floor_t + floor_h;
+    }
+    clear_building_column_range(roof_volume, g, z, floor_t);
 
     for (i = 0; i < g->floors; i++) {
-        paint_walls(vol, g, z, floor_h, wall_t, chunks);
-        if (facades) {
-            cut_windows_floor(vol, g, facades, nfacades, chunks, z, floor_h,
-                              wall_t, win_w, win_h, win_gap, win_above,
-                              max_building_size);
-        }
-        z += floor_h;
-        /* Intermediate floor, or flat roof after the last storey. */
-        paint_slab(vol, g, z, floor_t);
+        z = g->base_z + i * (floor_t + floor_h);
+        paint_slab(floor_volumes[i], g, z, floor_t);
         z += floor_t;
+        paint_walls(floor_volumes[i], g, z, floor_h, wall_t, chunks);
+        if (facades) {
+            cut_windows_floor(floor_volumes[i], g, facades, nfacades, chunks,
+                              z, floor_h, wall_t, win_w, win_h, win_gap,
+                              win_above, max_building_size);
+        }
     }
 
-    /* Roofs are generated after the complete building shell. */
+    z = g->base_z + g->floors * (floor_t + floor_h);
+    paint_slab(roof_volume, g, z, floor_t);
+    z += floor_t;
+
+    /* Roofs are generated above the final slab on the roofs layer. */
     if (generate_roofs) {
         building_obb_t obb;
 
         if (analyze_rectangle(g, &obb))
-            paint_gabled_roof(vol, &obb, z, roof_colors, max_roof_h);
+            paint_gabled_roof(roof_volume, &obb, z, roof_colors, max_roof_h);
         else
-            paint_pyramid_roof(vol, g, z, roof_colors, max_roof_h);
+            paint_pyramid_roof(roof_volume, g, z, roof_colors, max_roof_h);
     }
     free_facades(facades, nfacades);
     free(chunks);
@@ -1395,33 +1406,58 @@ static unsigned building_hash(const building_group_t *g)
     return h;
 }
 
-static layer_t *prepare_target_layer(layer_t *plan_layer)
+static void name_target_layer(layer_t *target, const layer_t *plan_layer,
+                              const char *suffix)
 {
-    layer_t *target;
-    const char *suffix = " Buildings";
     int max_base;
 
-    target = image_add_layer(goxel.image, NULL);
-    if (!target)
-        return NULL;
-
-    target->visible = true;
     max_base = (int)sizeof(target->name) - 1 - (int)strlen(suffix);
     if (max_base < 0)
         max_base = 0;
     snprintf(target->name, sizeof(target->name), "%.*s%s",
              max_base, plan_layer->name, suffix);
+}
+
+static bool prepare_target_layers(layer_t *plan_layer, bool all_one_layer,
+                                  int max_floors, layer_t *targets[])
+{
+    int i, count = all_one_layer ? 1 : max_floors + 1;
+
+    for (i = 0; i < count; i++) {
+        char suffix[40];
+
+        targets[i] = image_add_layer(goxel.image, NULL);
+        if (!targets[i])
+            break;
+        targets[i]->visible = true;
+        if (all_one_layer) {
+            snprintf(suffix, sizeof(suffix), " Buildings");
+        } else if (i < max_floors) {
+            snprintf(suffix, sizeof(suffix), " Buildings - floor %d", i + 1);
+        } else {
+            snprintf(suffix, sizeof(suffix), " Buildings - roofs");
+        }
+        name_target_layer(targets[i], plan_layer, suffix);
+    }
+    if (i != count) {
+        while (i-- > 0)
+            image_delete_layer(goxel.image, targets[i]);
+        goxel.image->active_layer = plan_layer;
+        return false;
+    }
     plan_layer->visible = false;
-    return target;
+    return true;
 }
 
 static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
 {
     volume_t *src = NULL;
-    layer_t *target_layer;
+    layer_t *target_layers[BUILDING_FLOOR_COUNTS + 1] = {0};
+    volume_t *floor_volumes[BUILDING_FLOOR_COUNTS];
+    volume_t *roof_volume;
     building_group_t *groups = NULL;
     int ngroups = 0;
-    int i;
+    int i, max_floors = 0;
     int floor_h, floor_t, wall_t, max_building_size, max_roof_h;
     int win_w, win_h, win_gap, win_above;
 
@@ -1469,19 +1505,34 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
         return;
     }
 
+    for (i = 0; i < ngroups; i++) {
+        if (groups[i].floors > max_floors)
+            max_floors = groups[i].floors;
+    }
+
     image_history_push(goxel.image);
-    target_layer = prepare_target_layer(layer);
-    if (!target_layer) {
-        gui_alert("Plan - Buildings", "Could not create the buildings layer.");
+    if (!prepare_target_layers(layer, filter->all_one_layer, max_floors,
+                               target_layers)) {
+        gui_alert("Plan - Buildings", "Could not create the buildings layers.");
         free_groups(groups, ngroups);
         volume_delete(src);
         return;
     }
 
+    if (filter->all_one_layer) {
+        for (i = 0; i < max_floors; i++)
+            floor_volumes[i] = target_layers[0]->volume;
+        roof_volume = target_layers[0]->volume;
+    } else {
+        for (i = 0; i < max_floors; i++)
+            floor_volumes[i] = target_layers[i]->volume;
+        roof_volume = target_layers[max_floors]->volume;
+    }
+
     for (i = 0; i < ngroups; i++) {
         int roof_pair = (int)(building_hash(&groups[i]) %
                               (unsigned)filter->roof_pair_count);
-        generate_group(target_layer->volume, &groups[i],
+        generate_group(floor_volumes, roof_volume, &groups[i],
                        floor_h, floor_t, wall_t, max_building_size,
                        filter->generate_roofs, max_roof_h,
                        filter->roof_colors[roof_pair],
@@ -1508,8 +1559,8 @@ static int gui(filter_t *filter_)
     const char *help_text =
         "Paint 1-block-high filled shapes on the active layer using the floor "
         "colours below.  Generate builds walls along the inward edges, slabs "
-        "at the base and between storeys, and shaped roofs on a new Buildings "
-        "layer.  The plan layer is preserved and hidden.";
+        "at the base and between storeys, and shaped roofs on new Buildings "
+        "layers.  The plan layer is preserved and hidden.";
     goxel_set_help_text(help_text);
 
     if (gui_collapsing_header("Hint", false))
@@ -1530,6 +1581,9 @@ static int gui(filter_t *filter_)
         "side divided by this value (rounded down) is the section count; a "
         "count below 2 leaves the building undivided. Sections are even bands "
         "along the longest side. 0 disables splitting. Default 16.");
+    gui_checkbox("Generate on one layer", &filter->all_one_layer,
+                 "When off, each used floor gets a layer and final slabs and "
+                 "roofs share a roofs layer.");
     gui_checkbox("Generate roofs", &filter->generate_roofs,
                  "When off, buildings stop at the top floor slab.");
     if (filter->generate_roofs) {
