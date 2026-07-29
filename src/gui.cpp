@@ -588,8 +588,20 @@ static void apply_camera_gizmo_preset(camera_t *camera, camera_mode_t mode,
     camera->ortho = ortho;
 
     if (top_down) {
-        camera->dist = 580.0f;
+        /* 580 fits a 512×512 map; scale by the longest XY side. */
+        float map_xy = 512.0f;
+        float image_center[3] = {0};
+        if (!box_is_null(goxel.image->box)) {
+            int dims[3];
+            box_get_dimensions(goxel.image->box, dims);
+            map_xy = (float)max(dims[0], dims[1]);
+            mat4_mul_vec3(goxel.image->box, VEC(0, 0, 0), image_center);
+            if (map_xy <= 0.f)
+                map_xy = 512.0f;
+        }
+        camera->dist = 580.0f * (map_xy / 512.0f);
         mat4_set_identity(camera->mat);
+        vec3_copy(image_center, camera->mat[3]);
         mat4_itranslate(camera->mat, 0, 0, camera->dist);
         camera_turntable(camera, 0, 0);
     }
