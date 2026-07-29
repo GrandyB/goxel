@@ -18,7 +18,9 @@
 
 #include "goxel.h"
 
+#include <float.h>
 #include <limits.h>
+#include <math.h>
 
 /*
  * Plan - Buildings
@@ -33,6 +35,10 @@
 #define BUILDING_MAX_ROOF_PAIRS 32
 #define BUILDING_NOISE_INTENSITY 5
 #define BUILDING_NOISE_SATURATION 5
+/* PCA OBB interior must be at least this occupied (by cell-centre samples). */
+#define BUILDING_RECT_FILL_MIN 0.90f
+/* Empty OBB samples may be at most this fraction of ncells (plus 1). */
+#define BUILDING_RECT_HOLE_FRAC 0.05f
 
 typedef struct {
     filter_t filter;
@@ -223,48 +229,289 @@ static void clear_building_column_range(volume_t *vol, const building_group_t *g
     }
 }
 
-static bool is_filled_rectangle(const building_group_t *g)
+/* Oriented bounding box in principal-axis (u, v) frame. */
+typedef struct {
+    float ux, uy; /* unit axis u */
+    float vx, vy; /* unit axis v (perpendicular) */
+    float u_min, u_max;
+    float v_min, v_max;
+} building_obb_t;
+
+static float obb_proj_u(const building_obb_t *o, float x, float y)
 {
-    int w = g->xmax - g->xmin + 1;
-    int h = g->ymax - g->ymin + 1;
-    return g->ncells == w * h;
+    return x * o->ux + y * o->uy;
 }
 
-static void paint_gabled_roof(volume_t *vol, const building_group_t *g, int z0,
+static float obb_proj_v(const building_obb_t *o, float x, float y)
+{
+    return x * o->vx + y * o->vy;
+}
+
+static bool obb_contains(const building_obb_t *o, float x, float y,
+                         float pad_u, float pad_v)
+{
+    float pu = obb_proj_u(o, x, y);
+    float pv = obb_proj_v(o, x, y);
+
+    return pu >= o->u_min - pad_u && pu <= o->u_max + pad_u &&
+           pv >= o->v_min - pad_v && pv <= o->v_max + pad_v;
+}
+
+static void obb_set_axis_aligned(building_obb_t *o, const building_group_t *g)
+{
+    o->ux = 1.f;
+    o->uy = 0.f;
+    o->vx = 0.f;
+    o->vy = 1.f;
+    o->u_min = (float)g->xmin;
+    o->u_max = (float)g->xmax;
+    o->v_min = (float)g->ymin;
+    o->v_max = (float)g->ymax;
+}
+
+/* Eigenvector for the larger eigenvalue of [[a,b],[b,c]]. */
+static void pca_principal_axis(float a, float b, float c,
+                               float *ux, float *uy)
+{
+    float diff = a - c;
+    float disc = sqrtf(diff * diff + 4.f * b * b);
+    float l1 = 0.5f * (a + c + disc);
+    float n;
+
+    if (fabsf(b) > 1e-6f || fabsf(l1 - a) > 1e-6f) {
+        *ux = b;
+        *uy = l1 - a;
+    } else {
+        *ux = 1.f;
+        *uy = 0.f;
+    }
+    n = sqrtf((*ux) * (*ux) + (*uy) * (*uy));
+    if (n < 1e-6f) {
+        *ux = 1.f;
+        *uy = 0.f;
+        return;
+    }
+    *ux /= n;
+    *uy /= n;
+}
+
+static bool compute_pca_obb(const building_group_t *g, building_obb_t *o)
+{
+    int i;
+    float cx, cy, a, b, c, dx, dy, pu, pv;
+
+    if (g->ncells < 4)
+        return false;
+
+    cx = 0.f;
+    cy = 0.f;
+    for (i = 0; i < g->ncells; i++) {
+        cx += (float)g->cells[i].x;
+        cy += (float)g->cells[i].y;
+    }
+    cx /= (float)g->ncells;
+    cy /= (float)g->ncells;
+
+    a = 0.f;
+    b = 0.f;
+    c = 0.f;
+    for (i = 0; i < g->ncells; i++) {
+        dx = (float)g->cells[i].x - cx;
+        dy = (float)g->cells[i].y - cy;
+        a += dx * dx;
+        b += dx * dy;
+        c += dy * dy;
+    }
+    a /= (float)g->ncells;
+    b /= (float)g->ncells;
+    c /= (float)g->ncells;
+
+    /* Near-degenerate (line-like) footprints are not rectangles. */
+    if (a + c < 1e-4f)
+        return false;
+
+    pca_principal_axis(a, b, c, &o->ux, &o->uy);
+    o->vx = -o->uy;
+    o->vy = o->ux;
+
+    o->u_min = FLT_MAX;
+    o->u_max = -FLT_MAX;
+    o->v_min = FLT_MAX;
+    o->v_max = -FLT_MAX;
+    for (i = 0; i < g->ncells; i++) {
+        pu = obb_proj_u(o, (float)g->cells[i].x, (float)g->cells[i].y);
+        pv = obb_proj_v(o, (float)g->cells[i].x, (float)g->cells[i].y);
+        if (pu < o->u_min) o->u_min = pu;
+        if (pu > o->u_max) o->u_max = pu;
+        if (pv < o->v_min) o->v_min = pv;
+        if (pv > o->v_max) o->v_max = pv;
+    }
+    return true;
+}
+
+static void obb_world_aabb(const building_obb_t *o,
+                           int *x0, int *x1, int *y0, int *y1)
+{
+    int i, j;
+    float u, v, wx, wy;
+    float us[2] = {o->u_min, o->u_max};
+    float vs[2] = {o->v_min, o->v_max};
+
+    *x0 = INT_MAX;
+    *x1 = INT_MIN;
+    *y0 = INT_MAX;
+    *y1 = INT_MIN;
+    for (i = 0; i < 2; i++) {
+        for (j = 0; j < 2; j++) {
+            u = us[i];
+            v = vs[j];
+            wx = u * o->ux + v * o->vx;
+            wy = u * o->uy + v * o->vy;
+            if ((int)floorf(wx) < *x0) *x0 = (int)floorf(wx);
+            if ((int)ceilf(wx) > *x1) *x1 = (int)ceilf(wx);
+            if ((int)floorf(wy) < *y0) *y0 = (int)floorf(wy);
+            if ((int)ceilf(wy) > *y1) *y1 = (int)ceilf(wy);
+        }
+    }
+}
+
+/* Count integer cells whose centres lie in the OBB; holes = empty among them. */
+static void count_obb_occupancy(const building_group_t *g,
+                                const building_obb_t *o,
+                                int *out_inside, int *out_holes)
+{
+    int x, y, x0, x1, y0, y1, inside = 0, holes = 0;
+
+    obb_world_aabb(o, &x0, &x1, &y0, &y1);
+    for (y = y0; y <= y1; y++) {
+        for (x = x0; x <= x1; x++) {
+            if (!obb_contains(o, (float)x, (float)y, 0.f, 0.f))
+                continue;
+            inside++;
+            if (!occ_get(g, x, y))
+                holes++;
+        }
+    }
+    *out_inside = inside;
+    *out_holes = holes;
+}
+
+/*
+ * True if the footprint is a filled rectangle in map axes or in its PCA
+ * oriented frame.  On success, *obb holds the frame used for a gabled roof.
+ */
+static bool analyze_rectangle(const building_group_t *g, building_obb_t *obb)
+{
+    int w, h, inside, holes, hole_budget;
+    float fill;
+
+    if (g->ncells <= 0 || !g->occ)
+        return false;
+
+    w = g->xmax - g->xmin + 1;
+    h = g->ymax - g->ymin + 1;
+    if (g->ncells == w * h) {
+        obb_set_axis_aligned(obb, g);
+        return true;
+    }
+
+    if (!compute_pca_obb(g, obb))
+        return false;
+
+    count_obb_occupancy(g, obb, &inside, &holes);
+    if (inside < 4)
+        return false;
+    fill = (float)(inside - holes) / (float)inside;
+    if (fill < BUILDING_RECT_FILL_MIN)
+        return false;
+
+    hole_budget = 1 + (int)(BUILDING_RECT_HOLE_FRAC * (float)g->ncells);
+    if (holes > hole_budget)
+        return false;
+
+    return true;
+}
+
+static void paint_gabled_roof(volume_t *vol, const building_obb_t *obb, int z0,
                               const uint8_t colors[2][4], int max_h)
 {
-    int w = g->xmax - g->xmin + 1;
-    int h = g->ymax - g->ymin + 1;
-    bool shrink_x = w <= h;
-    int short_size = (shrink_x ? w : h) + 2;
-    int level, x, y;
+    float eu = obb->u_max - obb->u_min;
+    float ev = obb->v_max - obb->v_min;
+    bool shrink_u = eu <= ev;
+    float short_span = shrink_u ? eu : ev;
+    int short_size = (int)floorf(short_span + 1.f + 1e-3f) + 2;
+    /* The natural peak is taller than max_h, so the top layer stays flat. */
+    bool truncated = max_h * 2 < short_size;
+    int level, x, y, x0, x1, y0, y1;
+    float su0, su1, sv0, sv1, pu, pv, pad;
+    float corners_u[2], corners_v[2];
+    float wx, wy;
     const uint8_t *color;
+    bool on_gable, on_eave, flat_top;
 
     for (level = 0; level < max_h && level * 2 < short_size; level++) {
         color = colors[level & 1];
-        if (shrink_x) {
-            for (y = g->ymin; y <= g->ymax; y++) {
-                int x0 = g->xmin - 1 + level;
-                int x1 = g->xmax + 1 - level;
-                for (x = x0; x <= x1; x++) {
-                    if ((y == g->ymin || y == g->ymax) &&
-                        x != x0 && x != x1)
-                        paint_voxel(vol, x, y, z0 + level);
-                    else
-                        paint_color_voxel(vol, x, y, z0 + level, color);
-                }
-            }
+        /* A flat top is all roof, keeping the gable one layer below it. */
+        flat_top = truncated && level == max_h - 1;
+        pad = 1.f - (float)level;
+        if (shrink_u) {
+            su0 = obb->u_min - pad;
+            su1 = obb->u_max + pad;
+            sv0 = obb->v_min;
+            sv1 = obb->v_max;
         } else {
-            int y0 = g->ymin - 1 + level;
-            int y1 = g->ymax + 1 - level;
-            for (y = y0; y <= y1; y++) {
-                for (x = g->xmin; x <= g->xmax; x++) {
-                    if ((x == g->xmin || x == g->xmax) &&
-                        y != y0 && y != y1)
-                        paint_voxel(vol, x, y, z0 + level);
-                    else
-                        paint_color_voxel(vol, x, y, z0 + level, color);
+            su0 = obb->u_min;
+            su1 = obb->u_max;
+            sv0 = obb->v_min - pad;
+            sv1 = obb->v_max + pad;
+        }
+
+        corners_u[0] = su0;
+        corners_u[1] = su1;
+        corners_v[0] = sv0;
+        corners_v[1] = sv1;
+        x0 = INT_MAX;
+        x1 = INT_MIN;
+        y0 = INT_MAX;
+        y1 = INT_MIN;
+        for (y = 0; y < 2; y++) {
+            for (x = 0; x < 2; x++) {
+                wx = corners_u[x] * obb->ux + corners_v[y] * obb->vx;
+                wy = corners_u[x] * obb->uy + corners_v[y] * obb->vy;
+                if ((int)floorf(wx) < x0) x0 = (int)floorf(wx);
+                if ((int)ceilf(wx) > x1) x1 = (int)ceilf(wx);
+                if ((int)floorf(wy) < y0) y0 = (int)floorf(wy);
+                if ((int)ceilf(wy) > y1) y1 = (int)ceilf(wy);
+            }
+        }
+
+        for (y = y0; y <= y1; y++) {
+            for (x = x0; x <= x1; x++) {
+                pu = obb_proj_u(obb, (float)x, (float)y);
+                pv = obb_proj_v(obb, (float)x, (float)y);
+                /* Paint when the cell centre lies in this level's OBB. */
+                if (pu < su0 || pu > su1 || pv < sv0 || pv > sv1)
+                    continue;
+
+                /*
+                 * Gable ends are the long-axis frontier of this level's slab
+                 * (wall colour).  The short-axis frontier is the one-voxel
+                 * roof-coloured eave/border.  Depth < 1 matches the old
+                 * axis-aligned row test and still catches staircase cells on
+                 * rotated footprints (a 0.5 band was too thin there).
+                 */
+                if (shrink_u) {
+                    on_gable = (pv - sv0 < 1.f) || (sv1 - pv < 1.f);
+                    on_eave = (pu - su0 < 1.f) || (su1 - pu < 1.f);
+                } else {
+                    on_gable = (pu - su0 < 1.f) || (su1 - pu < 1.f);
+                    on_eave = (pv - sv0 < 1.f) || (sv1 - pv < 1.f);
                 }
+
+                if (on_gable && !on_eave && !flat_top)
+                    paint_voxel(vol, x, y, z0 + level);
+                else
+                    paint_color_voxel(vol, x, y, z0 + level, color);
             }
         }
     }
@@ -353,10 +600,14 @@ static void generate_group(volume_t *vol, const building_group_t *g,
     }
 
     /* Roofs are generated after the complete building shell. */
-    if (is_filled_rectangle(g))
-        paint_gabled_roof(vol, g, z, roof_colors, max_roof_h);
-    else
-        paint_pyramid_roof(vol, g, z, roof_colors, max_roof_h);
+    {
+        building_obb_t obb;
+
+        if (analyze_rectangle(g, &obb))
+            paint_gabled_roof(vol, &obb, z, roof_colors, max_roof_h);
+        else
+            paint_pyramid_roof(vol, g, z, roof_colors, max_roof_h);
+    }
 }
 
 static bool group_key_equal(const building_group_t *g, int floors, int base_z)
@@ -724,6 +975,7 @@ static int gui(filter_t *filter_)
     if (gui_collapsing_header("Hint", false))
         gui_text_wrapped(help_text);
 
+    gui_label_size_push(150.0f);
     gui_input_int("Height of each floor", &filter->floor_height, 1, 256);
     gui_tooltip_if_hovered(
         "Clear height between floor slabs (wall / interior height). Default 4.");
@@ -735,6 +987,7 @@ static int gui(filter_t *filter_)
     gui_input_int("Max roof height", &filter->max_roof_height, 1, 256);
     gui_tooltip_if_hovered(
         "Roof slope stops at this height and finishes flat. Default 8.");
+    gui_label_size_pop();
 
     gui_separator();
     gui_text("Number of floors:");
