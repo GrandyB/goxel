@@ -26,19 +26,23 @@
  * Paint 1-block-high filled footprints on the active layer.  Each of four
  * colours maps to a floor count (1–4).  Generate replaces those footprints
  * with inward-walled buildings: base slab, clear-height storeys with
- * perimeter walls, intermediate slabs, and a flat roof.
+ * perimeter walls, intermediate slabs, and a shaped roof.
  */
 
 #define BUILDING_FLOOR_COUNTS 4
+#define BUILDING_MAX_ROOF_PAIRS 32
 #define BUILDING_NOISE_INTENSITY 5
 #define BUILDING_NOISE_SATURATION 5
 
 typedef struct {
     filter_t filter;
     int floor_height;      /* clear height between slabs */
-    int floor_thickness;   /* slab / roof thickness */
+    int floor_thickness;   /* slab thickness */
     int wall_thickness;    /* inward wall bands */
+    int max_roof_height;   /* roof stops and stays flat past this */
     uint8_t floor_colors[BUILDING_FLOOR_COUNTS][4];
+    uint8_t roof_colors[BUILDING_MAX_ROOF_PAIRS][2][4];
+    int roof_pair_count;
 } filter_buildings_t;
 
 typedef struct {
@@ -62,6 +66,13 @@ static const uint8_t k_default_colors[BUILDING_FLOOR_COUNTS][4] = {
     {220, 190, 60, 255},
 };
 
+static const uint8_t k_default_roof_colors[][2][4] = {
+    {{0x28, 0x33, 0x3f, 255}, {0x31, 0x3b, 0x47, 255}},
+    {{0x20, 0x24, 0x29, 255}, {0x2f, 0x33, 0x37, 255}},
+    {{0x3f, 0x3f, 0x3f, 255}, {0x33, 0x32, 0x32, 255}},
+    {{0x39, 0x2f, 0x2a, 255}, {0x2d, 0x24, 0x1e, 255}},
+};
+
 static const uint8_t k_base_grey[4] = {128, 128, 128, 255};
 static const uint8_t k_empty[4] = {0, 0, 0, 0};
 
@@ -72,8 +83,12 @@ static void reset_defaults(filter_buildings_t *filter)
     filter->floor_height = 4;
     filter->floor_thickness = 1;
     filter->wall_thickness = 1;
+    filter->max_roof_height = 8;
     for (i = 0; i < BUILDING_FLOOR_COUNTS; i++)
         memcpy(filter->floor_colors[i], k_default_colors[i], 4);
+    filter->roof_pair_count = (int)ARRAY_SIZE(k_default_roof_colors);
+    memcpy(filter->roof_colors, k_default_roof_colors,
+           sizeof(k_default_roof_colors));
 }
 
 static int clampi(int v, int lo, int hi)
@@ -154,6 +169,13 @@ static void paint_voxel(volume_t *vol, int x, int y, int z)
     volume_set_at(vol, NULL, pos, c);
 }
 
+static void paint_color_voxel(volume_t *vol, int x, int y, int z,
+                              const uint8_t color[4])
+{
+    int pos[3] = {x, y, z};
+    volume_set_at(vol, NULL, pos, color);
+}
+
 static void clear_voxel(volume_t *vol, int x, int y, int z)
 {
     int pos[3] = {x, y, z};
@@ -201,8 +223,112 @@ static void clear_building_column_range(volume_t *vol, const building_group_t *g
     }
 }
 
+static bool is_filled_rectangle(const building_group_t *g)
+{
+    int w = g->xmax - g->xmin + 1;
+    int h = g->ymax - g->ymin + 1;
+    return g->ncells == w * h;
+}
+
+static void paint_gabled_roof(volume_t *vol, const building_group_t *g, int z0,
+                              const uint8_t colors[2][4], int max_h)
+{
+    int w = g->xmax - g->xmin + 1;
+    int h = g->ymax - g->ymin + 1;
+    bool shrink_x = w <= h;
+    int short_size = (shrink_x ? w : h) + 2;
+    int level, x, y;
+    const uint8_t *color;
+
+    for (level = 0; level < max_h && level * 2 < short_size; level++) {
+        color = colors[level & 1];
+        if (shrink_x) {
+            for (y = g->ymin; y <= g->ymax; y++) {
+                int x0 = g->xmin - 1 + level;
+                int x1 = g->xmax + 1 - level;
+                for (x = x0; x <= x1; x++) {
+                    if ((y == g->ymin || y == g->ymax) &&
+                        x != x0 && x != x1)
+                        paint_voxel(vol, x, y, z0 + level);
+                    else
+                        paint_color_voxel(vol, x, y, z0 + level, color);
+                }
+            }
+        } else {
+            int y0 = g->ymin - 1 + level;
+            int y1 = g->ymax + 1 - level;
+            for (y = y0; y <= y1; y++) {
+                for (x = g->xmin; x <= g->xmax; x++) {
+                    if ((x == g->xmin || x == g->xmax) &&
+                        y != y0 && y != y1)
+                        paint_voxel(vol, x, y, z0 + level);
+                    else
+                        paint_color_voxel(vol, x, y, z0 + level, color);
+                }
+            }
+        }
+    }
+}
+
+/* The non-rectangular roof footprint is the building footprint dilated by
+ * one voxel in XY, including its diagonal corners. */
+static bool pyramid_roof_get(const building_group_t *g, int x, int y)
+{
+    int dx, dy;
+
+    for (dy = -1; dy <= 1; dy++) {
+        for (dx = -1; dx <= 1; dx++) {
+            if (occ_get(g, x + dx, y + dy))
+                return true;
+        }
+    }
+    return false;
+}
+
+static bool is_pyramid_roof_edge(const building_group_t *g, int x, int y,
+                                 int distance)
+{
+    int d, dx, dy, ay;
+
+    for (d = 1; d <= distance; d++) {
+        for (dx = -d; dx <= d; dx++) {
+            dy = d - abs(dx);
+            ay = y + dy;
+            if (!pyramid_roof_get(g, x + dx, ay))
+                return true;
+            if (dy != 0 && !pyramid_roof_get(g, x + dx, y - dy))
+                return true;
+        }
+    }
+    return false;
+}
+
+static void paint_pyramid_roof(volume_t *vol, const building_group_t *g, int z0,
+                               const uint8_t colors[2][4], int max_h)
+{
+    int level, x, y, painted;
+
+    for (level = 0; level < max_h; level++) {
+        painted = 0;
+        for (y = g->ymin - 1; y <= g->ymax + 1; y++) {
+            for (x = g->xmin - 1; x <= g->xmax + 1; x++) {
+                if (!pyramid_roof_get(g, x, y))
+                    continue;
+                if (level > 0 && is_pyramid_roof_edge(g, x, y, level))
+                    continue;
+                paint_color_voxel(vol, x, y, z0 + level,
+                                  colors[level & 1]);
+                painted++;
+            }
+        }
+        if (!painted)
+            break;
+    }
+}
+
 static void generate_group(volume_t *vol, const building_group_t *g,
-                           int floor_h, int floor_t, int wall_t)
+                           int floor_h, int floor_t, int wall_t,
+                           int max_roof_h, const uint8_t roof_colors[2][4])
 {
     int i;
     int total_h;
@@ -225,6 +351,12 @@ static void generate_group(volume_t *vol, const building_group_t *g,
         paint_slab(vol, g, z, floor_t);
         z += floor_t;
     }
+
+    /* Roofs are generated after the complete building shell. */
+    if (is_filled_rectangle(g))
+        paint_gabled_roof(vol, g, z, roof_colors, max_roof_h);
+    else
+        paint_pyramid_roof(vol, g, z, roof_colors, max_roof_h);
 }
 
 static bool group_key_equal(const building_group_t *g, int floors, int base_z)
@@ -307,6 +439,101 @@ static bool group_build_occupancy(building_group_t *g)
     return true;
 }
 
+static void free_groups(building_group_t *groups, int ngroups);
+
+static bool split_connected_groups(building_group_t *source, int nsource,
+                                   building_group_t **out_groups,
+                                   int *out_ngroups)
+{
+    static const int dirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    building_group_t *groups = NULL;
+    int ngroups = 0, cap = 0;
+    int si, ci, d;
+
+    for (si = 0; si < nsource; si++) {
+        building_group_t *src = &source[si];
+        int area = (src->xmax - src->xmin + 1) *
+                   (src->ymax - src->ymin + 1);
+        uint8_t *visited = calloc((size_t)area, 1);
+        building_xy_t *queue = malloc((size_t)src->ncells * sizeof(*queue));
+
+        if (!visited || !queue) {
+            free(visited);
+            free(queue);
+            free_groups(groups, ngroups);
+            return false;
+        }
+
+        for (ci = 0; ci < src->ncells; ci++) {
+            int qhead = 0, qtail = 0;
+            int seed_x = src->cells[ci].x;
+            int seed_y = src->cells[ci].y;
+            building_group_t *dst;
+
+            if (visited[occ_index(src, seed_x, seed_y)])
+                continue;
+
+            if (ngroups >= cap) {
+                int ncap = cap ? cap * 2 : 8;
+                building_group_t *next =
+                    realloc(groups, (size_t)ncap * sizeof(*next));
+                if (!next) {
+                    free(visited);
+                    free(queue);
+                    free_groups(groups, ngroups);
+                    return false;
+                }
+                groups = next;
+                cap = ncap;
+            }
+
+            dst = &groups[ngroups++];
+            memset(dst, 0, sizeof(*dst));
+            dst->floors = src->floors;
+            dst->base_z = src->base_z;
+            dst->xmin = dst->ymin = INT_MAX;
+            dst->xmax = dst->ymax = INT_MIN;
+
+            queue[qtail++] = (building_xy_t){seed_x, seed_y};
+            visited[occ_index(src, seed_x, seed_y)] = 1;
+            while (qhead < qtail) {
+                building_xy_t p = queue[qhead++];
+
+                if (!group_add_cell(dst, p.x, p.y)) {
+                    free(visited);
+                    free(queue);
+                    free_groups(groups, ngroups);
+                    return false;
+                }
+                for (d = 0; d < 4; d++) {
+                    int nx = p.x + dirs[d][0];
+                    int ny = p.y + dirs[d][1];
+                    int ni;
+                    if (!occ_get(src, nx, ny))
+                        continue;
+                    ni = occ_index(src, nx, ny);
+                    if (visited[ni])
+                        continue;
+                    visited[ni] = 1;
+                    queue[qtail++] = (building_xy_t){nx, ny};
+                }
+            }
+            if (!group_build_occupancy(dst)) {
+                free(visited);
+                free(queue);
+                free_groups(groups, ngroups);
+                return false;
+            }
+        }
+        free(visited);
+        free(queue);
+    }
+
+    *out_groups = groups;
+    *out_ngroups = ngroups;
+    return true;
+}
+
 static void free_groups(building_group_t *groups, int ngroups)
 {
     int i;
@@ -331,6 +558,8 @@ static bool collect_groups(const volume_t *src, const filter_buildings_t *filter
     int ngroups = 0;
     int cap = 0;
     int i;
+    building_group_t *buildings = NULL;
+    int nbuildings = 0;
 
     *out_groups = NULL;
     *out_ngroups = 0;
@@ -364,9 +593,29 @@ static bool collect_groups(const volume_t *src, const filter_buildings_t *filter
         }
     }
 
-    *out_groups = groups;
-    *out_ngroups = ngroups;
+    if (!split_connected_groups(groups, ngroups, &buildings, &nbuildings)) {
+        free_groups(groups, ngroups);
+        return false;
+    }
+    free_groups(groups, ngroups);
+    *out_groups = buildings;
+    *out_ngroups = nbuildings;
     return true;
+}
+
+static unsigned building_hash(const building_group_t *g)
+{
+    unsigned h = 2166136261u;
+    const int values[] = {
+        g->xmin, g->ymin, g->xmax, g->ymax, g->base_z, g->floors, g->ncells,
+    };
+    int i;
+
+    for (i = 0; i < (int)ARRAY_SIZE(values); i++) {
+        h ^= (unsigned)values[i];
+        h *= 16777619u;
+    }
+    return h;
 }
 
 static layer_t *prepare_target_layer(layer_t *plan_layer)
@@ -396,7 +645,7 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     building_group_t *groups = NULL;
     int ngroups = 0;
     int i;
-    int floor_h, floor_t, wall_t;
+    int floor_h, floor_t, wall_t, max_roof_h;
 
     if (!layer || !layer->volume || volume_is_empty(layer->volume)) {
         gui_alert("Plan - Buildings", "Active layer has no voxels.");
@@ -406,9 +655,11 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     floor_h = clampi(filter->floor_height, 1, 256);
     floor_t = clampi(filter->floor_thickness, 1, 64);
     wall_t = clampi(filter->wall_thickness, 1, 64);
+    max_roof_h = clampi(filter->max_roof_height, 1, 256);
     filter->floor_height = floor_h;
     filter->floor_thickness = floor_t;
     filter->wall_thickness = wall_t;
+    filter->max_roof_height = max_roof_h;
 
     src = volume_copy(layer->volume);
     if (!src) {
@@ -439,9 +690,13 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
         return;
     }
 
-    for (i = 0; i < ngroups; i++)
+    for (i = 0; i < ngroups; i++) {
+        int roof_pair = (int)(building_hash(&groups[i]) %
+                              (unsigned)filter->roof_pair_count);
         generate_group(target_layer->volume, &groups[i],
-                       floor_h, floor_t, wall_t);
+                       floor_h, floor_t, wall_t, max_roof_h,
+                       filter->roof_colors[roof_pair]);
+    }
 
     free_groups(groups, ngroups);
     volume_delete(src);
@@ -455,12 +710,14 @@ static int gui(filter_t *filter_)
     char color_id[32];
     char switch_id[32];
     char set_id[32];
+    char roof_color_id[32];
+    char remove_id[32];
     char label[8];
 
     const char *help_text =
         "Paint 1-block-high filled shapes on the active layer using the floor "
         "colours below.  Generate builds walls along the inward edges, slabs "
-        "at the base and between storeys, and a flat roof on a new Buildings "
+        "at the base and between storeys, and shaped roofs on a new Buildings "
         "layer.  The plan layer is preserved and hidden.";
     goxel_set_help_text(help_text);
 
@@ -471,10 +728,13 @@ static int gui(filter_t *filter_)
     gui_tooltip_if_hovered(
         "Clear height between floor slabs (wall / interior height). Default 4.");
     gui_input_int("Floor thickness", &filter->floor_thickness, 1, 64);
-    gui_tooltip_if_hovered("Thickness of each floor slab and the roof. Default 1.");
+    gui_tooltip_if_hovered("Thickness of each floor slab. Default 1.");
     gui_input_int("Wall thickness", &filter->wall_thickness, 1, 64);
     gui_tooltip_if_hovered(
         "How many blocks inward from the footprint edge become walls. Default 1.");
+    gui_input_int("Max roof height", &filter->max_roof_height, 1, 256);
+    gui_tooltip_if_hovered(
+        "Roof slope stops at this height and finishes flat. Default 8.");
 
     gui_separator();
     gui_text("Number of floors:");
@@ -499,6 +759,38 @@ static int gui(filter_t *filter_)
     }
 
     gui_separator();
+    gui_text("Roof colour pairs:");
+    gui_text_wrapped(
+        "Each building picks one pair. Roof layers alternate between its two "
+        "colours.");
+    for (i = 0; i < filter->roof_pair_count; i++) {
+        snprintf(roof_color_id, sizeof(roof_color_id), "##roof_%d_a", i);
+        gui_color_small_no_label(roof_color_id, filter->roof_colors[i][0]);
+        gui_same_line();
+        snprintf(roof_color_id, sizeof(roof_color_id), "##roof_%d_b", i);
+        gui_color_small_no_label(roof_color_id, filter->roof_colors[i][1]);
+        gui_same_line();
+        snprintf(remove_id, sizeof(remove_id), "Remove##roof_%d", i);
+        if (gui_button(remove_id, 0, 0) && filter->roof_pair_count > 1) {
+            memmove(&filter->roof_colors[i], &filter->roof_colors[i + 1],
+                    (size_t)(filter->roof_pair_count - i - 1) *
+                        sizeof(filter->roof_colors[0]));
+            filter->roof_pair_count--;
+            break;
+        }
+        if (filter->roof_pair_count == 1)
+            gui_tooltip_if_hovered("At least one roof colour pair is required.");
+    }
+    if (gui_button("Add roof colour pair", -1, 0) &&
+        filter->roof_pair_count < BUILDING_MAX_ROOF_PAIRS) {
+        int n = filter->roof_pair_count;
+        memcpy(filter->roof_colors[n], filter->roof_colors[n - 1],
+               sizeof(filter->roof_colors[n]));
+        filter->roof_pair_count++;
+    }
+    gui_tooltip_if_hovered("Adds a copy of the last pair for editing.");
+
+    gui_separator();
     if (gui_button("Reset to defaults", -1, 0))
         reset_defaults(filter);
 
@@ -517,5 +809,5 @@ static void on_open(filter_t *filter_)
 FILTER_REGISTER(buildings, filter_buildings_t,
                 .name = "Plan - Buildings",
                 .on_open = on_open,
-                .panel_width = 280,
+                .panel_width = 320,
                 .gui_fn = gui, )
