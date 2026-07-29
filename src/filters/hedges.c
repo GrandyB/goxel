@@ -61,7 +61,7 @@ static void reset_defaults(filter_hedges_t *filter)
     filter->noise_intensity = 10;
     filter->noise_saturation = 10;
     filter->current_layer = false;
-    filter->exact_placement = true;
+    filter->exact_placement = false;
     filter->surface_layer = NULL;
     memcpy(filter->color, k_default_color, 4);
 }

@@ -64,7 +64,7 @@ static void reset_defaults(filter_roads_t *filter)
     filter->noise_saturation = 10;
     filter->source_layer = NULL;
     filter->current_layer = false;
-    filter->exact_placement = true;
+    filter->exact_placement = false;
     memcpy(filter->color, k_default_color, 4);
 }
 
