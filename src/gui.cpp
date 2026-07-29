@@ -728,8 +728,12 @@ static void render_view_cube(void)
     gizmo_camera_tooltip_if_hovered("Player camera - WASD to move, right click look, space jump and ctrl crouch; hold alt to fly");
 
     ImGui::SetCursorPosX(icon_x);
-    if (gizmo_camera_icon_button("##camera_topdown", ICON_CAMERA_TOPDOWN, icon_size))
+    if (gizmo_camera_icon_button("##camera_topdown", ICON_CAMERA_TOPDOWN, icon_size)) {
         apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, true, true);
+        /* Surface paint only applies in Paint mode; leave it on so switching
+         * into Paint (or already being in Paint) uses the top-down stamp. */
+        goxel.brush_surface_paint = true;
+    }
     gizmo_camera_tooltip_if_hovered("Top-down camera - right click to pan, scroll to zoom");
     ImGui::PopStyleVar();
 
@@ -2394,15 +2398,13 @@ void gui_input_text_multiline_highlight(int line)
 
 void gui_enabled_begin(bool enabled)
 {
-    ImGuiStyle& style = ImGui::GetStyle();
-    ImVec4 color = style.Colors[ImGuiCol_Text];
-    if (!enabled) color.w /= 2;
-    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    /* Dim alone left widgets clickable; BeginDisabled also blocks input. */
+    ImGui::BeginDisabled(!enabled);
 }
 
 void gui_enabled_end(void)
 {
-    ImGui::PopStyleColor();
+    ImGui::EndDisabled();
 }
 
 bool gui_quat(const char *label, float q[4])
