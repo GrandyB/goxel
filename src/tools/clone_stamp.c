@@ -28,7 +28,8 @@ typedef struct {
 
     /* Sampling options (GUI). */
     bool sample_inited;
-    bool wall_mode;          /* face-normal brush + inherit; static source */
+    bool wall_mode;          /* face-normal brush + inherit */
+    bool static_source;      /* when true, source stays fixed while dragging */
     bool take_uppermost;     /* default true once sample_inited; ignored in wall */
     int  depth;              /* inherit distance; always used in wall mode */
     bool restrict_to_layer;  /* default false: sample all visible layers */
@@ -52,6 +53,7 @@ typedef struct {
         uint64_t volume_key;
         float    radius_x, radius_y, radius_z;
         bool     wall_mode;
+        bool     static_source;
         bool     take_uppermost;
         int      depth;
         bool     restrict_to_layer;
@@ -72,6 +74,7 @@ static void ensure_sample_defaults(tool_clone_stamp_t *cs)
 {
     if (cs->sample_inited) return;
     cs->wall_mode = false;
+    cs->static_source = false;
     cs->take_uppermost = true;
     cs->depth = 0;
     cs->restrict_to_layer = false;
@@ -145,6 +148,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
             cs->last_op.radius_y == goxel.radius_y &&
             cs->last_op.radius_z == goxel.radius_z &&
             cs->last_op.wall_mode == cs->wall_mode &&
+            cs->last_op.static_source == cs->static_source &&
             cs->last_op.take_uppermost == cs->take_uppermost &&
             cs->last_op.depth == cs->depth &&
             cs->last_op.restrict_to_layer == cs->restrict_to_layer &&
@@ -167,6 +171,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
     cs->last_op.radius_y = goxel.radius_y;
     cs->last_op.radius_z = goxel.radius_z;
     cs->last_op.wall_mode = cs->wall_mode;
+    cs->last_op.static_source = cs->static_source;
     cs->last_op.take_uppermost = cs->take_uppermost;
     cs->last_op.depth = cs->depth;
     cs->last_op.restrict_to_layer = cs->restrict_to_layer;
@@ -322,7 +327,7 @@ static void rebuild_stroke_from_path(tool_clone_stamp_t *cs)
 
     volume_set(cs->stroke, cs->volume_orig);
     for (i = 0; i < cs->path_count; i++) {
-        if (cs->wall_mode)
+        if (cs->static_source)
             vec3_copy(cs->source_pos, src);
         else
             vec3_add(cs->path[i], cs->offset, src);
@@ -373,8 +378,7 @@ static void show_exact_source_preview(tool_clone_stamp_t *cs,
 static void update_source_from_target(tool_clone_stamp_t *cs,
                                       const float target[3])
 {
-    /* Wall mode keeps the clone source fixed after Ctrl+Click. */
-    if (cs->wall_mode || !cs->offset_locked) return;
+    if (cs->static_source || !cs->offset_locked) return;
     vec3_add(target, cs->offset, cs->source_pos);
 }
 
@@ -441,7 +445,7 @@ static int on_drag(gesture3d_t *gest, void *user)
     vec3_copy(curs->pos, target);
 
     if (gest->state == GESTURE_BEGIN) {
-        if (!cs->wall_mode)
+        if (!cs->static_source)
             vec3_sub(cs->source_pos, target, cs->offset);
         cs->offset_locked = true;
         vec3_copy(target, cs->last_pos);
@@ -484,7 +488,7 @@ static int on_drag(gesture3d_t *gest, void *user)
             vec3_mix(cs->last_pos, curs->pos, (i + 1.0f) / nb, pos);
             path_push(cs, pos);
             if (!needs_stroke_rebuild(cs)) {
-                if (cs->wall_mode)
+                if (cs->static_source)
                     vec3_copy(cs->source_pos, src);
                 else {
                     vec3_add(pos, cs->offset, src);
@@ -508,7 +512,7 @@ static int on_drag(gesture3d_t *gest, void *user)
         goxel.tool_volume = NULL;
         cs->offset_locked = false;
         path_clear(cs);
-        /* Keep yellow source markers (wall: fixed; else: stroke endpoint). */
+        /* Keep the yellow marker at the current source location. */
         if (cs->has_source)
             set_source_markers(cs, clone_sample_volume(cs, cs->volume_orig),
                                cs->source_pos, NULL, k_source_marker);
@@ -636,7 +640,7 @@ static int gui(tool_t *tool)
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
     gui_checkbox("Wall mode", &cs->wall_mode,
                  "Inherit along the source face normal; orient the brush to "
-                 "the paint face. Source stays fixed while painting.");
+                 "the paint face.");
     tool_gui_smoothness();
 
     if (gui_section_begin("Clone source", true)) {
@@ -659,6 +663,9 @@ static int gui(tool_t *tool)
         gui_checkbox("Restrict to layer", &cs->restrict_to_layer,
                      "Only sample clone colours from the current layer. "
                      "When disabled, use all visible layers.");
+        gui_checkbox("Static source", &cs->static_source,
+                     "Keep the clone source fixed while dragging. "
+                     "When disabled (default), the source moves with the brush.");
         if (!cs->wall_mode) {
             gui_checkbox("Inherit infinitely", &cs->take_uppermost,
                          "Always take the uppermost block in each column "
