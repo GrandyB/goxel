@@ -45,7 +45,9 @@ typedef struct {
     int floor_height;      /* clear height between slabs */
     int floor_thickness;   /* slab thickness */
     int wall_thickness;    /* inward wall bands */
+    int max_building_size; /* longest-side length per undivided section */
     int max_roof_height;   /* roof stops and stays flat past this */
+    bool generate_roofs;   /* when false, stop at the top slab */
     uint8_t floor_colors[BUILDING_FLOOR_COUNTS][4];
     uint8_t roof_colors[BUILDING_MAX_ROOF_PAIRS][2][4];
     int roof_pair_count;
@@ -86,10 +88,12 @@ static void reset_defaults(filter_buildings_t *filter)
 {
     int i;
 
-    filter->floor_height = 4;
+    filter->floor_height = 5;
     filter->floor_thickness = 1;
     filter->wall_thickness = 1;
+    filter->max_building_size = 16;
     filter->max_roof_height = 8;
+    filter->generate_roofs = true;
     for (i = 0; i < BUILDING_FLOOR_COUNTS; i++)
         memcpy(filter->floor_colors[i], k_default_colors[i], 4);
     filter->roof_pair_count = (int)ARRAY_SIZE(k_default_roof_colors);
@@ -197,23 +201,6 @@ static void paint_slab(volume_t *vol, const building_group_t *g,
         for (t = 0; t < thickness; t++) {
             z = z0 + t;
             paint_voxel(vol, g->cells[i].x, g->cells[i].y, z);
-        }
-    }
-}
-
-static void paint_walls(volume_t *vol, const building_group_t *g,
-                        int z0, int height, int wall_t)
-{
-    int i, t, z, x, y;
-
-    for (i = 0; i < g->ncells; i++) {
-        x = g->cells[i].x;
-        y = g->cells[i].y;
-        if (!is_wall_cell(g, x, y, wall_t))
-            continue;
-        for (t = 0; t < height; t++) {
-            z = z0 + t;
-            paint_voxel(vol, x, y, z);
         }
     }
 }
@@ -432,6 +419,120 @@ static bool analyze_rectangle(const building_group_t *g, building_obb_t *obb)
     return true;
 }
 
+/* Longest axis of the building's own oriented frame, in cells. */
+typedef struct {
+    float dx, dy; /* unit direction along the axis */
+    float min_p;  /* smallest cell-centre projection on it */
+    float len;
+} building_axis_t;
+
+static building_axis_t building_long_axis(const building_group_t *g)
+{
+    building_axis_t axis;
+    building_obb_t obb;
+
+    if (!compute_pca_obb(g, &obb))
+        obb_set_axis_aligned(&obb, g);
+
+    if (obb.u_max - obb.u_min >= obb.v_max - obb.v_min) {
+        axis.dx = obb.ux;
+        axis.dy = obb.uy;
+        axis.min_p = obb.u_min;
+        axis.len = obb.u_max - obb.u_min + 1.f;
+    } else {
+        axis.dx = obb.vx;
+        axis.dy = obb.vy;
+        axis.min_p = obb.v_min;
+        axis.len = obb.v_max - obb.v_min + 1.f;
+    }
+    return axis;
+}
+
+/*
+ * Slice the footprint into nchunks even bands across `axis`, so partitions
+ * follow the building's own direction instead of the map grid.
+ */
+static int *build_chunk_map(const building_group_t *g, int nchunks,
+                            const building_axis_t *axis)
+{
+    int *chunks;
+    int area, i;
+
+    if (nchunks <= 1 || axis->len < 1.f)
+        return NULL;
+
+    area = (g->xmax - g->xmin + 1) * (g->ymax - g->ymin + 1);
+    chunks = malloc((size_t)area * sizeof(*chunks));
+    if (!chunks)
+        return NULL;
+
+    for (i = 0; i < area; i++)
+        chunks[i] = -1;
+
+    for (i = 0; i < g->ncells; i++) {
+        int x = g->cells[i].x;
+        int y = g->cells[i].y;
+        /* Half-cell offset keeps the projection inside its own band. */
+        float pos = (float)x * axis->dx + (float)y * axis->dy -
+                    axis->min_p + 0.5f;
+        int chunk = (int)(pos * (float)nchunks / axis->len);
+
+        chunks[occ_index(g, x, y)] = clampi(chunk, 0, nchunks - 1);
+    }
+    return chunks;
+}
+
+/*
+ * Partition walls occupy the higher-numbered side of each chunk boundary.
+ * Looking up to wall_t cells into that side gives them the configured wall
+ * thickness without doubling it across both adjoining chunks.
+ */
+static bool is_partition_wall_cell(const building_group_t *g,
+                                   const int *chunks, int x, int y,
+                                   int wall_t)
+{
+    int own, d, dx, dy;
+
+    if (!chunks)
+        return false;
+    own = chunks[occ_index(g, x, y)];
+    for (d = 1; d <= wall_t; d++) {
+        for (dx = -d; dx <= d; dx++) {
+            int other;
+            dy = d - abs(dx);
+            if (occ_get(g, x + dx, y + dy)) {
+                other = chunks[occ_index(g, x + dx, y + dy)];
+                if (other >= 0 && other < own)
+                    return true;
+            }
+            if (dy != 0 && occ_get(g, x + dx, y - dy)) {
+                other = chunks[occ_index(g, x + dx, y - dy)];
+                if (other >= 0 && other < own)
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void paint_walls(volume_t *vol, const building_group_t *g,
+                        int z0, int height, int wall_t, const int *chunks)
+{
+    int i, t, z, x, y;
+
+    for (i = 0; i < g->ncells; i++) {
+        x = g->cells[i].x;
+        y = g->cells[i].y;
+        if (!is_wall_cell(g, x, y, wall_t) &&
+            !is_partition_wall_cell(g, chunks, x, y, wall_t))
+            continue;
+        for (t = 0; t < height; t++) {
+            z = z0 + t;
+            paint_voxel(vol, x, y, z);
+        }
+    }
+}
+
 static void paint_gabled_roof(volume_t *vol, const building_obb_t *obb, int z0,
                               const uint8_t colors[2][4], int max_h)
 {
@@ -575,14 +676,24 @@ static void paint_pyramid_roof(volume_t *vol, const building_group_t *g, int z0,
 
 static void generate_group(volume_t *vol, const building_group_t *g,
                            int floor_h, int floor_t, int wall_t,
+                           int max_building_size, bool generate_roofs,
                            int max_roof_h, const uint8_t roof_colors[2][4])
 {
     int i;
     int total_h;
     int z;
+    int nchunks;
+    int *chunks;
+    building_axis_t axis;
 
     if (g->ncells <= 0)
         return;
+
+    axis = building_long_axis(g);
+    /* A count of 0 or 1 section leaves the interior open. */
+    nchunks = max_building_size > 0 ?
+              (int)(axis.len / (float)max_building_size) : 0;
+    chunks = nchunks > 1 ? build_chunk_map(g, nchunks, &axis) : NULL;
 
     total_h = g->floors * floor_h + (g->floors + 1) * floor_t;
     clear_building_column_range(vol, g, g->base_z, total_h);
@@ -592,7 +703,7 @@ static void generate_group(volume_t *vol, const building_group_t *g,
     z = g->base_z + floor_t;
 
     for (i = 0; i < g->floors; i++) {
-        paint_walls(vol, g, z, floor_h, wall_t);
+        paint_walls(vol, g, z, floor_h, wall_t, chunks);
         z += floor_h;
         /* Intermediate floor, or flat roof after the last storey. */
         paint_slab(vol, g, z, floor_t);
@@ -600,7 +711,7 @@ static void generate_group(volume_t *vol, const building_group_t *g,
     }
 
     /* Roofs are generated after the complete building shell. */
-    {
+    if (generate_roofs) {
         building_obb_t obb;
 
         if (analyze_rectangle(g, &obb))
@@ -608,6 +719,7 @@ static void generate_group(volume_t *vol, const building_group_t *g,
         else
             paint_pyramid_roof(vol, g, z, roof_colors, max_roof_h);
     }
+    free(chunks);
 }
 
 static bool group_key_equal(const building_group_t *g, int floors, int base_z)
@@ -896,7 +1008,7 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     building_group_t *groups = NULL;
     int ngroups = 0;
     int i;
-    int floor_h, floor_t, wall_t, max_roof_h;
+    int floor_h, floor_t, wall_t, max_building_size, max_roof_h;
 
     if (!layer || !layer->volume || volume_is_empty(layer->volume)) {
         gui_alert("Plan - Buildings", "Active layer has no voxels.");
@@ -906,10 +1018,12 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     floor_h = clampi(filter->floor_height, 1, 256);
     floor_t = clampi(filter->floor_thickness, 1, 64);
     wall_t = clampi(filter->wall_thickness, 1, 64);
+    max_building_size = clampi(filter->max_building_size, 0, 1024);
     max_roof_h = clampi(filter->max_roof_height, 1, 256);
     filter->floor_height = floor_h;
     filter->floor_thickness = floor_t;
     filter->wall_thickness = wall_t;
+    filter->max_building_size = max_building_size;
     filter->max_roof_height = max_roof_h;
 
     src = volume_copy(layer->volume);
@@ -945,7 +1059,8 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
         int roof_pair = (int)(building_hash(&groups[i]) %
                               (unsigned)filter->roof_pair_count);
         generate_group(target_layer->volume, &groups[i],
-                       floor_h, floor_t, wall_t, max_roof_h,
+                       floor_h, floor_t, wall_t, max_building_size,
+                       filter->generate_roofs, max_roof_h,
                        filter->roof_colors[roof_pair]);
     }
 
@@ -978,12 +1093,20 @@ static int gui(filter_t *filter_)
     gui_label_size_push(150.0f);
     gui_input_int("Height of each floor", &filter->floor_height, 1, 256);
     gui_tooltip_if_hovered(
-        "Clear height between floor slabs (wall / interior height). Default 4.");
+        "Clear height between floor slabs (wall / interior height). Default 5.");
     gui_input_int("Floor thickness", &filter->floor_thickness, 1, 64);
     gui_tooltip_if_hovered("Thickness of each floor slab. Default 1.");
     gui_input_int("Wall thickness", &filter->wall_thickness, 1, 64);
     gui_tooltip_if_hovered(
         "How many blocks inward from the footprint edge become walls. Default 1.");
+    gui_input_int("Maximum building size", &filter->max_building_size, 0, 1024);
+    gui_tooltip_if_hovered(
+        "Longest-side length per interior section. The building's longest "
+        "side divided by this value (rounded down) is the section count; a "
+        "count below 2 leaves the building undivided. Sections are even bands "
+        "along the longest side. 0 disables splitting. Default 16.");
+    gui_checkbox("Generate roofs", &filter->generate_roofs,
+                 "When off, buildings stop at the top floor slab.");
     gui_input_int("Max roof height", &filter->max_roof_height, 1, 256);
     gui_tooltip_if_hovered(
         "Roof slope stops at this height and finishes flat. Default 8.");
