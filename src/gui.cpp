@@ -653,6 +653,19 @@ static void gizmo_camera_tooltip_if_hovered(const char *info)
     ImGui::PopStyleVar();
 }
 
+/*
+ * The overlays are submitted after the rest of the UI, so they would end up
+ * above it in the window stack and swallow clicks on whatever they cover (the
+ * menu bar panel toggles in the top right corner, the top bar, ...).  Keeping
+ * them at the back of the stack makes them behave like viewport decoration.
+ */
+static void gizmo_window_send_to_back(const char *name)
+{
+    ImGuiWindow *window = ImGui::FindWindowByName(name);
+    if (window)
+        ImGui::BringWindowToDisplayBack(window);
+}
+
 static void render_view_cube(void)
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -693,7 +706,10 @@ static void render_view_cube(void)
             goxel.gui.layers_panel_open ? goxel.gui.panel_width + 5.0f : 0.0f;
     const float cube_x = goxel.gui.viewport[0] + goxel.gui.viewport[2] -
                          right_panel_w - win_w;
-    const float cube_y = goxel.gui.viewport[1];
+    /* Start below the menu bar: the overlay draws behind it, so any overlap
+     * would clip the cube. */
+    const float cube_y = ImMax(goxel.gui.viewport[1],
+                               ImGui::GetMainViewport()->WorkPos.y);
 
     /* ViewManipulate turns `length` into eye position (target + dir * length).
      * First-person modes stash dist as 0; passing 0 collapses the camera. */
@@ -706,7 +722,8 @@ static void render_view_cube(void)
     if (goxel.gui.view_cube_open) {
         ImGui::SetNextWindowSize(ImVec2(win_w, h));
         ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y));
-        ImGui::Begin("Gizmo", NULL, ImGuiWindowFlags_NoDecoration);
+        ImGui::Begin("Gizmo", NULL, ImGuiWindowFlags_NoDecoration |
+                                    ImGuiWindowFlags_NoBringToFrontOnFocus);
         ImGuizmo::SetDrawlist();
 
         ImGuizmo::SetRect(
@@ -733,13 +750,12 @@ static void render_view_cube(void)
         /* Separate window so preset clicks are outside ViewManipulate's hit
          * rect. */
         ImGui::SetNextWindowSize(ImVec2(win_w, icons_h + 4.0f));
-        /* Without the cube above them, keep clear of the menu bar. */
         const float presets_y = goxel.gui.view_cube_open ?
-                cube_y + h - 5.0f :
-                ImMax(cube_y, ImGui::GetMainViewport()->WorkPos.y) + 4.0f;
+                cube_y + h - 5.0f : cube_y + 4.0f;
         ImGui::SetNextWindowPos(ImVec2(cube_x, presets_y));
-        ImGui::Begin(
-                "GizmoCameraPresets", NULL, ImGuiWindowFlags_NoDecoration);
+        ImGui::Begin("GizmoCameraPresets", NULL,
+                     ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_NoBringToFrontOnFocus);
         ImGui::PushStyleVar(
                 ImGuiStyleVar_ItemSpacing, ImVec2(0, icon_spacing));
         ImGui::SetCursorPos(ImVec2(icon_x, 2.0f));
@@ -787,6 +803,9 @@ static void render_view_cube(void)
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
 
+    /* Presets first, so the cube ends up behind them as before. */
+    gizmo_window_send_to_back("GizmoCameraPresets");
+    gizmo_window_send_to_back("Gizmo");
 }
 
 static void gui_iter(const inputs_t *inputs)
