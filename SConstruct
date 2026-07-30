@@ -31,7 +31,17 @@ vars.AddVariables(
 
 target_os = str(Platform())
 
-env = Environment(variables = vars, ENV = os.environ)
+msystem = os.environ.get('MSYSTEM', '')
+is_windows = (
+    target_os in ('msys', 'win32', 'cygwin', 'mingw')
+    or msystem.startswith('MINGW')
+    or sys.platform in ('msys', 'cygwin')
+)
+
+if is_windows:
+    env = Environment(tools=['mingw'], variables=vars, ENV=os.environ)
+else:
+    env = Environment(variables=vars, ENV=os.environ)
 conf = env.Configure()
 
 if env['mode'] == 'analyze':
@@ -46,7 +56,7 @@ if os.environ.get('CC') == 'clang':
     env.Replace(CC='clang', CXX='clang++')
 
 # Asan & Ubsan (need to come first).
-if env['mode'] == 'debug' and target_os == 'posix':
+if env['mode'] == 'debug' and target_os == 'posix' and not is_windows:
     env.Append(CCFLAGS=['-fsanitize=address', '-fsanitize=undefined'],
                LINKFLAGS=['-fsanitize=address', '-fsanitize=undefined'],
                LIBS=['asan', 'ubsan'])
@@ -97,16 +107,8 @@ sources = [s for s in sources if os.path.basename(s) != 'goxel_info.c']
 if conf.CheckLibWithHeader('libpng', 'png.h', 'c'):
     env.Append(CPPDEFINES='HAVE_LIBPNG=1')
 
-# Linux compilation support.
-if target_os == 'posix':
-    env.Append(LIBS=['GL', 'm', 'dl', 'pthread'])
-    # Note: add '--static' to link with all the libs needed by glfw3.
-    env.ParseConfig('pkg-config --libs glfw3')
-
-# Windows compilation support (MinGW-w64).
-# MSYS2 shells often report PLATFORM as 'msys'; native Windows Python reports
-# 'win32'. Both need bundled GLEW (glew.c) and the same link flags.
-if target_os in ('msys', 'win32'):
+# Windows compilation support (MinGW-w64 / MSYS2).
+if is_windows:
     env.Append(CXXFLAGS=['-Wno-attributes', '-Wno-unused-variable',
                          '-Wno-unused-function'])
     env.Append(CCFLAGS=['-Wno-error=address']) # To remove if possible.
@@ -119,8 +121,14 @@ if target_os in ('msys', 'win32'):
     env.Append(CPPPATH=['ext_src/glew'])
     env.Append(CPPDEFINES=['GLEW_STATIC', 'FREE_WINDOWS'])
 
+# Linux compilation support.
+elif target_os == 'posix':
+    env.Append(LIBS=['GL', 'm', 'dl', 'pthread'])
+    # Note: add '--static' to link with all the libs needed by glfw3.
+    env.ParseConfig('pkg-config --libs glfw3')
+
 # OSX Compilation support.
-if target_os == 'darwin':
+elif target_os == 'darwin':
     sources += glob.glob('src/*.m')
     env.Append(FRAMEWORKS=['OpenGL', 'Cocoa'])
     env.Append(LIBS=['m', 'objc'])

@@ -927,8 +927,10 @@ static int jsmn_parse(jsmn_parser *parser, const char *js, size_t len, jsmntok_t
 
 
 #ifndef CGLTF_CONSTS
-static const cgltf_size GlbHeaderSize = 12;
-static const cgltf_size GlbChunkHeaderSize = 8;
+/* Use enum (not static const) so sizes are integer constant expressions;
+ * otherwise clang -Wgnu-folding-constant errors on char header[GlbHeaderSize]
+ * in cgltf_write.h (this header is included first and defines CGLTF_CONSTS). */
+enum { GlbHeaderSize = 12, GlbChunkHeaderSize = 8 };
 static const uint32_t GlbVersion = 2;
 static const uint32_t GlbMagic = 0x46546C67;
 static const uint32_t GlbMagicJsonChunk = 0x4E4F534A;

@@ -21,15 +21,17 @@
  * in the Scons file.
  */
 
-// Prevent warnings with gcc.
-#ifndef __clang__
+// Prevent warnings in vendored imgui sources.
 #pragma GCC diagnostic push
-#if __GNUC__ >= 8
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
+#pragma clang diagnostic ignored "-Wuninitialized-const-pointer"
+#elif __GNUC__ >= 8
 #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #pragma GCC diagnostic ignored "-Wstringop-truncation"
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 #endif
 
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -42,6 +44,4 @@
 
 #include "../ext_src/imgui/ImGuizmo.cpp"
 
-#ifdef __clang__
 #pragma GCC diagnostic pop
-#endif
