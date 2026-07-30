@@ -19,13 +19,17 @@
 #include "goxel.h"
 
 #include "file_format.h"
+#if 0 // Scripts menu hidden; keep code for re-enable.
 #include "script.h"
+#endif
 
 #include "../../ext_src/stb/stb_ds.h"
 
 int gui_settings_popup(void *data);
 int gui_about_popup(void *data);
+#if 0 // Scripts menu hidden; keep code for re-enable.
 int gui_about_scripts_popup(void *data);
+#endif
 
 static void import_image_reference(void)
 {
@@ -90,11 +94,13 @@ static void export_menu_callback(void *user, file_format_t *f)
         goxel_export_to_file(NULL, f->name);
 }
 
+#if 0 // Scripts menu hidden; keep code for re-enable.
 static void on_script(void *user, const char *name)
 {
     if (gui_menu_item(0, name, true))
         script_execute(name);
 }
+#endif
 
 static void on_filter(void *user, filter_t *filter)
 {
@@ -165,12 +171,14 @@ void gui_menu(void)
         filters_iter_all(NULL, on_filter);
         gui_menu_end();
     }
+#if 0 // Scripts menu hidden; keep code for re-enable.
     if (gui_menu_begin("Scripts", true)) {
         if (gui_menu_item(0, "About Scripts", true))
             gui_open_popup("Scripts", 0, NULL, gui_about_scripts_popup);
         script_iter_all(NULL, on_script);
         gui_menu_end();
     }
+#endif
     if (gui_menu_begin("Help", true)) {
         if (gui_menu_item(0, "About", true))
             gui_open_popup("About", GUI_POPUP_RESIZE, NULL, gui_about_popup);
