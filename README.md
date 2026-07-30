@@ -116,7 +116,7 @@ Designed for **voxel map making for games**. Highlights relative to upstream:
 - Transform: squash, rotate 90°, wrap / mirror (plus View > Wrap edge preview)
     - Mirror includes **half-mirror** (copy one half onto the other) per axis
 - **`.vxl` color permeation** — push exposed surface colours inward through solid voxels (depth / blur)
-- Simple shadows from other visible layers; coords dump for the selection box
+- Simple shadows from other visible layers
 - Colour H/S/L/C for layer (from upstream filter system)
 
 ### Image & import / export
