@@ -45,8 +45,10 @@ typedef struct {
     int noise_intensity;
     int noise_saturation;
     bool current_layer;
-    bool exact_placement;
-    layer_t *surface_layer;
+    bool use_layer_heights; /* when true, project plan XY onto surface layer */
+    /* Layer id, not a pointer: undo/redo swaps the image for a snapshot whose
+     * layers are fresh allocations, so a stored pointer would dangle. */
+    int surface_layer_id;
 } filter_hedges_t;
 
 static const uint8_t k_default_color[4] = {48, 92, 38, 255};
@@ -61,9 +63,22 @@ static void reset_defaults(filter_hedges_t *filter)
     filter->noise_intensity = 10;
     filter->noise_saturation = 10;
     filter->current_layer = false;
-    filter->exact_placement = false;
-    filter->surface_layer = NULL;
+    filter->use_layer_heights = true;
+    filter->surface_layer_id = 0;
     memcpy(filter->color, k_default_color, 4);
+}
+
+static layer_t *find_layer_by_id(int id)
+{
+    layer_t *layer;
+
+    if (!goxel.image || id <= 0)
+        return NULL;
+    DL_FOREACH(goxel.image->layers, layer) {
+        if (layer->id == id)
+            return layer;
+    }
+    return NULL;
 }
 
 static uint32_t hash3(int x, int y, int z, int seed)
@@ -403,6 +418,7 @@ static void apply_hedges(filter_hedges_t *filter, layer_t *layer)
 {
     volume_t *src;
     layer_t *target_layer;
+    layer_t *surface_layer = NULL;
     hedge_seed_t *seeds = NULL;
     int nseeds = 0;
     int min_h, max_h, min_w, max_w;
@@ -410,9 +426,15 @@ static void apply_hedges(filter_hedges_t *filter, layer_t *layer)
 
     if (!layer || !layer->volume || volume_is_empty(layer->volume))
         return;
-    if (!filter->exact_placement &&
-        (!filter->surface_layer || !filter->surface_layer->volume))
-        return;
+    if (filter->use_layer_heights) {
+        surface_layer = find_layer_by_id(filter->surface_layer_id);
+        if (!surface_layer || !surface_layer->volume) {
+            gui_alert("Plan - Hedges",
+                      "Select a layer to take heights from, or turn off "
+                      "Position using layer heights.");
+            return;
+        }
+    }
 
     min_h = filter->min_height;
     max_h = filter->max_height;
@@ -431,8 +453,8 @@ static void apply_hedges(filter_hedges_t *filter, layer_t *layer)
         free(seeds);
         return;
     }
-    if (!filter->exact_placement) {
-        project_seeds(seeds, &nseeds, filter->surface_layer->volume);
+    if (filter->use_layer_heights) {
+        project_seeds(seeds, &nseeds, surface_layer->volume);
         if (nseeds == 0) {
             gui_alert("Plan - Hedges",
                       "No plan columns intersect the selected layer.");
@@ -486,6 +508,7 @@ static int gui(filter_t *filter_)
         "columns become the hedge centreline and expand to a noisy width/height "
         "like field-edge hedges.";
     goxel_set_help_text(help_text);
+    gui_label_size_push(80);
 
     if (gui_collapsing_header("Hint", false))
         gui_text_wrapped(help_text);
@@ -505,27 +528,29 @@ static int gui(filter_t *filter_)
     gui_tooltip_if_hovered(
         "How colourful the variation is. 0 = lightness-only mottling.");
     gui_checkbox("Current layer", &filter->current_layer, NULL);
-    gui_checkbox("Exact placement", &filter->exact_placement,
-                 "Use each plan column's Z coordinate. When disabled, use only "
-                 "its X/Y coordinate and project it down to the top surface of "
-                 "the selected layer.");
-    if (!filter->exact_placement) {
-        if (!filter->surface_layer && goxel.image)
-            filter->surface_layer = goxel.image->layers;
-        gui_text("Layer");
+    gui_checkbox("Position using layer heights", &filter->use_layer_heights,
+                 "When enabled, ignore each plan column's Z and project it "
+                 "onto the top of the selected layer (X/Y only). When off, "
+                 "keep the plan's Z.");
+    if (filter->use_layer_heights) {
+        layer_t *surface_layer = find_layer_by_id(filter->surface_layer_id);
+        if (!surface_layer && goxel.image) {
+            surface_layer = goxel.image->layers;
+            filter->surface_layer_id = surface_layer ? surface_layer->id : 0;
+        }
+        gui_text("Terrain layer");
         gui_same_line();
         if (gui_combo_begin("##hedges_surface_layer",
-                            filter->surface_layer ? filter->surface_layer->name
-                                                  : "(none)")) {
+                            surface_layer ? surface_layer->name : "(none)")) {
             layer_t *cur;
             DL_FOREACH_REVERSE(goxel.image->layers, cur) {
-                if (gui_combo_item(cur->name, cur == filter->surface_layer))
-                    filter->surface_layer = cur;
+                if (gui_combo_item(cur->name, cur == surface_layer))
+                    filter->surface_layer_id = cur->id;
             }
             gui_combo_end();
         }
         gui_tooltip_if_hovered(
-            "Layer whose heights determine where the plan is enacted.");
+            "Select the layer to inform the generator of terrain heights to place the hedges on top of");
     }
 
     gui_separator();
@@ -542,6 +567,7 @@ static int gui(filter_t *filter_)
     if (gui_button("Apply", -1, 0))
         apply_hedges(filter, layer);
 
+    gui_label_size_pop();
     return 0;
 }
 
@@ -556,5 +582,5 @@ FILTER_REGISTER(hedges, filter_hedges_t,
                 .menu = "effects",
                 .submenu = "plan",
                 .on_open = on_open,
-                .panel_width = 260,
+                .panel_width = 290,
                 .gui_fn = gui, )

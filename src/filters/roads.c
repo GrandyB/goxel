@@ -33,7 +33,8 @@
  * 3. Copy terrain from another layer around those anchors
  *    (radius = ceil(thickness/2 + anti-alias + dithering)).
  * 4. Paint the road colour onto that surface using thickness / AA / dither /
- *    noise.  The layer is cleared first so only copied + painted terrain remains.
+ *    noise.  Output goes on a new "<plan> Roads" layer; the plan layer is
+ *    hidden and left unchanged.
  */
 
 typedef struct {
@@ -48,9 +49,9 @@ typedef struct {
     uint8_t color[4];
     int noise_intensity;
     int noise_saturation;
-    layer_t *source_layer;
-    bool current_layer;
-    bool exact_placement;
+    /* Layer id, not a pointer: undo/redo swaps the image for a snapshot whose
+     * layers are fresh allocations, so a stored pointer would dangle. */
+    int source_layer_id;
 } filter_roads_t;
 
 static const uint8_t k_default_color[4] = {61, 61, 61, 255};
@@ -62,10 +63,21 @@ static void reset_defaults(filter_roads_t *filter)
     filter->dithering = 0.5f;
     filter->noise_intensity = 5;
     filter->noise_saturation = 10;
-    filter->source_layer = NULL;
-    filter->current_layer = false;
-    filter->exact_placement = false;
+    filter->source_layer_id = 0;
     memcpy(filter->color, k_default_color, 4);
+}
+
+static layer_t *find_layer_by_id(int id)
+{
+    layer_t *layer;
+
+    if (!goxel.image || id <= 0)
+        return NULL;
+    DL_FOREACH(goxel.image->layers, layer) {
+        if (layer->id == id)
+            return layer;
+    }
+    return NULL;
 }
 
 static int clampi(int v, int lo, int hi)
@@ -255,14 +267,11 @@ static void paint_road_voxel(volume_t *dest, const filter_roads_t *filter,
     volume_set_at(dest, NULL, pos, out);
 }
 
-static layer_t *prepare_target_layer(filter_roads_t *filter, layer_t *plan_layer)
+static layer_t *prepare_target_layer(layer_t *plan_layer)
 {
-    layer_t *target = plan_layer;
+    layer_t *target;
     const char *suffix = " Roads";
     int max_base;
-
-    if (filter->current_layer)
-        return target;
 
     target = image_add_layer(goxel.image, NULL);
     if (!target)
@@ -287,29 +296,29 @@ static void apply_roads(filter_roads_t *filter, layer_t *layer)
     float aa, dither;
     const volume_t *src;
     layer_t *target_layer;
+    layer_t *source_layer;
     volume_t *dest, *work = NULL;
     int plan_min[2], plan_max[2];
     int i, dx, dy;
 
     if (!layer || !layer->volume || volume_is_empty(layer->volume))
         return;
-    if (!filter->source_layer || !filter->source_layer->volume)
+    source_layer = find_layer_by_id(filter->source_layer_id);
+    if (!source_layer || !source_layer->volume) {
+        gui_alert("Plan - Roads", "Select a terrain layer to pave.");
         return;
-    if (filter->current_layer && filter->source_layer == layer)
-        return;
+    }
 
     if (!collect_plan_voxels(layer->volume, &plan, &nplan) || nplan == 0) {
         free(plan);
         return;
     }
-    if (!filter->exact_placement) {
-        project_plan_voxels(plan, &nplan, filter->source_layer->volume);
-        if (nplan == 0) {
-            gui_alert("Plan - Roads",
-                      "No plan columns intersect the selected layer.");
-            free(plan);
-            return;
-        }
+    project_plan_voxels(plan, &nplan, source_layer->volume);
+    if (nplan == 0) {
+        gui_alert("Plan - Roads",
+                  "No plan columns intersect the selected layer.");
+        free(plan);
+        return;
     }
 
     thickness = clampi(filter->thickness, 1, 64);
@@ -328,18 +337,18 @@ static void apply_roads(filter_roads_t *filter, layer_t *layer)
 
     mat4_copy(goxel.image->box, box);
     if (box_is_null(box))
-        volume_get_box(filter->source_layer->volume, true, box);
+        volume_get_box(source_layer->volume, true, box);
     box_get_dimensions(box, dims);
     box_get_start_pos(box, start);
     z_lo = start[2];
     z_hi = start[2] + dims[2] - 1;
 
     image_history_push(goxel.image);
-    target_layer = prepare_target_layer(filter, layer);
+    target_layer = prepare_target_layer(layer);
     if (!target_layer)
         goto end;
     dest = target_layer->volume;
-    src = filter->source_layer->volume;
+    src = source_layer->volume;
     work = volume_new();
     if (!work)
         goto end;
@@ -378,11 +387,9 @@ static void apply_roads(filter_roads_t *filter, layer_t *layer)
         gui_alert("Plan - Roads",
                   "Nothing to copy from the selected layer at z-1/z in range.\n"
                   "Try a different source layer or adjust plan height.");
-        if (!filter->current_layer) {
-            target_layer->visible = false;
-            layer->visible = true;
-            goxel.image->active_layer = layer;
-        }
+        target_layer->visible = false;
+        layer->visible = true;
+        goxel.image->active_layer = layer;
         goto end;
     }
 
@@ -436,11 +443,12 @@ static int gui(filter_t *filter_)
 {
     filter_roads_t *filter = (void *)filter_;
     layer_t *layer = goxel.image->active_layer;
+    layer_t *source_layer;
     const char *help_text =
         "Uses blocks on the active layer as a road layout.  For each plan "
         "block, terrain is copied from the chosen layer at z-1 and z within the "
-        "road band.  The layer is replaced with that terrain and a painted "
-        "road surface — plan markers are removed.";
+        "road band onto a new Roads layer with a painted surface.  The plan "
+        "layer is hidden and left unchanged — merge layers later if you want.";
 
     goxel_set_help_text(help_text);
 
@@ -455,28 +463,25 @@ static int gui(filter_t *filter_)
     gui_color_small("Color", filter->color);
     gui_input_int("Noise intensity", &filter->noise_intensity, 0, 100);
     gui_input_int("Noise saturation", &filter->noise_saturation, 0, 100);
-    gui_checkbox("Current layer", &filter->current_layer, NULL);
-    gui_checkbox("Exact placement", &filter->exact_placement,
-                 "Use each plan block's Z coordinate. When disabled, use only "
-                 "its X/Y coordinate and project it down to the top surface of "
-                 "the selected layer.");
 
-    if (!filter->source_layer && goxel.image)
-        filter->source_layer = goxel.image->layers;
-    gui_text("Layer");
+    source_layer = find_layer_by_id(filter->source_layer_id);
+    if (!source_layer && goxel.image) {
+        source_layer = goxel.image->layers;
+        filter->source_layer_id = source_layer ? source_layer->id : 0;
+    }
+    gui_text("Terrain layer");
     gui_same_line();
     if (gui_combo_begin("##roads_source_layer",
-                        filter->source_layer ? filter->source_layer->name
-                                             : "(none)")) {
+                        source_layer ? source_layer->name : "(none)")) {
         layer_t *cur;
         DL_FOREACH_REVERSE(goxel.image->layers, cur) {
-            if (gui_combo_item(cur->name, cur == filter->source_layer))
-                filter->source_layer = cur;
+            if (gui_combo_item(cur->name, cur == source_layer))
+                filter->source_layer_id = cur->id;
         }
         gui_combo_end();
     }
     gui_tooltip_if_hovered(
-        "Layer whose heights determine where the plan is enacted.");
+        "Select the layer to paint the roads onto - we create a copy first so that it's non-destructive");
     gui_label_size_pop();
 
     gui_separator();
@@ -500,5 +505,5 @@ FILTER_REGISTER(roads, filter_roads_t,
                 .menu = "effects",
                 .submenu = "plan",
                 .on_open = on_open,
-                .panel_width = 280,
+                .panel_width = 300,
                 .gui_fn = gui, )

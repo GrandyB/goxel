@@ -32,6 +32,10 @@
  * colour maps to a floor count.  Generate replaces those footprints
  * with inward-walled buildings: base slab, clear-height storeys with
  * perimeter walls, intermediate slabs, and a shaped roof.
+ *
+ * When Position using layer heights is on, each footprint is sat onto a chosen
+ * terrain layer: a shared surface height is picked from per-cell tops using
+ * Threshold / Max submerge, then hanging cells get wall-coloured stem fills.
  */
 
 #define BUILDING_DEFAULT_FLOOR_COLORS 4
@@ -55,6 +59,10 @@ typedef struct {
     bool generate_roofs;   /* when false, stop at the top slab */
     bool generate_windows;
     bool all_one_layer;
+    bool use_layer_heights; /* when true, sit footprints on terrain layer */
+    layer_t *terrain_layer;
+    int sit_threshold; /* % of footprint that must be at or above S */
+    int max_submerge;  /* max blocks below max terrain top we may sit */
     int window_width;
     int window_height;
     int window_min_gap;
@@ -119,6 +127,10 @@ static void reset_defaults(filter_buildings_t *filter)
     filter->generate_roofs = true;
     filter->generate_windows = true;
     filter->all_one_layer = true;
+    filter->use_layer_heights = true;
+    filter->terrain_layer = NULL;
+    filter->sit_threshold = 80;
+    filter->max_submerge = 1;
     filter->window_width = 2;
     filter->window_height = 2;
     filter->window_min_gap = 3;
@@ -273,6 +285,85 @@ static void paint_slab(volume_t *vol, const building_group_t *g,
             paint_voxel(vol, g->cells[i].x, g->cells[i].y, z, wall_color);
         }
     }
+}
+
+/* Stem fills from just above terrain top through S (inclusive), under the slab. */
+static void paint_foundations(volume_t *vol, const building_group_t *g,
+                              const int *terrain_tops, int S,
+                              const uint8_t wall_color[4])
+{
+    int i, z;
+
+    for (i = 0; i < g->ncells; i++) {
+        for (z = terrain_tops[i] + 1; z <= S; z++)
+            paint_voxel(vol, g->cells[i].x, g->cells[i].y, z, wall_color);
+    }
+}
+
+/*
+ * Highest solid in terrain at (x,y), scanning downward from z_from (plan Z)
+ * down to z_min (from a once-computed terrain bbox).  Returns INT_MIN when
+ * the column has no terrain under/at the plan.
+ */
+static int sample_terrain_top(const volume_t *terrain, volume_accessor_t *acc,
+                              int x, int y, int z_from, int z_min)
+{
+    int pos[3] = {x, y, 0};
+    uint8_t c[4];
+
+    for (pos[2] = z_from; pos[2] >= z_min; pos[2]--) {
+        volume_get_at(terrain, acc, pos, c);
+        if (c[3])
+            return pos[2];
+    }
+    return INT_MIN;
+}
+
+/*
+ * Pick shared surface S from per-cell terrain tops: highest S where at least
+ * threshold% of cells have T >= S, then raise S so no cell submerges more than
+ * max_submerge below max_T.  Sets g->base_z = S + 1.  Writes tops into out_T.
+ * z_min is terrain_bbox[0][2] from a single volume_get_bbox call.
+ */
+static bool resolve_building_sit(building_group_t *g, const volume_t *terrain,
+                                 volume_accessor_t *acc, int z_min,
+                                 int threshold, int max_submerge, int *out_T)
+{
+    int i, S, S_raw, covered;
+    int min_T = INT_MAX;
+    int max_T = INT_MIN;
+    int plan_z = g->base_z;
+
+    for (i = 0; i < g->ncells; i++) {
+        out_T[i] = sample_terrain_top(terrain, acc, g->cells[i].x,
+                                      g->cells[i].y, plan_z, z_min);
+        if (out_T[i] == INT_MIN)
+            return false;
+        if (out_T[i] < min_T)
+            min_T = out_T[i];
+        if (out_T[i] > max_T)
+            max_T = out_T[i];
+    }
+
+    S_raw = min_T;
+    for (S = max_T; S >= min_T; S--) {
+        covered = 0;
+        for (i = 0; i < g->ncells; i++) {
+            if (out_T[i] >= S)
+                covered++;
+        }
+        if (covered * 100 >= threshold * g->ncells) {
+            S_raw = S;
+            break;
+        }
+    }
+
+    S = S_raw;
+    if (S < max_T - max_submerge)
+        S = max_T - max_submerge;
+
+    g->base_z = S + 1;
+    return true;
 }
 
 static void clear_building_column_range(volume_t *vol, const building_group_t *g,
@@ -1175,7 +1266,8 @@ static void generate_group(volume_t *floor_volumes[], volume_t *roof_volume,
                            int max_roof_h, const uint8_t roof_colors[2][4],
                            const uint8_t wall_color[4],
                            bool generate_windows, int win_w, int win_h,
-                           int win_gap, int win_above)
+                           int win_gap, int win_above,
+                           const int *terrain_tops)
 {
     int i;
     int z;
@@ -1210,6 +1302,10 @@ static void generate_group(volume_t *floor_volumes[], volume_t *roof_volume,
         z += floor_t + floor_h;
     }
     clear_building_column_range(roof_volume, g, z, floor_t);
+
+    if (terrain_tops)
+        paint_foundations(floor_volumes[0], g, terrain_tops, g->base_z - 1,
+                          wall_color);
 
     for (i = 0; i < g->floors; i++) {
         z = g->base_z + i * (floor_t + floor_h);
@@ -1565,6 +1661,10 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     int i, max_floors = 0;
     int floor_h, floor_t, wall_t, max_building_size, max_roof_h;
     int win_w, win_h, win_gap, win_above;
+    int sit_threshold, max_submerge;
+    int **terrain_tops = NULL;
+    int skipped = 0;
+    int placed = 0;
 
     if (!layer || !layer->volume || volume_is_empty(layer->volume)) {
         gui_alert("Plan - Buildings", "Active layer has no voxels.");
@@ -1580,6 +1680,8 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     win_h = clampi(filter->window_height, 1, 64);
     win_gap = clampi(filter->window_min_gap, 0, 64);
     win_above = clampi(filter->window_above_floor, 0, 256);
+    sit_threshold = clampi(filter->sit_threshold, 1, 100);
+    max_submerge = clampi(filter->max_submerge, 0, 64);
     filter->floor_color_count =
         clampi(filter->floor_color_count, 1, BUILDING_MAX_FLOOR_COLORS);
     filter->wall_color_count =
@@ -1597,6 +1699,18 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     filter->window_height = win_h;
     filter->window_min_gap = win_gap;
     filter->window_above_floor = win_above;
+    filter->sit_threshold = sit_threshold;
+    filter->max_submerge = max_submerge;
+
+    if (filter->use_layer_heights) {
+        if (!filter->terrain_layer || !filter->terrain_layer->volume ||
+            volume_is_empty(filter->terrain_layer->volume)) {
+            gui_alert("Plan - Buildings",
+                      "Select a terrain layer with voxels, or turn off "
+                      "Position using layer heights.");
+            return;
+        }
+    }
 
     src = volume_copy(layer->volume);
     if (!src) {
@@ -1618,7 +1732,67 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
         return;
     }
 
+    if (filter->use_layer_heights) {
+        int terrain_bbox[2][3];
+        volume_accessor_t terrain_acc;
+        const volume_t *terrain = filter->terrain_layer->volume;
+
+        /* Approximate tile bbox once — never recompute exact bbox per cell. */
+        if (!volume_get_bbox(terrain, terrain_bbox, false)) {
+            gui_alert("Plan - Buildings",
+                      "Terrain layer bounding box is empty.");
+            free_groups(groups, ngroups);
+            volume_delete(src);
+            return;
+        }
+        terrain_acc = volume_get_accessor(terrain);
+
+        terrain_tops = calloc((size_t)ngroups, sizeof(*terrain_tops));
+        if (!terrain_tops) {
+            gui_alert("Plan - Buildings", "Out of memory while sitting buildings.");
+            free_groups(groups, ngroups);
+            volume_delete(src);
+            return;
+        }
+        for (i = 0; i < ngroups; i++) {
+            terrain_tops[i] = malloc((size_t)groups[i].ncells *
+                                     sizeof(*terrain_tops[i]));
+            if (!terrain_tops[i]) {
+                gui_alert("Plan - Buildings",
+                          "Out of memory while sitting buildings.");
+                while (i-- > 0)
+                    free(terrain_tops[i]);
+                free(terrain_tops);
+                free_groups(groups, ngroups);
+                volume_delete(src);
+                return;
+            }
+            if (!resolve_building_sit(&groups[i], terrain, &terrain_acc,
+                                      terrain_bbox[0][2], sit_threshold,
+                                      max_submerge, terrain_tops[i])) {
+                free(terrain_tops[i]);
+                terrain_tops[i] = NULL;
+                skipped++;
+            } else {
+                placed++;
+            }
+        }
+        if (placed == 0) {
+            gui_alert("Plan - Buildings",
+                      "No buildings could sit on the terrain layer (missing "
+                      "terrain under some footprints).");
+            for (i = 0; i < ngroups; i++)
+                free(terrain_tops[i]);
+            free(terrain_tops);
+            free_groups(groups, ngroups);
+            volume_delete(src);
+            return;
+        }
+    }
+
     for (i = 0; i < ngroups; i++) {
+        if (terrain_tops && !terrain_tops[i])
+            continue;
         if (groups[i].floors > max_floors)
             max_floors = groups[i].floors;
     }
@@ -1627,6 +1801,11 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     if (!prepare_target_layers(layer, filter->all_one_layer, max_floors,
                                target_layers)) {
         gui_alert("Plan - Buildings", "Could not create the buildings layers.");
+        if (terrain_tops) {
+            for (i = 0; i < ngroups; i++)
+                free(terrain_tops[i]);
+            free(terrain_tops);
+        }
         free_groups(groups, ngroups);
         volume_delete(src);
         return;
@@ -1643,20 +1822,41 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     }
 
     for (i = 0; i < ngroups; i++) {
-        unsigned hash = building_hash(&groups[i], filter->seed);
-        int roof_pair = (int)(hash %
-                              (unsigned)filter->roof_pair_count);
-        int wall_color = (int)((hash ^ (hash >> 16)) %
-                               (unsigned)filter->wall_color_count);
+        unsigned hash;
+        int roof_pair;
+        int wall_color;
+
+        if (terrain_tops && !terrain_tops[i])
+            continue;
+
+        hash = building_hash(&groups[i], filter->seed);
+        roof_pair = (int)(hash % (unsigned)filter->roof_pair_count);
+        wall_color = (int)((hash ^ (hash >> 16)) %
+                           (unsigned)filter->wall_color_count);
         generate_group(floor_volumes, roof_volume, &groups[i],
                        floor_h, floor_t, wall_t, max_building_size,
                        filter->generate_roofs, max_roof_h,
                        filter->roof_colors[roof_pair],
                        filter->wall_colors[wall_color],
                        filter->generate_windows, win_w, win_h, win_gap,
-                       win_above);
+                       win_above,
+                       terrain_tops ? terrain_tops[i] : NULL);
     }
 
+    if (skipped > 0) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "Skipped %d building(s) with missing terrain under the "
+                 "footprint.",
+                 skipped);
+        gui_alert("Plan - Buildings", msg);
+    }
+
+    if (terrain_tops) {
+        for (i = 0; i < ngroups; i++)
+            free(terrain_tops[i]);
+        free(terrain_tops);
+    }
     free_groups(groups, ngroups);
     volume_delete(src);
 }
@@ -1678,7 +1878,9 @@ static int gui(filter_t *filter_)
         "Paint 1-block-high filled shapes on the active layer using the floor "
         "colours below.  Generate builds walls along the inward edges, slabs "
         "at the base and between storeys, and shaped roofs on new Buildings "
-        "layers.  The plan layer is preserved and hidden.";
+        "layers.  With Position using layer heights, each building sits on the "
+        "chosen terrain layer (Threshold / Max submerge), filling under hanging "
+        "cells.  The plan layer is preserved and hidden.";
     goxel_set_help_text(help_text);
 
     if (gui_collapsing_header("Hint", false))
@@ -1722,6 +1924,8 @@ static int gui(filter_t *filter_)
 
     gui_label_size_push(170.0f);
     if (gui_section_begin("Generation", GUI_SECTION_COLLAPSABLE)) {
+        /* Skip the label column so these checkboxes sit on the left. */
+        gui_label_size_push(0);
         gui_checkbox("Generate on one layer", &filter->all_one_layer,
                      "When off, each used floor gets a layer and final slabs "
                      "and roofs share a roofs layer.");
@@ -1730,6 +1934,39 @@ static int gui(filter_t *filter_)
                      "storey.");
         gui_checkbox("Generate roofs", &filter->generate_roofs,
                      "When off, buildings stop at the top floor slab.");
+        gui_checkbox("Position using layer heights", &filter->use_layer_heights,
+                     "When enabled, ignore each footprint's Z and sit it on the "
+                     "terrain layer using Threshold and Max submerge. When off, "
+                     "keep the plan's Z.");
+        gui_label_size_pop();
+        if (filter->use_layer_heights) {
+            if (!filter->terrain_layer && goxel.image)
+                filter->terrain_layer = goxel.image->layers;
+            gui_text("Terrain layer");
+            gui_same_line();
+            if (gui_combo_begin("##buildings_terrain_layer",
+                                filter->terrain_layer
+                                    ? filter->terrain_layer->name
+                                    : "(none)")) {
+                layer_t *cur;
+                DL_FOREACH_REVERSE(goxel.image->layers, cur) {
+                    if (gui_combo_item(cur->name,
+                                       cur == filter->terrain_layer))
+                        filter->terrain_layer = cur;
+                }
+                gui_combo_end();
+            }
+            gui_tooltip_if_hovered(
+                "Layer whose surface heights determine where buildings sit.");
+            gui_input_int("Threshold", &filter->sit_threshold, 1, 100);
+            gui_tooltip_if_hovered(
+                "Percent of the footprint that must be at or above the chosen "
+                "surface height. Default 80.");
+            gui_input_int("Max submerge", &filter->max_submerge, 0, 64);
+            gui_tooltip_if_hovered(
+                "How many blocks below the highest terrain top the building "
+                "may sit. Lower cells get stem fills. Default 1.");
+        }
         if (filter->generate_windows) {
             gui_input_int("Window width", &filter->window_width, 1, 64);
             gui_input_int("Window height", &filter->window_height, 1, 64);
