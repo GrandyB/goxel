@@ -1861,7 +1861,9 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(buildings, filter_buildings_t,
-                .name = "Plan - Buildings",
+                .name = "Buildings",
+                .menu = "effects",
+                .submenu = "plan",
                 .on_open = on_open,
                 .panel_width = 320,
                 .gui_fn = gui, )

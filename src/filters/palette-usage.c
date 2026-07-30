@@ -413,7 +413,9 @@ static int gui(filter_t *filter_)
 }
 
 FILTER_REGISTER(palette_usage, filter_palette_usage_t,
-                .name = "Palette - usage from layers",
+                .name = "Usage from layers",
+                .menu = "effects",
+                .submenu = "palette",
                 .on_open = on_open,
                 .on_close = on_close,
                 .panel_width = 325,

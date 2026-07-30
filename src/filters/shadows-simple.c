@@ -381,7 +381,9 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(simple_shadows, filter_simple_shadows_t,
-                .name = "Generation - Shadows (Simple)",
+                .name = "Shadows (Simple)",
+                .menu = "effects",
+                .submenu = "lighting",
                 .on_open = on_open,
-                .gui_fn = gui, 
+                .gui_fn = gui,
                 .panel_width = 450, )

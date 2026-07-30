@@ -20,7 +20,6 @@
 
 typedef struct {
     filter_t filter;
-    bool current_only;
 } filter_mirror_t;
 
 static void volume_mirror(volume_t *volume, int axis, const int aabb[2][3])
@@ -189,14 +188,15 @@ static void mirror_apply(filter_mirror_t *mirror_props, int axis, int side,
     if (box_is_null(box))
         return;
 
-    if (mirror_props->current_only && !goxel.image->active_layer->visible)
+    if (mirror_props->filter.current_only &&
+        !goxel.image->active_layer->visible)
         return;
 
     bbox_to_aabb(box, aabb);
     image_history_push(goxel.image);
 
     DL_FOREACH(goxel.image->layers, layer) {
-        if (mirror_props->current_only &&
+        if (mirror_props->filter.current_only &&
             layer != goxel.image->active_layer)
             continue;
 
@@ -217,7 +217,7 @@ static int gui(filter_t *filter)
 
     gui_checkbox(
         "Current layer only",
-        &mirror_props->current_only,
+        &mirror_props->filter.current_only,
         "If checked, only voxels on the current layer will be mirrored.\n"
         "If unchecked, voxels on all layers will be mirrored."
     );
@@ -244,7 +244,8 @@ static int gui(filter_t *filter)
 }
 
 FILTER_REGISTER(mirror, filter_mirror_t,
-    .name = "Translation - Mirror",
+    .name = "Mirror",
+    .menu = "image",
     .panel_width = 325,
     .gui_fn = gui,
 )

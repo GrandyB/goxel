@@ -81,6 +81,27 @@ void filters_iter_all(void *arg, void (*f)(void *arg, filter_t *filter)) {
     }
 }
 
+void filters_iter_menu(const char *menu, const char *submenu,
+                       void *arg, void (*f)(void *arg, filter_t *filter))
+{
+    int i;
+
+    qsort(g_filters, arrlen(g_filters), sizeof(filter_t *), compare_filters);
+
+    for (i = 0; i < arrlen(g_filters); i++) {
+        filter_t *filter = g_filters[i];
+        if (!filter->menu || strcmp(filter->menu, menu) != 0)
+            continue;
+        if (submenu) {
+            if (!filter->submenu || strcmp(filter->submenu, submenu) != 0)
+                continue;
+        } else if (filter->submenu) {
+            continue;
+        }
+        f(arg, filter);
+    }
+}
+
 bool filters_mouse_overlay(const float viewport[4])
 {
     int i;

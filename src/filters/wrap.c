@@ -26,7 +26,6 @@
 typedef struct
 {
     filter_t filter;
-    bool current_only;
     int distance;
 } filter_wrap_t;
 
@@ -153,7 +152,7 @@ static int gui(filter_t *filter)
 
     gui_checkbox(
         "Current layer only",
-        &wrap->current_only,
+        &wrap->filter.current_only,
         "If checked, only voxels on the current layer will be wrapped.\n"
         "If unchecked, voxels on all layers will be wrapped.");
 
@@ -164,14 +163,15 @@ static int gui(filter_t *filter)
         if (box_is_null(box))
             return 0;
 
-        if (wrap->current_only && !goxel.image->active_layer->visible)
+        if (wrap->filter.current_only && !goxel.image->active_layer->visible)
             return 0;
 
         bbox_to_aabb(box, aabb);
 
         DL_FOREACH(goxel.image->layers, layer)
         {
-            if (wrap->current_only && layer != goxel.image->active_layer)
+            if (wrap->filter.current_only &&
+                layer != goxel.image->active_layer)
                 continue;
 
             volume_wrap(layer->volume, axis, sign, aabb, wrap->distance);
@@ -189,6 +189,7 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(wrap, filter_wrap_t,
-                .name = "Translation - Wrap layer/image",
+                .name = "Wrap",
+                .menu = "image",
                 .on_open = on_open,
                 .gui_fn = gui, )

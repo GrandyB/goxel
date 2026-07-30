@@ -718,8 +718,6 @@ static int gui(tool_t *tool)
     }
     gui_section_end();
 
-    tool_gui_shape(NULL);
-    tool_gui_snap();
     return 0;
 }
 
@@ -729,4 +727,5 @@ TOOL_REGISTER(TOOL_CLONE_STAMP, clone_stamp, tool_clone_stamp_t,
               .gui_fn = gui,
               .flags = TOOL_REQUIRE_CAN_EDIT,
               .has_snap = true,
+              .has_shape = true,
 )

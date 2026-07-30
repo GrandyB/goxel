@@ -119,44 +119,6 @@ int tool_gui(tool_t *tool)
 }
 
 
-static bool snap_button(const char *label, int s)
-{
-    bool v = goxel.snap_mask & s;
-    if (gui_selectable(label, &v, NULL, -1)) {
-        set_flag(&goxel.snap_mask, s, v);
-        return true;
-    }
-    return false;
-}
-
-int tool_gui_snap(void)
-{
-    float v;
-    if (gui_section_begin("Snap on", true)) {
-        gui_group_begin(NULL);
-        gui_row_begin(2);
-        snap_button("Volume", SNAP_VOLUME);
-        snap_button("Plane", SNAP_PLANE);
-        gui_row_end();
-        if (!box_is_null(goxel.selection)) {
-            gui_row_begin(2);
-            snap_button("Sel In", SNAP_SELECTION_IN);
-            snap_button("Sel out", SNAP_SELECTION_OUT);
-            gui_row_end();
-        }
-        if (!box_is_null(goxel.image->box)) {
-            snap_button("Image box", SNAP_IMAGE_BOX);
-        }
-        gui_group_end();
-
-        v = goxel.snap_offset;
-        if (gui_input_float("Offset", &v, 0.1, -1, +1, "%.1f"))
-            goxel.snap_offset = clamp(v, -1, +1);
-    }
-    gui_section_end();
-    return 0;
-}
-
 static bool mask_mode_button(const char *label, int s)
 {
     bool v = goxel.mask_mode == s;
@@ -333,7 +295,7 @@ int tool_gui_symmetry(void)
     bool v;
     const char *labels_u[] = {"X", "Y", "Z"};
     const char *labels_l[] = {"x", "y", "z"};
-    if (gui_section_begin("Symmetry", true)) {
+    if (gui_section_begin("Symmetry", GUI_SECTION_COLLAPSABLE_CLOSED)) {
         gui_group_begin("##Axis");
         gui_row_begin(3);
         for (i = 0; i < 3; i++) {

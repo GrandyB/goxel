@@ -65,6 +65,7 @@ struct tool {
     int flags;
     const char *name;
     bool has_snap;
+    bool has_shape;
 };
 
 #define TOOL_REGISTER(id_, name_, klass_, ...) \
@@ -88,7 +89,6 @@ int tool_gui(tool_t *tool);
 /* Brush / shape / laser / fill / etc. — show "recent map colors" in snap bar. */
 bool tool_uses_map_recent_colors(const tool_t *tool);
 
-int tool_gui_snap(void);
 int tool_gui_mask_mode(void);
 int tool_gui_shape(const shape_t **shape);
 int tool_gui_radius(void);

@@ -150,6 +150,7 @@ static int gui(filter_t *filter_)
 
 FILTER_REGISTER(customobjects, filter_metadata_t,
                 .name = "Metadata",
+                .menu = "view",
                 .on_open = on_open,
                 .on_close = on_close,
                 .override_mouse = true,

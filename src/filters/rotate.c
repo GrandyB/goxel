@@ -22,11 +22,6 @@
  * Rotate voxels 90° around Z within an AABB (same approach as mirror/wrap).
  */
 
-typedef struct
-{
-    filter_t filter;
-} filter_rotate_t;
-
 static void volume_rotate_z(volume_t *volume, int direction, const int aabb[2][3])
 {
     int pos[3];
@@ -77,11 +72,14 @@ static void volume_rotate_z(volume_t *volume, int direction, const int aabb[2][3
     free(buffer);
 }
 
-static void rotate_all_layers(int direction)
+void goxel_rotate_90(int direction, bool current_layer_only)
 {
     float box[4][4] = {};
     int aabb[2][3];
     layer_t *layer;
+
+    if (!goxel.image || !goxel.image->active_layer)
+        return;
 
     memcpy(box, goxel.image->active_layer->box, sizeof(box));
 
@@ -91,32 +89,16 @@ static void rotate_all_layers(int direction)
     if (box_is_null(box))
         return;
 
+    if (current_layer_only && !goxel.image->active_layer->visible)
+        return;
+
     bbox_to_aabb(box, aabb);
 
     image_history_push(goxel.image);
 
-    DL_FOREACH(goxel.image->layers, layer)
+    DL_FOREACH(goxel.image->layers, layer) {
+        if (current_layer_only && layer != goxel.image->active_layer)
+            continue;
         volume_rotate_z(layer->volume, direction, aabb);
+    }
 }
-
-static int gui(filter_t *filter)
-{
-    (void)filter;
-
-    gui_group_begin(NULL);
-
-    gui_row_begin(2);
-    if (gui_button("Clockwise", 1.0, 0))
-        rotate_all_layers(-1);
-    if (gui_button("Counter-clockwise", 1.0, 0))
-        rotate_all_layers(+1);
-    gui_row_end();
-
-    gui_group_end();
-
-    return 0;
-}
-
-FILTER_REGISTER(rotate, filter_rotate_t,
-                .name = "Translation - Rotate",
-                .gui_fn = gui, )

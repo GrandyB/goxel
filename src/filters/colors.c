@@ -117,6 +117,8 @@ static int gui(filter_t *filter_)
 }
 
 FILTER_REGISTER(colors, filter_colors_t,
-                .name = "Colors - H/S/L/C for layer",
+                .name = "Hue / Saturation / Lightness / Contrast",
+                .menu = "adjustments",
+                .panel_width = GUI_PANEL_WIDTH_NORMAL + 40,
                 .on_open = on_open,
                 .gui_fn = gui, )

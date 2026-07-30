@@ -199,7 +199,9 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(genland, filter_genland_t,
-                .name = "Generation - Genland",
+                .name = "Genland",
+                .menu = "effects",
+                .submenu = "generate",
                 .on_open = on_open,
                 .panel_width = 275,
                 .gui_fn = gui, )

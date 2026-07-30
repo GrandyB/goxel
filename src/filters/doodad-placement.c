@@ -568,7 +568,9 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(doodadplacer, filter_doodadplacement_t,
-                .name = "Generation - Doodad placement",
+                .name = "Doodad placement",
+                .menu = "effects",
+                .submenu = "generate",
                 .on_open = on_open,
                 .panel_width = 350,
                 .gui_fn = gui, )

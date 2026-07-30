@@ -868,7 +868,9 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(terrain_coloring, filter_terrain_coloring_t,
-                .name = "Generation - Terrain Coloring",
+                .name = "Terrain Coloring",
+                .menu = "effects",
+                .submenu = "generate",
                 .on_open = on_open,
                 .panel_width = 400,
                 .gui_fn = gui, )

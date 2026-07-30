@@ -573,8 +573,6 @@ static int gui(tool_t *tool)
         gui_section_end();
     }
 
-    tool_gui_snap();
-    tool_gui_shape(NULL);
     tool_gui_symmetry();
     return 0;
 }
@@ -586,4 +584,5 @@ TOOL_REGISTER(TOOL_BRUSH, brush, tool_brush_t,
               .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_ALLOW_PICK_COLOR,
               .default_shortcut = "B",
               .has_snap = true,
+              .has_shape = true,
 )

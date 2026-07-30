@@ -496,7 +496,9 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(roads, filter_roads_t,
-                .name = "Plan - Roads",
+                .name = "Roads",
+                .menu = "effects",
+                .submenu = "plan",
                 .on_open = on_open,
                 .panel_width = 280,
                 .gui_fn = gui, )

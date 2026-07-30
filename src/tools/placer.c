@@ -1339,8 +1339,6 @@ static int gui(tool_t *tool)
         }
     } gui_section_end();
 
-    tool_gui_snap();
-    
     if (placer->imported_volume) {
         origin_x = (int)round(placer->origin[0]);
         origin_y = (int)round(placer->origin[1]);

@@ -420,6 +420,9 @@ static void gui_init(void)
         gui = (gui_t*)calloc(1, sizeof(*gui));
         init_ImGui();
         goxel.gui.panel_width = GUI_PANEL_WIDTH_NORMAL;
+        goxel.gui.layers_panel_open = true;
+        goxel.gui.view_cube_open = true;
+        goxel.gui.camera_presets_open = true;
     }
 
     if (!gui->shader) {
@@ -685,8 +688,11 @@ static void render_view_cube(void)
     const float icon_spacing = 6.0f;
     const float icons_h = icon_size * 4 + icon_spacing * 3;
     const float win_w = w;
-    const float icon_x = max(2.0f, (win_w - icon_size) * 0.5f) + 15.0f;
-    const float cube_x = goxel.gui.viewport[2] - GUI_PANEL_WIDTH_NORMAL - win_w;
+    const float icon_x = max(2.0f, (win_w - icon_size) * 0.5f) + 30.0f;
+    const float right_panel_w =
+            goxel.gui.layers_panel_open ? goxel.gui.panel_width + 5.0f : 0.0f;
+    const float cube_x = goxel.gui.viewport[0] + goxel.gui.viewport[2] -
+                         right_panel_w - win_w;
     const float cube_y = goxel.gui.viewport[1];
 
     /* ViewManipulate turns `length` into eye position (target + dir * length).
@@ -695,62 +701,89 @@ static void render_view_cube(void)
     if (gizmo_dist <= 0.f)
         gizmo_dist = camera->prev_dist > 0.f ? camera->prev_dist : 128.f;
 
-    ImGui::SetNextWindowSize(ImVec2(win_w, h));
-    ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
-    ImGui::Begin("Gizmo", NULL, ImGuiWindowFlags_NoDecoration);
-    ImGuizmo::SetDrawlist();
+    if (goxel.gui.view_cube_open) {
+        ImGui::SetNextWindowSize(ImVec2(win_w, h));
+        ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y));
+        ImGui::Begin("Gizmo", NULL, ImGuiWindowFlags_NoDecoration);
+        ImGuizmo::SetDrawlist();
 
-    ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, w, h);
-    ImGuizmo::ViewManipulate(
-           (float*)view, projection,
-           ImGuizmo::ROTATE, ImGuizmo::LOCAL,
-           (float*)&mat4_identity, gizmo_dist,
-           ImGui::GetWindowPos(),
-           ImVec2(w, h), 0x0);
+        ImGuizmo::SetRect(
+                ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, w, h);
+        ImGuizmo::ViewManipulate(
+               (float*)view, projection,
+               ImGuizmo::ROTATE, ImGuizmo::LOCAL,
+               (float*)&mat4_identity, gizmo_dist,
+               ImGui::GetWindowPos(),
+               ImVec2(w, h), 0x0);
 
-    /* Orbit only: cube may rewrite the view. In FPV/Player, dist is not the
-     * eye offset — writing back would yank the camera along the look axis. */
-    if (!camera_is_firstperson(camera)) {
-        mat4_invert(view, view);
-        mat4_mul(yup2zup, view, camera->mat);
+        /* Orbit only: cube may rewrite the view. In FPV/Player, dist is not
+         * the eye offset — writing back would yank the camera along the look
+         * axis. */
+        if (!camera_is_firstperson(camera)) {
+            mat4_invert(view, view);
+            mat4_mul(yup2zup, view, camera->mat);
+        }
+
+        ImGui::End();
     }
 
-    ImGui::End();
+    if (goxel.gui.camera_presets_open) {
+        /* Separate window so preset clicks are outside ViewManipulate's hit
+         * rect. */
+        ImGui::SetNextWindowSize(ImVec2(win_w, icons_h + 4.0f));
+        /* Without the cube above them, keep clear of the menu bar. */
+        const float presets_y = goxel.gui.view_cube_open ?
+                cube_y + h - 5.0f :
+                ImMax(cube_y, ImGui::GetMainViewport()->WorkPos.y) + 4.0f;
+        ImGui::SetNextWindowPos(ImVec2(cube_x, presets_y));
+        ImGui::Begin(
+                "GizmoCameraPresets", NULL, ImGuiWindowFlags_NoDecoration);
+        ImGui::PushStyleVar(
+                ImGuiStyleVar_ItemSpacing, ImVec2(0, icon_spacing));
+        ImGui::SetCursorPos(ImVec2(icon_x, 2.0f));
 
-    /* Separate window so preset clicks are outside ViewManipulate's hit rect. */
-    ImGui::SetNextWindowSize(ImVec2(win_w, icons_h + 4.0f));
-    ImGui::SetNextWindowPos(ImVec2(cube_x, cube_y + h - 5.0f));
-    ImGui::Begin("GizmoCameraPresets", NULL, ImGuiWindowFlags_NoDecoration);
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, icon_spacing));
-    ImGui::SetCursorPos(ImVec2(icon_x, 2.0f));
+        if (gizmo_camera_icon_button(
+                    "##camera_ptz", ICON_CAMERA_PTZ, icon_size))
+            apply_camera_gizmo_preset(
+                    camera, CAMERA_MODE_ORBIT, false, false);
+        gizmo_camera_tooltip_if_hovered(
+                "Orbit camera - middle click to orbit, right click to pan, "
+                "scroll to zoom");
 
-    if (gizmo_camera_icon_button("##camera_ptz", ICON_CAMERA_PTZ, icon_size))
-        apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, false, false);
-    gizmo_camera_tooltip_if_hovered("Orbit camera - middle click to orbit, right click to pan, scroll to zoom");
+        ImGui::SetCursorPosX(icon_x);
+        if (gizmo_camera_icon_button(
+                    "##camera_fly", ICON_CAMERA_FLY, icon_size))
+            apply_camera_gizmo_preset(camera, CAMERA_MODE_FPV, false, false);
+        gizmo_camera_tooltip_if_hovered(
+                "Fly camera - use arrow keys to move, right click to look");
 
-    ImGui::SetCursorPosX(icon_x);
-    if (gizmo_camera_icon_button("##camera_fly", ICON_CAMERA_FLY, icon_size))
-        apply_camera_gizmo_preset(camera, CAMERA_MODE_FPV, false, false);
-    gizmo_camera_tooltip_if_hovered("Fly camera - use arrow keys to move, right click to look");
+        ImGui::SetCursorPosX(icon_x);
+        if (gizmo_camera_icon_button(
+                    "##camera_player", ICON_CAMERA_PLAYER, icon_size))
+            apply_camera_gizmo_preset(
+                    camera, CAMERA_MODE_PLAYER, false, false);
+        gizmo_camera_tooltip_if_hovered(
+                "Player camera - WASD to move, right click look, space jump "
+                "and ctrl crouch; hold alt to fly");
 
-    ImGui::SetCursorPosX(icon_x);
-    if (gizmo_camera_icon_button("##camera_player", ICON_CAMERA_PLAYER, icon_size))
-        apply_camera_gizmo_preset(camera, CAMERA_MODE_PLAYER, false, false);
-    gizmo_camera_tooltip_if_hovered("Player camera - WASD to move, right click look, space jump and ctrl crouch; hold alt to fly");
+        ImGui::SetCursorPosX(icon_x);
+        if (gizmo_camera_icon_button(
+                    "##camera_topdown", ICON_CAMERA_TOPDOWN, icon_size)) {
+            apply_camera_gizmo_preset(
+                    camera, CAMERA_MODE_ORBIT, true, true);
+            /* Surface paint only applies in Paint mode; leave it on so
+             * switching into Paint (or already being in Paint) uses the
+             * top-down stamp. */
+            goxel.brush_surface_paint = true;
+        }
+        gizmo_camera_tooltip_if_hovered(
+                "Top-down camera - right click to pan, scroll to zoom");
+        ImGui::PopStyleVar();
 
-    ImGui::SetCursorPosX(icon_x);
-    if (gizmo_camera_icon_button("##camera_topdown", ICON_CAMERA_TOPDOWN, icon_size)) {
-        apply_camera_gizmo_preset(camera, CAMERA_MODE_ORBIT, true, true);
-        /* Surface paint only applies in Paint mode; leave it on so switching
-         * into Paint (or already being in Paint) uses the top-down stamp. */
-        goxel.brush_surface_paint = true;
+        ImGui::End();
     }
-    gizmo_camera_tooltip_if_hovered("Top-down camera - right click to pan, scroll to zoom");
-    ImGui::PopStyleVar();
-
-    ImGui::End();
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
 
@@ -820,13 +853,16 @@ static void gui_iter(const inputs_t *inputs)
 
     gui_app();
     custom_objects_render_labels(goxel.image);
-    render_view_cube();
+    if (goxel.gui.ui_visible &&
+        (goxel.gui.view_cube_open || goxel.gui.camera_presets_open))
+        render_view_cube();
     render_popups(0);
 
     if (!io.WantCaptureKeyboard) {
         actions_iter(check_action_shortcut, NULL);
     }
-    render_fps((int)round(goxel.fps));
+    if (goxel.gui.ui_visible)
+        render_fps((int)round(goxel.fps));
     ImGui::EndFrame();
 
     sys_show_keyboard(io.WantTextInput);
@@ -984,8 +1020,19 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
         win_flags |= ImGuiWindowFlags_NoMouseInputs;
     if (dir == 0)
         win_flags |= ImGuiWindowFlags_HorizontalScrollbar;
-    ImGui::SetNextWindowPos(ImVec2(x, y),
-                            (flags & GUI_WINDOW_MOVABLE) ? ImGuiCond_Appearing : ImGuiCond_Always);
+    if (flags & GUI_WINDOW_CENTER) {
+        ImGuiViewport *vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(
+                vp->GetCenter(),
+                (flags & GUI_WINDOW_MOVABLE) ? ImGuiCond_Appearing
+                                             : ImGuiCond_Always,
+                ImVec2(0.5f, 0.5f));
+    } else {
+        ImGui::SetNextWindowPos(
+                ImVec2(x, y),
+                (flags & GUI_WINDOW_MOVABLE) ? ImGuiCond_Appearing
+                                             : ImGuiCond_Always);
+    }
     ImGui::SetNextWindowSize(ImVec2(w, h));
 
     key = ImGui::GetID("last_pos");
@@ -1037,9 +1084,9 @@ gui_window_ret_t gui_window_end(void)
 void gui_floating_panel_begin(const char *title, float init_w, float init_h)
 {
     ImGuiViewport *vp = ImGui::GetMainViewport();
-    ImVec2 pos = ImVec2(vp->WorkPos.x + 52.f, vp->WorkPos.y + 96.f);
 
-    ImGui::SetNextWindowPos(pos, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver,
+                            ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(init_w, init_h), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints(ImVec2(220.f, 140.f), ImVec2(FLT_MAX, FLT_MAX));
     ImGui::Begin(title, NULL, ImGuiWindowFlags_None);
@@ -1061,9 +1108,9 @@ bool gui_palette_window_begin(float init_w, float init_h)
     }
 
     ImGuiViewport *vp = ImGui::GetMainViewport();
-    ImVec2 pos = ImVec2(vp->WorkPos.x + 52.f, vp->WorkPos.y + 96.f);
 
-    ImGui::SetNextWindowPos(pos, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver,
+                            ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(init_w, init_h), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints(ImVec2(220.f, 140.f), ImVec2(FLT_MAX, FLT_MAX));
     ImGui::Begin("Palette##palette_floating", &goxel.gui.palette_win_open,
@@ -2781,6 +2828,112 @@ bool gui_menu_bar_begin(void)
     return ret;
 }
 
+/* Text in the menu bar cannot go through BeginMenu(): a menu whose label is
+ * empty gets a selectable that spans the whole remaining bar width, which then
+ * claims the hovered id and swallows clicks on anything right-aligned. */
+void gui_menu_bar_text(const char *text)
+{
+    if (!text || !text[0]) return;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 24.0f);
+    ImGui::BeginDisabled();
+    ImGui::TextUnformatted(text);
+    ImGui::EndDisabled();
+}
+
+static bool menu_bar_panel_toggle(const char *id, int icon, bool selected,
+                                  const char *tooltip)
+{
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    const float size = 18.0f;
+    const ImVec2 button_size(size, size);
+    const ImVec2 uv0 = get_icon_uv(icon);
+    const ImVec2 uv1 = uv0 + ImVec2(1.0f / 8.0f, 1.0f / 8.0f);
+
+    ImGui::PushID(id);
+    bool clicked = ImGui::InvisibleButton("##toggle", button_size);
+    const ImVec2 a = ImGui::GetItemRectMin();
+    const ImVec2 b = ImGui::GetItemRectMax();
+
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+        const ImVec4 bg = color_lighten(COLOR(MENU, BACKGROUND, false));
+        window->DrawList->AddRectFilled(a, b, ImGui::GetColorU32(bg), 2.0f);
+    }
+    window->DrawList->AddImage(
+            (intptr_t)g_tex_icons->tex, a, b, uv0, uv1,
+            get_icon_color(icon, selected));
+    if (selected) {
+        window->DrawList->AddRect(
+                a + ImVec2(0.5f, 0.5f), b - ImVec2(0.5f, 0.5f),
+                get_icon_color(icon, true), 2.0f, 0, 1.5f);
+    }
+    if (ImGui::IsItemHovered())
+        gui_tooltip(tooltip);
+    ImGui::PopID();
+    return clicked;
+}
+
+static void menu_bar_toggles_separator(float w, float h)
+{
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    ImGui::Dummy(ImVec2(w, h));
+    const ImVec2 a = ImGui::GetItemRectMin();
+    const ImVec2 b = ImGui::GetItemRectMax();
+    const float x = ImFloor((a.x + b.x) * 0.5f) + 0.5f;
+    window->DrawList->AddLine(ImVec2(x, a.y + 2.0f), ImVec2(x, b.y - 2.0f),
+                              ImGui::GetColorU32(ImGuiCol_Separator));
+}
+
+void gui_menu_bar_panel_toggles(void)
+{
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    const float button_size = 18.0f;
+    const float spacing = 3.0f;
+    const float separator_w = 9.0f;
+    const float total_w =
+            button_size * 5.0f + spacing * 5.0f + separator_w;
+    const float right_x =
+            window->Size.x - ImGui::GetStyle().WindowPadding.x - total_w;
+    const action_t *plane_action;
+    char tooltip[128];
+
+    ImGui::SetCursorPosX(ImMax(ImGui::GetCursorPosX(), right_x));
+
+    bool tools_open = gui_panel_is_detached(PANEL_TOOLS);
+    if (menu_bar_panel_toggle(
+                "menu_tools", ICON_TOOLS, tools_open, "Tools"))
+        gui_panel_toggle_detached(PANEL_TOOLS);
+
+    ImGui::SameLine(0.0f, spacing);
+    if (menu_bar_panel_toggle(
+                "menu_layers", ICON_LAYERS, goxel.gui.layers_panel_open,
+                "Layers"))
+        gui_layers_panel_toggle();
+
+    ImGui::SameLine(0.0f, spacing);
+    if (menu_bar_panel_toggle(
+                "menu_palette", ICON_PALETTE, goxel.gui.palette_win_open,
+                "Palette"))
+        gui_palette_window_toggle();
+
+    ImGui::SameLine(0.0f, spacing);
+    menu_bar_toggles_separator(separator_w, button_size);
+
+    ImGui::SameLine(0.0f, spacing);
+    if (menu_bar_panel_toggle(
+                "menu_image_box", ICON_IMAGE, !goxel.hide_box,
+                "Image box on/off"))
+        goxel.hide_box = !goxel.hide_box;
+
+    ImGui::SameLine(0.0f, spacing);
+    plane_action = action_get(ACTION_toggle_plane_visible, true);
+    snprintf(tooltip, sizeof(tooltip), "Plane on/off (%s)",
+             plane_action ? plane_action->shortcut : "");
+    if (menu_bar_panel_toggle(
+                "menu_plane", ICON_TOOL_PLANE, goxel.snap_mask & SNAP_PLANE,
+                tooltip))
+        action_exec(plane_action);
+}
+
 void gui_menu_bar_end(void)
 {
     ImGui::PopStyleColor(5);
@@ -2793,9 +2946,87 @@ bool gui_menu_begin(const char *label, bool enabled)
     return ImGui::BeginMenu(label, enabled);
 }
 
+static bool g_menu_checkbox_column = false;
+
 void gui_menu_end(void)
 {
+    g_menu_checkbox_column = false;
     ImGui::EndMenu();
+}
+
+void gui_menu_checkbox_column(bool enabled)
+{
+    g_menu_checkbox_column = enabled;
+}
+
+/* Menu row with an optional 25px left checkbox column (ImGui's built-in
+ * checkmark is on the right; we want toggles aligned on the left). */
+static bool menu_item_checkbox_column(const char *label, const char *shortcut,
+                                      bool is_toggle, bool checked, bool enabled)
+{
+    const float check_col_w = 25.0f;
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    if (window->SkipItems)
+        return false;
+
+    ImGuiContext& g = *GImGui;
+    ImGuiStyle& style = g.Style;
+    ImVec2 pos = window->DC.CursorPos;
+    ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
+    float shortcut_w = (shortcut && shortcut[0]) ?
+            ImGui::CalcTextSize(shortcut, NULL).x : 0.0f;
+    float icon_w = check_col_w;
+    float checkmark_w = 0.0f;
+    float min_w = window->DC.MenuColumns.DeclColumns(
+            icon_w, label_size.x, shortcut_w, checkmark_w);
+    float stretch_w = ImMax(0.0f, ImGui::GetContentRegionAvail().x - min_w);
+    const ImGuiSelectableFlags selectable_flags =
+            ImGuiSelectableFlags_SelectOnRelease |
+            ImGuiSelectableFlags_NoSetKeyOwner |
+            ImGuiSelectableFlags_SetNavIdOnHover;
+
+    ImGui::PushID(label);
+    if (!enabled)
+        ImGui::BeginDisabled();
+
+    bool pressed = ImGui::Selectable(
+            "", false,
+            selectable_flags | ImGuiSelectableFlags_SpanAvailWidth,
+            ImVec2(min_w, label_size.y));
+    const ImGuiMenuColumns *offsets = &window->DC.MenuColumns;
+    if (g.LastItemData.StatusFlags & ImGuiItemStatusFlags_Visible) {
+        if (is_toggle) {
+            const float box_s = ImMin(check_col_w - 6.0f, g.FontSize);
+            ImVec2 box_min = pos + ImVec2(
+                    offsets->OffsetIcon + (check_col_w - box_s) * 0.5f,
+                    (label_size.y - box_s) * 0.5f);
+            ImVec2 box_max = box_min + ImVec2(box_s, box_s);
+            ImU32 col = ImGui::GetColorU32(
+                    enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+            window->DrawList->AddRect(
+                    box_min, box_max, col, 0.0f, 0, 1.0f);
+            if (checked) {
+                ImGui::RenderCheckMark(
+                        window->DrawList,
+                        box_min + ImVec2(box_s * 0.15f, box_s * 0.15f),
+                        col, box_s * 0.7f);
+            }
+        }
+        ImGui::RenderText(pos + ImVec2(offsets->OffsetLabel, 0.0f), label);
+        if (shortcut_w > 0.0f) {
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                                 style.Colors[ImGuiCol_TextDisabled]);
+            ImGui::RenderText(
+                    pos + ImVec2(offsets->OffsetShortcut + stretch_w, 0.0f),
+                    shortcut, NULL, false);
+            ImGui::PopStyleColor();
+        }
+    }
+
+    if (!enabled)
+        ImGui::EndDisabled();
+    ImGui::PopID();
+    return pressed;
 }
 
 bool gui_menu_item(int action, const char *label, bool enabled)
@@ -2805,11 +3036,31 @@ bool gui_menu_item(int action, const char *label, bool enabled)
         a = action_get(action, true);
         assert(a);
     }
-    if (ImGui::MenuItem(label, a ? a->shortcut : NULL, false, enabled)) {
-        if (a) action_exec(a);
-        return true;
+    const char *shortcut = a ? a->shortcut : NULL;
+    bool clicked;
+    if (g_menu_checkbox_column)
+        clicked = menu_item_checkbox_column(
+                label, shortcut, false, false, enabled);
+    else
+        clicked = ImGui::MenuItem(label, shortcut, false, enabled);
+    if (clicked && a)
+        action_exec(a);
+    return clicked;
+}
+
+bool gui_menu_toggle(int action, const char *label, bool checked, bool enabled)
+{
+    const action_t *a = NULL;
+    if (action) {
+        a = action_get(action, true);
+        assert(a);
     }
-    return false;
+    const char *shortcut = a ? a->shortcut : NULL;
+    bool clicked = menu_item_checkbox_column(
+            label, shortcut, true, checked, enabled);
+    if (clicked && a)
+        action_exec(a);
+    return clicked;
 }
 
 void gui_tooltip(const char *str)

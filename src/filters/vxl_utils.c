@@ -490,6 +490,8 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(vxlutils, filter_vxlutils_t,
-                .name = "Utility - .vxl utils",
+                .name = ".vxl utils",
+                .menu = "effects",
+                .submenu = "utilities",
                 .on_open = on_open,
                 .gui_fn = gui, )

@@ -77,7 +77,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_2s-1"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_2t"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -626,6 +626,13 @@ typedef struct goxel
         bool palette_win_open;
         bool palette_win_collapsed;
         bool palette_win_expand_once;
+        /* Right-docked Layers panel; View > Layers toggles; open on startup. */
+        bool layers_panel_open;
+        /* Viewport overlays; independently toggled from the View menu. */
+        bool view_cube_open;
+        bool camera_presets_open;
+        /* Global UI chrome (toolbars/panels/overlays); menu bar stays visible. */
+        bool ui_visible;
     } gui;
 
     char **recent_files; // stb arraw of most recently used files.
@@ -767,6 +774,15 @@ void goxel_add_recent_file(const char *path);
  */
 void goxel_apply_color_filter(
     void (*fn)(void *args, uint8_t color[4]), void *args);
+
+/*
+ * goxel_rotate_90
+ * Rotate the voxels 90° around Z inside the current box.
+ *
+ * direction - Positive for clockwise, negative for anti-clockwise.
+ * current_layer_only - Only rotate the active layer instead of all of them.
+ */
+void goxel_rotate_90(int direction, bool current_layer_only);
 
 // Section: tests
 

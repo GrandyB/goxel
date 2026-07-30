@@ -40,6 +40,8 @@
 enum {
     GUI_WINDOW_MOVABLE                  = 1 << 0,
     GUI_WINDOW_HORIZONTAL               = 1 << 1, // For scrolling.
+    /* Place at viewport centre on appear (uses pivot; x/y ignored). */
+    GUI_WINDOW_CENTER                   = 1 << 3,
 
     // Return flags.
     GUI_WINDOW_MOVED                    = 1 << 2,
@@ -100,6 +102,33 @@ void gui_render(const inputs_t *inputs);
 void gui_request_panel_width(float width);
 
 bool gui_panel_header(const char *label);
+
+/* Left-bar / floating control panels (ids used by gui_panel_show_detached). */
+enum {
+    PANEL_NULL = 0,
+    PANEL_TOOLS,
+    PANEL_PALETTE,
+    PANEL_LAYERS,
+    PANEL_VIEW,
+    PANEL_MATERIAL,
+    PANEL_LIGHT,
+    PANEL_CAMERAS,
+    PANEL_IMAGE,
+    PANEL_RENDER,
+    PANEL_EXPORT,
+    PANEL_DEBUG,
+};
+
+/* Show a control panel as a detached floating window. */
+void gui_panel_show_detached(int panel);
+/* True if the panel is currently shown as a detached floating window. */
+bool gui_panel_is_detached(int panel);
+/* Open or close a detached panel. */
+void gui_panel_toggle_detached(int panel);
+/* Toggle the floating palette window (same as left-bar Palette tab). */
+void gui_palette_window_toggle(void);
+/* Toggle the right-docked Layers panel. */
+void gui_layers_panel_toggle(void);
 
 // Gui widgets:
 bool gui_collapsing_header(const char *label, bool default_opened);
@@ -271,9 +300,17 @@ void gui_popup_bottom_end(void);
 
 bool gui_menu_bar_begin(void);
 void gui_menu_bar_end(void);
+/* Right-aligned Tools / Layers / Palette toggle icons. */
+void gui_menu_bar_panel_toggles(void);
+/* Inert text in the menu bar; skipped when empty. */
+void gui_menu_bar_text(const char *text);
 bool gui_menu_begin(const char *label, bool enabled);
 void gui_menu_end(void);
 bool gui_menu_item(int action, const char *label, bool enabled);
+/* Enable a 25px left checkbox column for the current menu (cleared on end). */
+void gui_menu_checkbox_column(bool enabled);
+/* Toggle item with a left checkbox; use inside a checkbox-column menu. */
+bool gui_menu_toggle(int action, const char *label, bool checked, bool enabled);
 
 void gui_tooltip(const char *str);
 

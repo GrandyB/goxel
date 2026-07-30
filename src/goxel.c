@@ -663,6 +663,9 @@ static void goxel_load_recent_files(void)
 KEEPALIVE
 void goxel_init(void)
 {
+    /* Set before the first frame: the 3d view draws before the gui inits. */
+    goxel.gui.ui_visible = true;
+
     shapes_init();
     goxel_init_sound();
     script_init();
@@ -1522,7 +1525,8 @@ void goxel_render_view(const float viewport[4], bool render_mode)
     if (goxel.show_export_viewport)
         render_export_viewport(viewport);
 
-    render_axis_arrows(viewport);
+    if (goxel.gui.ui_visible)
+        render_axis_arrows(viewport);
     render_submit(&goxel.rend, viewport, goxel.back_color);
 }
 
@@ -2186,6 +2190,17 @@ ACTION_REGISTER(ACTION_view_toggle_ortho,
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_view_toggle_ortho,
     .default_shortcut = "5",
+)
+
+static void a_view_toggle_ui(void)
+{
+    goxel.gui.ui_visible = !goxel.gui.ui_visible;
+}
+
+ACTION_REGISTER(ACTION_view_toggle_ui,
+    .help = "Show or hide the UI (toolbars, panels, overlays)",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = a_view_toggle_ui,
 )
 
 static void quit(void)

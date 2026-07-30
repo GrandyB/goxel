@@ -46,6 +46,7 @@ void gui_menu(void);
 void gui_tools_panel(void);
 void gui_top_bar(void);
 void gui_snap_bar(void);
+void gui_shape_bar(void);
 void gui_map_colors_bar(void);
 void gui_layers_panel(void);
 void gui_layers_panel_with_scroll();
@@ -59,33 +60,18 @@ void gui_debug_panel(void);
 void gui_export_panel(void);
 bool gui_rotation_bar(void);
 
-enum {
-    PANEL_NULL,
-    PANEL_TOOLS,
-    PANEL_PALETTE,
-    PANEL_LAYERS,
-    PANEL_VIEW,
-    PANEL_MATERIAL,
-    PANEL_LIGHT,
-    PANEL_CAMERAS,
-    PANEL_IMAGE,
-    PANEL_RENDER,
-    PANEL_EXPORT,
-    PANEL_DEBUG,
-};
-
 static struct {
     const char *name;
     int icon;
     void (*fn)(void);
     bool detached;
 } PANELS[] = {
-    [PANEL_TOOLS]       = {"Tools", ICON_TOOLS, gui_tools_panel},
+    [PANEL_TOOLS]       = {"Tools", ICON_TOOLS, gui_tools_panel, true},
     [PANEL_PALETTE]     = {"Palette", ICON_PALETTE, NULL},
     [PANEL_LAYERS]      = {"Layers", ICON_LAYERS, gui_layers_panel},
     [PANEL_VIEW]        = {"View", ICON_VIEW, gui_view_panel},
     [PANEL_MATERIAL]    = {"Material", ICON_MATERIAL, gui_material_panel},
-    [PANEL_LIGHT]       = {"Light", ICON_LIGHT, gui_light_panel},
+    [PANEL_LIGHT]       = {"Editor lighting", ICON_LIGHT, gui_light_panel},
     [PANEL_CAMERAS]     = {"Cameras", ICON_CAMERA, gui_cameras_panel},
     [PANEL_IMAGE]       = {"Image", ICON_IMAGE, gui_image_panel},
 #if YOCTO
@@ -97,47 +83,59 @@ static struct {
 #endif
 };
 
+void gui_panel_show_detached(int panel)
+{
+    if (panel <= PANEL_NULL || panel >= (int)ARRAY_SIZE(PANELS))
+        return;
+    if (!PANELS[panel].fn)
+        return;
+    if (goxel.gui.current_panel == panel)
+        goxel.gui.current_panel = 0;
+    PANELS[panel].detached = true;
+}
+
+bool gui_panel_is_detached(int panel)
+{
+    if (panel <= PANEL_NULL || panel >= (int)ARRAY_SIZE(PANELS))
+        return false;
+    return PANELS[panel].fn && PANELS[panel].detached;
+}
+
+void gui_panel_toggle_detached(int panel)
+{
+    if (panel <= PANEL_NULL || panel >= (int)ARRAY_SIZE(PANELS))
+        return;
+    if (!PANELS[panel].fn)
+        return;
+    if (PANELS[panel].detached) {
+        PANELS[panel].detached = false;
+        return;
+    }
+    gui_panel_show_detached(panel);
+}
+
+void gui_palette_window_toggle(void)
+{
+    if (goxel.gui.palette_win_open) {
+        goxel.gui.palette_win_open = false;
+        goxel.gui.palette_win_collapsed = false;
+    } else {
+        goxel.gui.palette_win_open = true;
+        goxel.gui.palette_win_expand_once = true;
+    }
+}
+
+void gui_layers_panel_toggle(void)
+{
+    goxel.gui.layers_panel_open = !goxel.gui.layers_panel_open;
+}
+
 typedef struct filter_layout_state filter_layout_state_t;
 
 struct filter_layout_state {
     int next_x;
     int next_y;
 };
-
-static void on_click(void) {
-    if (DEFINED(GUI_SOUND))
-        sound_play("click", 1.0, 1.0);
-}
-
-static void render_left_panel(void)
-{
-    int i;
-    bool selected;
-
-    for (i = 1; i < (int)ARRAY_SIZE(PANELS); i++) {
-        if (i == PANEL_PALETTE) {
-            selected = goxel.gui.palette_win_open &&
-                       !goxel.gui.palette_win_collapsed;
-            if (gui_tab(PANELS[i].name, PANELS[i].icon, &selected)) {
-                on_click();
-                if (!goxel.gui.palette_win_open) {
-                    goxel.gui.palette_win_open = true;
-                    goxel.gui.palette_win_expand_once = true;
-                } else if (goxel.gui.palette_win_collapsed) {
-                    goxel.gui.palette_win_expand_once = true;
-                } else {
-                    goxel.gui.palette_win_open = false;
-                }
-            }
-            continue;
-        }
-        selected = (goxel.gui.current_panel == i);
-        if (gui_tab(PANELS[i].name, PANELS[i].icon, &selected)) {
-            on_click();
-            goxel.gui.current_panel = selected ? i : 0;
-        }
-    }
-}
 
 static void gui_filter_window(void *arg, filter_t *filter)
 {
@@ -167,7 +165,6 @@ void gui_app(void)
     float x = 0, y = 0;
     const char *name;
     int i;
-    int flags;
     filter_layout_state_t filter_layout_state;
 
     goxel.show_export_viewport = false;
@@ -180,15 +177,19 @@ void gui_app(void)
             gui_menu();
 
             // Add the Help test in the top menu.
-            gui_menu_begin("      ", false);
-            gui_menu_begin(goxel.hint_text ?: "", false);
-            gui_menu_begin("      ", false);
-            gui_menu_begin(goxel.help_text ?: "", false);
+            gui_menu_bar_text(goxel.hint_text);
+            gui_menu_bar_text(goxel.help_text);
             goxel_set_help_text(NULL);
             goxel_set_hint_text(NULL);
+            gui_menu_bar_panel_toggles();
             gui_menu_bar_end();
         }
         y = ITEM_HEIGHT + 2;
+    }
+
+    if (!goxel.gui.ui_visible) {
+        goxel.pathtrace = false;
+        return;
     }
 
     gui_window_begin("Top Bar", x, y, 0, TOP_BAR_HEIGHT, 0);
@@ -198,6 +199,12 @@ void gui_app(void)
     if (goxel.tool->has_snap) {
         gui_window_begin("Snap Bar", 280, y, 0, 32.0f, 0);
         gui_snap_bar();
+        gui_window_end();
+    }
+    if (goxel.tool->has_shape) {
+        /* Docked directly under the snap bar. */
+        gui_window_begin("Shape Bar", 280, y + 32.0f, 0, 32.0f, 0);
+        gui_shape_bar();
         gui_window_end();
     }
     if (tool_uses_map_recent_colors(goxel.tool) && goxel.image) {
@@ -210,53 +217,47 @@ void gui_app(void)
     }
 
     y += ICON_HEIGHT + 28;
-    gui_window_begin("Left Bar", x, y, 0, 0, 0);
-    render_left_panel();
-    gui_window_end();
-
-    if (goxel.gui.current_panel && PANELS[goxel.gui.current_panel].fn) {
-        x += ICON_HEIGHT + 28;
-        name = PANELS[goxel.gui.current_panel].name;
-        flags = gui_window_begin(
-            name, x, y, goxel.gui.panel_width, 0, GUI_WINDOW_MOVABLE);
-        if (gui_panel_header(name))
-            goxel.gui.current_panel = 0;
-        else
-            PANELS[goxel.gui.current_panel].fn();
-        gui_window_end();
-
-        if (flags & GUI_WINDOW_MOVED) {
-            PANELS[goxel.gui.current_panel].detached = true;
-            goxel.gui.current_panel = 0;
-        }
-    }
 
     for (i = 0; i < ARRAY_SIZE(PANELS); i++) {
         if (!PANELS[i].detached || !PANELS[i].fn) continue;
         name = PANELS[i].name;
-        gui_window_begin(name, 0, 0, goxel.gui.panel_width, 0, GUI_WINDOW_MOVABLE);
+        /* Toolbox stays top-left; other panels open centred. */
+        if (i == PANEL_TOOLS) {
+            gui_window_begin(
+                    name, 0, y, goxel.gui.panel_width, 0, GUI_WINDOW_MOVABLE);
+        } else {
+            gui_window_begin(name, 0, 0, goxel.gui.panel_width, 0,
+                             GUI_WINDOW_MOVABLE | GUI_WINDOW_CENTER);
+        }
         if (gui_panel_header(name)) {
             PANELS[i].detached = false;
+        } else {
+            PANELS[i].fn();
         }
-        PANELS[i].fn();
         gui_window_end();
     }
     
-    gui_window_begin("Right Bar", (goxel.screen_size[0] - goxel.gui.panel_width - 5), ICON_HEIGHT, goxel.gui.panel_width, (goxel.screen_size[1] - ICON_HEIGHT), 0);
-    gui_panel_header("Layers");
-    gui_layers_panel_with_scroll();
-    gui_window_end();
+    if (goxel.gui.layers_panel_open) {
+        gui_window_begin("Right Bar",
+                (goxel.screen_size[0] - goxel.gui.panel_width - 5),
+                ICON_HEIGHT, goxel.gui.panel_width,
+                (goxel.screen_size[1] - ICON_HEIGHT), 0);
+        if (gui_panel_header("Layers"))
+            goxel.gui.layers_panel_open = false;
+        else
+            gui_layers_panel_with_scroll();
+        gui_window_end();
+    }
 
-    filter_layout_state.next_x = x + goxel.gui.panel_width +
-                                    INITIAL_FILTER_OFFSET;
-    filter_layout_state.next_y = y;
+    /* Cascade open filters from screen centre so they don't fully overlap. */
+    filter_layout_state.next_x =
+            (int)(goxel.screen_size[0] * 0.5f - goxel.gui.panel_width * 0.5f);
+    filter_layout_state.next_y = (int)(goxel.screen_size[1] * 0.35f);
     filters_iter_all(&filter_layout_state, gui_filter_window);
 
     placer_gui_history_floating();
 
     gui_palette_floating();
 
-    goxel.pathtrace = goxel.pathtracer.status &&
-        (goxel.gui.current_panel == PANEL_RENDER ||
-         PANELS[PANEL_RENDER].detached);
+    goxel.pathtrace = goxel.pathtracer.status && PANELS[PANEL_RENDER].detached;
 }

@@ -91,6 +91,7 @@ static void on_open(filter_t *filter_)
 }
 
 FILTER_REGISTER(squash, filter_squash_t,
-                .name = "Transform - Squash",
+                .name = "Squash",
+                .menu = "image",
                 .on_open = on_open,
                 .gui_fn = gui, )

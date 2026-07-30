@@ -20,12 +20,20 @@
 
 int gui_about_popup(void *data)
 {
-    gui_text("Goxel " GOXEL_VERSION_STR);
-    gui_text("Copyright © 2015-2022 Guillaume Chereau");
+    gui_text("Goxel " GOXEL_VERSION_STR " (fork)");
+    gui_text("Maintained by Mark 'Grandy' Bishop");
+    gui_text("https://github.com/GrandyB/goxel");
+    gui_text("");
+    gui_text_wrapped(
+        "This fork extends upstream Goxel for voxel map making for games — "
+        "large layered maps, doodad placement, terrain generation, "
+        "game-oriented cameras, and export paths useful for titles such as "
+        "Ace of Spades and similar voxel engines.");
+    gui_text("");
+    gui_text("Original author: Guillaume Chereau");
     gui_text("<guillaume@noctua-software.com>");
-    gui_text("All right reserved");
+    gui_text("Upstream: https://goxel.xyz");
     if (!DEFINED(GOXEL_MOBILE)) gui_text("GPL 3 License");
-    gui_text("http://guillaumechereau.github.io/goxel");
 
     if (gui_collapsing_header("Credits", true)) {
         gui_text("Libraries:");

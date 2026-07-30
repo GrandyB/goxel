@@ -32,9 +32,18 @@ struct filter {
     bool override_mouse;
     void (*mouse_fn)(filter_t *filter, const float viewport[4]);
     const char *name;
+    /* Top-level menu: "edit", "view", "image", "adjustments", or "effects".
+     * Filters in "image" are also listed in the Layers menu, where they open
+     * with current_only set. */
+    const char *menu;
+    /* Effects submenu: generate, plan, lighting, palette, or utilities. */
+    const char *submenu;
     const char *action_id;
     const char *default_shortcut;
     const float panel_width;
+    /* Restrict the filter to the active layer. Set when the filter is opened
+     * from a menu: false from Image, true from Layers. */
+    bool current_only;
     bool is_open;
 };
 
@@ -55,6 +64,13 @@ void filter_register_(filter_t *filter);
  * Iter all the registered filters
  */
 void filters_iter_all(
+        void *arg, void (*f)(void *arg, filter_t *filter));
+
+/**
+ * Iter filters assigned to a menu (and optional submenu), sorted by name.
+ * If submenu is NULL, only filters with a NULL submenu are included.
+ */
+void filters_iter_menu(const char *menu, const char *submenu,
         void *arg, void (*f)(void *arg, filter_t *filter));
 
 /* If any open filter has override_mouse, call its mouse_fn (if set) and
