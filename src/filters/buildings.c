@@ -22,6 +22,8 @@
 #include <float.h>
 #include <limits.h>
 #include <math.h>
+#include <stdlib.h>
+#include <time.h>
 
 /*
  * Plan - Buildings
@@ -57,6 +59,7 @@ typedef struct {
     int window_height;
     int window_min_gap;
     int window_above_floor; /* clear height from slab top to window sill */
+    int seed; /* mixes into per-building wall / roof colour picks */
     uint8_t floor_colors[BUILDING_MAX_FLOOR_COLORS][4];
     int floor_color_count;
     uint8_t wall_colors[BUILDING_MAX_WALL_COLORS][4];
@@ -120,6 +123,7 @@ static void reset_defaults(filter_buildings_t *filter)
     filter->window_height = 2;
     filter->window_min_gap = 3;
     filter->window_above_floor = 2;
+    filter->seed = 0;
     filter->floor_color_count = BUILDING_DEFAULT_FLOOR_COLORS;
     for (i = 0; i < filter->floor_color_count; i++)
         memcpy(filter->floor_colors[i], k_default_floor_colors[i], 4);
@@ -1491,11 +1495,12 @@ static bool collect_groups(const volume_t *src, const filter_buildings_t *filter
     return true;
 }
 
-static unsigned building_hash(const building_group_t *g)
+static unsigned building_hash(const building_group_t *g, int seed)
 {
     unsigned h = 2166136261u;
     const int values[] = {
         g->xmin, g->ymin, g->xmax, g->ymax, g->base_z, g->floors, g->ncells,
+        seed,
     };
     int i;
 
@@ -1579,6 +1584,10 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
         clampi(filter->floor_color_count, 1, BUILDING_MAX_FLOOR_COLORS);
     filter->wall_color_count =
         clampi(filter->wall_color_count, 1, BUILDING_MAX_WALL_COLORS);
+    /* Both counts are modulo divisors below, so zero would trap. */
+    filter->roof_pair_count =
+        clampi(filter->roof_pair_count, 1, BUILDING_MAX_ROOF_PAIRS);
+    filter->seed = clampi(filter->seed, 0, RAND_MAX);
     filter->floor_height = floor_h;
     filter->floor_thickness = floor_t;
     filter->wall_thickness = wall_t;
@@ -1634,7 +1643,7 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     }
 
     for (i = 0; i < ngroups; i++) {
-        unsigned hash = building_hash(&groups[i]);
+        unsigned hash = building_hash(&groups[i], filter->seed);
         int roof_pair = (int)(hash %
                               (unsigned)filter->roof_pair_count);
         int wall_color = (int)((hash ^ (hash >> 16)) %
@@ -1829,6 +1838,15 @@ static int gui(filter_t *filter_)
     gui_separator();
     if (gui_button("Reset to defaults", -1, 0))
         reset_defaults(filter);
+
+    gui_input_int("Seed", &filter->seed, 0, RAND_MAX);
+    gui_tooltip_if_hovered(
+        "Changes which wall and roof colours each building gets. "
+        "Same seed + plan reproduces the same picks.");
+    if (gui_button("Randomize seed", -1, 0)) {
+        srand((unsigned)time(NULL));
+        filter->seed = rand();
+    }
 
     if (gui_button("Generate", -1, 0))
         apply_buildings(filter, layer);
