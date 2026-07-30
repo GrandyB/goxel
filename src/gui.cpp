@@ -598,8 +598,9 @@ static void apply_camera_gizmo_preset(camera_t *camera, camera_mode_t mode,
         if (!box_is_null(goxel.image->box)) {
             int dims[3];
             box_get_dimensions(goxel.image->box, dims);
+            const float origin[3] = {0, 0, 0};
             map_xy = (float)max(dims[0], dims[1]);
-            mat4_mul_vec3(goxel.image->box, VEC(0, 0, 0), image_center);
+            mat4_mul_vec3(goxel.image->box, origin, image_center);
             if (map_xy <= 0.f)
                 map_xy = 512.0f;
         }
