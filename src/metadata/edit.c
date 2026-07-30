@@ -66,6 +66,12 @@ void custom_objects_set_editor_active(bool active)
     }
 }
 
+bool custom_objects_should_render(const image_t *img)
+{
+    return img &&
+           (g_editor_active || img->custom_objects_show_when_closed);
+}
+
 void custom_objects_set_list_selected(custom_object_t *obj)
 {
     g_list_selected = obj;
@@ -192,7 +198,7 @@ void custom_objects_edit_iter(const float viewport[4])
     camera_t *cam;
     float opos[3], onorm[3], wpos[3];
 
-    if (!g_editor_active || !img || !img->custom_objects_show) {
+    if (!g_editor_active || !img) {
         g_edit.state = 0;
         g_edit.obj = NULL;
         return;

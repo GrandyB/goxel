@@ -30,7 +30,6 @@ typedef struct {
 
 static template_popup_t g_template_popup;
 static bool g_open_template_popup = false;
-static bool g_show_labels = true;
 
 static void on_open(filter_t *filter_)
 {
@@ -140,16 +139,12 @@ static int gui(filter_t *filter_)
                              NULL, template_popup_gui);
     }
 
-    gui_checkbox("Show/hide all", &img->custom_objects_show,
-                 "Enable/disable the showing of any of the map metadata items "
-                 "in the viewport");
-    gui_checkbox("Show labels", &g_show_labels,
-                 "Draw name labels for visible spatial metadata items in the "
-                 "viewport");
+    gui_checkbox("Show when window is closed",
+                 &img->custom_objects_show_when_closed,
+                 "Keep spatial metadata items and their labels visible after "
+                 "closing this window");
 
     metadata_gui_panel(img);
-    if (g_show_labels)
-        custom_objects_render_labels(img);
     return 0;
 }
 

@@ -22,6 +22,7 @@
 
 extern "C" {
 #include "goxel.h"
+#include "metadata.h"
 #include "utils/color.h"
 
 void gui_app(void);
@@ -818,6 +819,7 @@ static void gui_iter(const inputs_t *inputs)
     ImGuizmo::BeginFrame();
 
     gui_app();
+    custom_objects_render_labels(goxel.image);
     render_view_cube();
     render_popups(0);
 

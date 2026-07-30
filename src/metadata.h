@@ -79,8 +79,9 @@ void custom_object_set_type(image_t *img, custom_object_t *obj,
 void custom_object_get_box(const image_t *img, const custom_object_t *obj,
                            float box[4][4]);
 
+bool custom_objects_should_render(const image_t *img);
 void custom_objects_render(renderer_t *rend, const image_t *img);
-/* Name labels over the 3d view; call from the gui frame (metadata filter). */
+/* Name labels over the 3d view; call once from the global gui frame. */
 void custom_objects_render_labels(const image_t *img);
 
 /* Hover/drag gizmos; call from filter mouse_fn when filter is open. */

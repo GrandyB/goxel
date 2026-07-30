@@ -75,7 +75,7 @@ struct image {
     image_recent_color_t recent_colors[GOXEL_RECENT_COLOR_HISTORY_MAX];
 
     custom_object_t *custom_objects;
-    bool custom_objects_show;
+    bool custom_objects_show_when_closed;
 
     image_t *history;
     image_t *history_next, *history_prev;

@@ -191,7 +191,7 @@ image_t *image_new(void)
     img->ref = 1;
     img->recent_color_count = 0;
     img->custom_objects = NULL;
-    img->custom_objects_show = true;
+    img->custom_objects_show_when_closed = false;
     const int aabb[2][3] = {{-16, -16, 0}, {16, 16, 32}};
     bbox_from_aabb(img->box, aabb);
     img->export_width = 1024;
@@ -1051,7 +1051,7 @@ uint32_t image_get_key(const image_t *img)
     }
     {
         custom_object_t *obj;
-        uint8_t show = img->custom_objects_show ? 1 : 0;
+        uint8_t show = img->custom_objects_show_when_closed ? 1 : 0;
         key = XXH32(&show, sizeof(show), key);
         DL_FOREACH(img->custom_objects, obj) {
             key = XXH32(obj->name, sizeof(obj->name), key);

@@ -276,7 +276,7 @@ uint8_t *custom_objects_serialize(const image_t *img, int *out_len)
     }
 
     buf[w++] = CUST_FORMAT_V5;
-    buf[w++] = img->custom_objects_show ? 1 : 0;
+    buf[w++] = img->custom_objects_show_when_closed ? 1 : 0;
     n = count;
     memcpy(buf + w, &n, 4);
     w += 4;
@@ -315,9 +315,9 @@ void custom_objects_deserialize(image_t *img, const uint8_t *data, int len)
         version == CUST_FORMAT_V4 || version == CUST_FORMAT_V5) {
         if (len < 6) return;
         pos = 1;
-        img->custom_objects_show = data[pos++] != 0;
+        img->custom_objects_show_when_closed = data[pos++] != 0;
     } else {
-        img->custom_objects_show = data[pos++] != 0;
+        img->custom_objects_show_when_closed = data[pos++] != 0;
     }
     memcpy(&n, data + pos, 4);
     pos += 4;

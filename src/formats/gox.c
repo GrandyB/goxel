@@ -662,7 +662,7 @@ static void image_clear_gox_content(image_t *img)
     memset(&img->box, 0, sizeof(img->box));
     img->recent_color_count = 0;
     custom_objects_free_list(&img->custom_objects);
-    img->custom_objects_show = true;
+    img->custom_objects_show_when_closed = false;
     placer_past_files_clear();
 }
 

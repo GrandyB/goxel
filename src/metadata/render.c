@@ -101,7 +101,7 @@ void custom_objects_render(renderer_t *rend, const image_t *img)
     custom_object_t *obj;
     uint8_t color[4];
 
-    if (!rend || !img || !img->custom_objects_show) return;
+    if (!rend || !custom_objects_should_render(img)) return;
     DL_FOREACH(img->custom_objects, obj) {
         if (!custom_object_effectively_visible(obj)) continue;
         if (!custom_object_is_spatial(obj->type)) continue;
@@ -140,7 +140,7 @@ void custom_objects_render_labels(const image_t *img)
     uint8_t color[4];
     float pos[3];
 
-    if (!img || !img->custom_objects_show) return;
+    if (!custom_objects_should_render(img)) return;
     DL_FOREACH(img->custom_objects, obj) {
         if (!custom_object_effectively_visible(obj)) continue;
         if (!custom_object_is_spatial(obj->type)) continue;
