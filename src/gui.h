@@ -155,6 +155,15 @@ enum {
 bool gui_section_begin(const char *label, int flags);
 void gui_section_end(void);
 
+/*
+ * Tabsheet: horizontal tab strip bound to an int/enum index.
+ * Begin draws the tabs and updates *current; End closes the page group.
+ * Returns false if the strip could not be created (skip End in that case).
+ */
+bool gui_tabsheet_begin(const char *id, const char **labels, int count,
+                        int *current);
+void gui_tabsheet_end(void);
+
 // Auto layout the inner items in a row.
 void gui_row_begin(int nb);
 void gui_row_end(void);

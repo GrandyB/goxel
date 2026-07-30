@@ -998,6 +998,73 @@ void gui_section_end(void)
     ImGui::PopStyleVar();
 }
 
+bool gui_tabsheet_begin(const char *id, const char **labels, int count,
+                        int *current)
+{
+    int i;
+    ImGuiStorage *storage;
+    ImGuiID sel_key;
+    int prev;
+    bool force_select;
+
+    if (!id || !labels || !current || count < 1)
+        return false;
+    if (*current < 0 || *current >= count)
+        *current = 0;
+
+    ImGui::PushStyleColor(ImGuiCol_Tab, COLOR(TAB, BACKGROUND, false));
+    ImGui::PushStyleColor(ImGuiCol_TabHovered,
+                          color_lighten(COLOR(TAB, SELECTED, false)));
+    ImGui::PushStyleColor(ImGuiCol_TabSelected, COLOR(TAB, SELECTED, false));
+    ImGui::PushStyleColor(ImGuiCol_TabSelectedOverline, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_TabDimmed, COLOR(TAB, BACKGROUND, false));
+    ImGui::PushStyleColor(ImGuiCol_TabDimmedSelected,
+                          COLOR(TAB, SELECTED, false));
+    ImGui::PushStyleColor(ImGuiCol_TabDimmedSelectedOverline,
+                          ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_Text, COLOR(TAB, TEXT, false));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 3));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, ImVec2(4, 2));
+
+    ImGui::PushID(id);
+    if (!ImGui::BeginTabBar("##tabs", ImGuiTabBarFlags_None)) {
+        ImGui::PopID();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(8);
+        return false;
+    }
+
+    /* Force ImGui's selection only when the bound value changed externally. */
+    storage = ImGui::GetStateStorage();
+    sel_key = ImGui::GetID("tabsheet_sel");
+    prev = storage->GetInt(sel_key, *current);
+    force_select = (prev != *current);
+
+    for (i = 0; i < count; i++) {
+        ImGuiTabItemFlags flags = 0;
+        if (force_select && *current == i)
+            flags |= ImGuiTabItemFlags_SetSelected;
+        if (ImGui::BeginTabItem(labels[i] ? labels[i] : "", NULL, flags)) {
+            *current = i;
+            ImGui::EndTabItem();
+        }
+    }
+    storage->SetInt(sel_key, *current);
+
+    ImGui::EndTabBar();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(8);
+
+    ImGui::BeginGroup();
+    return true;
+}
+
+void gui_tabsheet_end(void)
+{
+    ImGui::EndGroup();
+    ImGui::PopID();
+}
+
 void gui_row_begin(int nb)
 {
     float spacing;
