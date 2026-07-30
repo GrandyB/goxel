@@ -11,6 +11,7 @@
 #include "goxel.h"
 #include "metadata.h"
 
+#include <math.h>
 #include <string.h>
 
 static void render_2d_point(renderer_t *rend, const image_t *img,
@@ -112,5 +113,40 @@ void custom_objects_render(renderer_t *rend, const image_t *img)
         case CUSTOM_OBJ_ZONE_3D:  render_3d_zone(rend, img, obj, color); break;
         default: break;
         }
+    }
+}
+
+static void label_anchor(const image_t *img, const custom_object_t *obj,
+                         float out[3])
+{
+    float box[4][4];
+    int z0, z1;
+
+    custom_object_get_box(img, obj, box);
+    out[0] = box[3][0];
+    out[1] = box[3][1];
+    if (obj->type == CUSTOM_OBJ_POINT_2D || obj->type == CUSTOM_OBJ_ZONE_2D) {
+        /* Those span the whole image height; label the top of the range. */
+        image_z_range(img, &z0, &z1);
+        out[2] = (float)(z1 + 1);
+    } else {
+        out[2] = box[3][2] + fabsf(box[2][2]) + 0.5f;
+    }
+}
+
+void custom_objects_render_labels(const image_t *img)
+{
+    custom_object_t *obj;
+    uint8_t color[4];
+    float pos[3];
+
+    if (!img || !img->custom_objects_show) return;
+    DL_FOREACH(img->custom_objects, obj) {
+        if (!custom_object_effectively_visible(obj)) continue;
+        if (!custom_object_is_spatial(obj->type)) continue;
+        if (!obj->name[0]) continue;
+        custom_object_effective_color(obj, color);
+        label_anchor(img, obj, pos);
+        gui_world_label(pos, obj->name, color);
     }
 }

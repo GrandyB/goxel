@@ -839,6 +839,48 @@ void gui_render(const inputs_t *inputs)
     ImImpl_RenderDrawLists(ImGui::GetDrawData());
 }
 
+void gui_world_label(const float pos[3], const char *text,
+                     const uint8_t color[4])
+{
+    const float *viewport = goxel.gui.viewport;
+    const camera_t *camera = goxel.image ? goxel.image->active_camera : NULL;
+    const float pad_x = 6, pad_y = 3, gap = 10, rounding = 4;
+    float p[4] = {pos[0], pos[1], pos[2], 1};
+    float x, y;
+    ImDrawList *dl;
+    ImVec2 size, a, b;
+    ImU32 border;
+
+    if (!camera || !text || !text[0]) return;
+
+    mat4_mul_vec4(camera->view_mat, p, p);
+    mat4_mul_vec4(camera->proj_mat, p, p);
+    if (p[3] <= 0) return;
+    p[0] /= p[3];
+    p[1] /= p[3];
+    p[2] /= p[3];
+    if (p[0] < -1 || p[0] > 1 || p[1] < -1 || p[1] > 1 ||
+        p[2] < -1 || p[2] > 1)
+        return;
+
+    /* The gl viewport has its origin at the bottom left, imgui at the top. */
+    x = viewport[0] + (p[0] * 0.5f + 0.5f) * viewport[2];
+    y = ImGui::GetIO().DisplaySize.y -
+        (viewport[1] + (p[1] * 0.5f + 0.5f) * viewport[3]);
+
+    /* Background draw list: over the 3d view, under the panels. */
+    dl = ImGui::GetBackgroundDrawList();
+    size = ImGui::CalcTextSize(text);
+    b = ImVec2(roundf(x + size.x / 2 + pad_x), roundf(y - gap));
+    a = ImVec2(roundf(x - size.x / 2 - pad_x), roundf(b.y - size.y - pad_y * 2));
+    border = color ? IM_COL32(color[0], color[1], color[2], 200)
+                   : IM_COL32(255, 255, 255, 90);
+    dl->AddRectFilled(a, b, IM_COL32(0, 0, 0, 140), rounding);
+    dl->AddRect(a, b, border, rounding);
+    dl->AddText(ImVec2(a.x + pad_x, a.y + pad_y),
+                IM_COL32(255, 255, 255, 255), text);
+}
+
 void gui_group_begin(const char *label)
 {
     if (label && label[0] != '#') ImGui::Text("%s", label);

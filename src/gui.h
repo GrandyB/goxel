@@ -211,6 +211,12 @@ void gui_spacing_f(float w);
 float gui_frame_height(void);
 void gui_same_line(void);
 
+/* Label anchored on a world position, drawn over the 3d view but under the
+ * ui windows. color tints the border; pass NULL for a neutral one. Must be
+ * called during the gui frame. */
+void gui_world_label(const float pos[3], const char *text,
+                     const uint8_t color[4]);
+
 void gui_alert(const char *title, const char *msg);
 
 void gui_columns(int count);
