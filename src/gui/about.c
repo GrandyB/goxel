@@ -25,7 +25,7 @@ int gui_about_popup(void *data)
     gui_text("https://github.com/GrandyB/goxel");
     gui_text("");
     gui_text_wrapped(
-        "This fork extends upstream Goxel for voxel map making for games — "
+        "This fork extends upstream Goxel for voxel map making for games - "
         "large layered maps, doodad placement, terrain generation, "
         "game-oriented cameras, and export paths useful for titles such as "
         "Ace of Spades and similar voxel engines.");

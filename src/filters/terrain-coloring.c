@@ -697,6 +697,12 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
             pos[1] = y + start_pos[1];
             for (int z = 0; z <= ztop; z++) {
                 uint8_t cr, cg, cb;
+                uint8_t cur[4];
+                pos[2] = z + start_pos[2];
+                /* Recolor only: leave gaps (caves, tunnels) empty. */
+                volume_get_at(volume, &it, pos, cur);
+                if (!cur[3])
+                    continue;
                 if (water_column && z < w_layers) {
                     cr = (uint8_t)clamp(
                         ((int)wbuf_r[idx] * colorIndex >> 8) + (int)wamb_r[idx], 0,
@@ -718,9 +724,8 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
                         ((int)buf_b[idx] * colorIndex >> 8) + (int)amb_b[idx], 0,
                         255);
                 }
-                uint8_t color[4] = {cr, cg, cb, 255};
-                pos[2] = z + start_pos[2];
-                volume_set_at(volume, NULL, pos, color);
+                uint8_t color[4] = {cr, cg, cb, cur[3]};
+                volume_set_at(volume, &it, pos, color);
             }
         }
     }
