@@ -253,16 +253,14 @@ void gui_menu(void)
         gui_menu_end();
     }
     if (gui_menu_begin("Layer", true)) {
+        filters_iter_menu("adjustments", NULL, NULL, on_layer_filter);
+        gui_separator();
         filters_iter_menu("image", NULL, NULL, on_layer_filter);
         gui_separator();
         if (gui_menu_item(0, "Rotate 90deg clockwise", true))
             goxel_rotate_90(+1, true);
         if (gui_menu_item(0, "Rotate 90deg anti-clockwise", true))
             goxel_rotate_90(-1, true);
-        gui_menu_end();
-    }
-    if (gui_menu_begin("Adjustments", true)) {
-        filters_iter_menu("adjustments", NULL, NULL, on_filter);
         gui_menu_end();
     }
     if (gui_menu_begin("Effects", true)) {

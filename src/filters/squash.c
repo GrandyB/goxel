@@ -27,20 +27,68 @@ typedef struct
     int percentage;
 } filter_squash_t;
 
-static int gui(filter_t *filter_)
+static void squash_layer(filter_squash_t *filter, layer_t *layer)
 {
-    filter_squash_t *filter = (void *)filter_;
-    layer_t *layer = goxel.image->active_layer;
+    volume_iterator_t iter;
     float box[4][4];
     int x, y, z, pos[3], new_pos[3], dimensions[3], start_pos[3];
     uint8_t cur_block_color[4];
+    volume_t *copy;
 
-    const char *help_text = "This filter condenses the current layer vertically by a percentage.";
+    if (!layer_is_volume(layer))
+        return;
+
+    volume_get_box(layer->volume, true, box);
+    if (box_is_null(box))
+        return;
+
+    box_get_dimensions(box, dimensions);
+    box_get_start_pos(box, start_pos);
+    iter = volume_get_iterator(layer->volume,
+        VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+
+    copy = volume_new();
+    for (z = 0; z < dimensions[2]; z++) {
+        pos[2] = z + start_pos[2];
+        for (x = 0; x < dimensions[0]; x++) {
+            for (y = 0; y < dimensions[1]; y++) {
+                pos[0] = x + start_pos[0];
+                pos[1] = y + start_pos[1];
+
+                volume_get_at(layer->volume, &iter, pos, cur_block_color);
+                if (cur_block_color[3] != 0) {
+                    new_pos[0] = pos[0];
+                    new_pos[1] = pos[1];
+                    new_pos[2] = start_pos[2] +
+                        (int)(z * (filter->percentage / 100.0f));
+                    if (z > 0)
+                        new_pos[2] = max(new_pos[2], start_pos[2] + 1);
+                    volume_set_at(copy, NULL, new_pos, cur_block_color);
+                }
+            }
+        }
+    }
+    volume_set(layer->volume, copy);
+}
+
+static int gui(filter_t *filter_)
+{
+    filter_squash_t *filter = (void *)filter_;
+    layer_t *layer;
+
+    const char *help_text =
+        "This filter condenses voxel layers vertically by a percentage.";
     goxel_set_help_text(help_text);
 
     if(gui_collapsing_header("Hint", false)) {
         gui_text_wrapped(help_text);
     }
+
+    gui_checkbox(
+        "Current layer only",
+        &filter->filter.current_only,
+        "If checked, only voxels on the current layer will be squashed.\n"
+        "If unchecked, voxels on all layers will be squashed.");
 
     gui_group_begin(NULL);
     gui_input_int("Percentage", &filter->percentage, 0, 100);
@@ -48,38 +96,14 @@ static int gui(filter_t *filter_)
 
     if (gui_button("Apply", -1, 0))
     {
-        volume_iterator_t iter;
         image_history_push(goxel.image);
-        volume_get_box(layer->volume, true, box);
-
-        box_get_dimensions(box, dimensions);
-        box_get_start_pos(box, start_pos);
-
-        iter = volume_get_iterator(layer->volume,
-            VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
-        
-        volume_t *copy = volume_new();
-        for (z = 0; z < dimensions[2]; z++) {
-            pos[2] = z + start_pos[2];
-            for (x = 0; x < dimensions[0]; x++) {
-                for (y = 0; y < dimensions[1]; y++) {
-                    pos[0] = x + start_pos[0];
-                    pos[1] = y + start_pos[1];
-    
-                    volume_get_at(layer->volume, &iter, pos, cur_block_color);
-                    if (cur_block_color[3] != 0) {
-                        new_pos[0] = pos[0];
-                        new_pos[1] = pos[1];
-                        new_pos[2] = start_pos[2] +
-                            (int)(z * (filter->percentage / 100.0f));
-                        if (z > 0)
-                            new_pos[2] = max(new_pos[2], start_pos[2] + 1);
-                        volume_set_at(copy, NULL, new_pos, cur_block_color);
-                    }
-                }
+        if (filter->filter.current_only) {
+            squash_layer(filter, goxel.image->active_layer);
+        } else {
+            DL_FOREACH(goxel.image->layers, layer) {
+                squash_layer(filter, layer);
             }
         }
-        volume_set(layer->volume, copy);
     }
     return 0;
 }

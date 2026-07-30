@@ -144,18 +144,16 @@ static int gui(filter_t *filter)
     if (box_is_null(box))
         memcpy(box, goxel.image->box, sizeof(box));
 
-    gui_input_int("Distance", &wrap->distance, 0, 9999);
-
-    gui_group_begin(NULL);
-
-    should_wrap = wrap_box(&axis, &sign);
-
     gui_checkbox(
         "Current layer only",
         &wrap->filter.current_only,
         "If checked, only voxels on the current layer will be wrapped.\n"
         "If unchecked, voxels on all layers will be wrapped.");
 
+    gui_input_int("Distance", &wrap->distance, 0, 9999);
+
+    gui_group_begin(NULL);
+    should_wrap = wrap_box(&axis, &sign);
     gui_group_end();
 
     if (should_wrap)
