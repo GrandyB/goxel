@@ -6,12 +6,12 @@
  * terms of the GNU General Public License as published by the Free Software
  * Foundation, either version 3 of the License, or (at your option) any later
  * version.
-
+ *
  * Goxel is distributed in the hope that it will be useful, but WITHOUT ANY
  * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  * details.
-
+ *
  * You should have received a copy of the GNU General Public License along with
  * goxel.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -21,15 +21,18 @@
 #include <limits.h>
 
 /*
- * Permeate surface colours into nearby non-exposed solids through solid
- * voxels only (Manhattan / 6-connected). Only nearest surface(s) contribute
- * (averaged on distance ties); blur band lerps toward the original colour.
+ * Combined .vxl utility filter:
+ *   - Surface color permeation
+ *   - Fill upwards by color
+ *   - Remove by color
  */
 typedef struct {
     filter_t filter;
     int depth;
     int blur;
-} filter_surfacevxlpermeate_t;
+    uint8_t fill_color[4];
+    uint8_t remove_color[4];
+} filter_vxlutils_t;
 
 typedef struct {
     int idx;
@@ -179,7 +182,7 @@ static void on_visit_accumulate(int idx, int dist, void *user)
     ctx->sum_n[idx]++;
 }
 
-static void apply_surfacevxlpermeate(volume_t *volume, int depth, int blur)
+static void apply_color_permeation(volume_t *volume, int depth, int blur)
 {
     float box[4][4];
     int dimensions[3], start_pos[3];
@@ -347,34 +350,146 @@ cleanup:
     free(queue);
 }
 
+static void apply_fill_upwards(layer_t *layer, const uint8_t color[4])
+{
+    float box[4][4];
+    int x, y, z, pos[3], dimensions[3], start_pos[3];
+    uint8_t cur_block_color[4];
+    volume_iterator_t iter;
+    int found_block_index;
+
+    mat4_copy(goxel.image->box, box);
+    if (box_is_null(box))
+        volume_get_box(layer->volume, true, box);
+
+    box_get_dimensions(box, dimensions);
+    box_get_start_pos(box, start_pos);
+
+    iter = volume_get_iterator(layer->volume,
+        VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    for (x = 0; x < dimensions[0]; x++) {
+        for (y = 0; y < dimensions[1]; y++) {
+            found_block_index = -1;
+            for (z = 0; z < dimensions[2]; z++) {
+                pos[0] = x + start_pos[0];
+                pos[1] = y + start_pos[1];
+                pos[2] = z + start_pos[2];
+                volume_get_at(layer->volume, &iter, pos, cur_block_color);
+                if (cur_block_color[3] != 0) {
+                    found_block_index = z;
+                    break;
+                }
+            }
+            if (found_block_index != -1) {
+                for (z = 0; z < found_block_index; z++) {
+                    pos[0] = x + start_pos[0];
+                    pos[1] = y + start_pos[1];
+                    pos[2] = z + start_pos[2];
+                    volume_set_at(layer->volume, &iter, pos, color);
+                }
+            }
+        }
+    }
+}
+
+static void apply_remove_color(layer_t *layer, const uint8_t color[4])
+{
+    uint8_t empty_color[4] = {0, 0, 0, 0};
+    float box[4][4];
+    int x, y, z, pos[3], dimensions[3], start_pos[3];
+    uint8_t cur_block_color[4];
+    volume_iterator_t iter;
+
+    mat4_copy(goxel.image->box, box);
+    if (box_is_null(box))
+        volume_get_box(layer->volume, true, box);
+
+    box_get_dimensions(box, dimensions);
+    box_get_start_pos(box, start_pos);
+
+    iter = volume_get_iterator(layer->volume,
+        VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    for (x = 0; x < dimensions[0]; x++) {
+        for (y = 0; y < dimensions[1]; y++) {
+            for (z = 0; z < dimensions[2]; z++) {
+                pos[0] = x + start_pos[0];
+                pos[1] = y + start_pos[1];
+                pos[2] = z + start_pos[2];
+                volume_get_at(layer->volume, &iter, pos, cur_block_color);
+                if (memcmp(color, cur_block_color, 4) == 0)
+                    volume_set_at(layer->volume, &iter, pos, empty_color);
+            }
+        }
+    }
+}
+
 static int gui(filter_t *filter_)
 {
-    filter_surfacevxlpermeate_t *filter = (void *)filter_;
-    const char *help_text =
-        "Permeate surface colours X blocks into non-exposed blocks around them";
+    filter_vxlutils_t *filter = (void *)filter_;
+    const char *panel_help =
+        "Collection of .vxl editing utilities for permeation and color cleanup.";
+    const char *permeate_help =
+        "Permeate surface colours X blocks into non-exposed blocks around them.";
+    const char *fill_help =
+        "Fill each column from bottom upward until the first solid voxel.";
+    const char *remove_help =
+        "Remove all voxels of the selected color from the current layer.";
 
-    goxel_set_help_text(help_text);
-    gui_text_wrapped(help_text);
+    goxel_set_help_text(panel_help);
 
-    gui_input_int("Depth", &filter->depth, 0, 9999);
-    gui_input_int("Blur", &filter->blur, 0, 9999);
-
-    if (gui_button("Apply", -1, 0)) {
-        image_history_push(goxel.image);
-        apply_surfacevxlpermeate(goxel.image->active_layer->volume,
-                                 filter->depth, filter->blur);
+    if (gui_collapsing_header("Color permeation", false)) {
+        gui_text_wrapped(permeate_help);
+        gui_input_int("Depth", &filter->depth, 0, 9999);
+        gui_input_int("Blur", &filter->blur, 0, 9999);
+        if (gui_button("Apply permeation", -1, 0)) {
+            image_history_push(goxel.image);
+            apply_color_permeation(goxel.image->active_layer->volume,
+                                   filter->depth, filter->blur);
+        }
     }
+
+    if (gui_collapsing_header("Fill upwards", false)) {
+        gui_text_wrapped(fill_help);
+        gui_group_begin(NULL);
+        gui_color_small("Fill color", filter->fill_color);
+        gui_group_end();
+        if (gui_button("Copy current painter color##fill", -1, 0))
+            memcpy(filter->fill_color, goxel.painter.color,
+                   sizeof(goxel.painter.color));
+        if (gui_button("Apply fill upwards", -1, 0)) {
+            image_history_push(goxel.image);
+            apply_fill_upwards(goxel.image->active_layer, filter->fill_color);
+        }
+    }
+
+    if (gui_collapsing_header("Remove by color", false)) {
+        gui_text_wrapped(remove_help);
+        gui_group_begin(NULL);
+        gui_color_small("Remove color", filter->remove_color);
+        gui_group_end();
+        if (gui_button("Copy current painter color##remove", -1, 0))
+            memcpy(filter->remove_color, goxel.painter.color,
+                   sizeof(goxel.painter.color));
+        if (gui_button("Apply remove by color", -1, 0)) {
+            image_history_push(goxel.image);
+            apply_remove_color(goxel.image->active_layer, filter->remove_color);
+        }
+    }
+
     return 0;
 }
 
 static void on_open(filter_t *filter_)
 {
-    filter_surfacevxlpermeate_t *filter = (void *)filter_;
+    filter_vxlutils_t *filter = (void *)filter_;
+    uint8_t default_color[4] = {103, 64, 40, 255};
     filter->depth = 2;
     filter->blur = 0;
+    memcpy(filter->fill_color, default_color, sizeof(default_color));
+    memcpy(filter->remove_color, default_color, sizeof(default_color));
 }
 
-FILTER_REGISTER(surfacevxlpermeate, filter_surfacevxlpermeate_t,
-                .name = "Utility - .vxl color permeation",
+FILTER_REGISTER(vxlutils, filter_vxlutils_t,
+                .name = "Utility - .vxl utils",
                 .on_open = on_open,
                 .gui_fn = gui, )
