@@ -117,8 +117,13 @@ void img_write(const uint8_t *img, int w, int h, int bpp, enum image_format form
     png_structp png_ptr;
     png_infop info_ptr;
 
+    // libpng path only handles PNG; BMP (colormap/hmap) still uses stb.
+    if (format == bmp) {
+        stbi_write_bmp(path, w, h, bpp, img);
+        return;
+    }
     if (format != png) {
-        LOG_E("img_write only supports png");
+        LOG_E("img_write: unsupported format");
         return;
     }
 
