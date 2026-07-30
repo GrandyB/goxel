@@ -18,6 +18,10 @@
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
+#endif
 
 #define CONFIG_VERSION "2021-03-27"
 

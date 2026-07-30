@@ -58,12 +58,13 @@ bool gui_pan_scroll_behavior(int dir);
             w = f[3]; }     \
 
 
-// Prevent warnings with gcc.
-#ifndef __clang__
+// Prevent warnings in vendored imgui headers.
 #pragma GCC diagnostic push
-#if __GNUC__ >= 8
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
+#elif __GNUC__ >= 8
 #pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
 #endif
 
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -73,9 +74,7 @@ bool gui_pan_scroll_behavior(int dir);
 #include "../ext_src/imgui/imgui_internal.h"
 #include "../ext_src/imgui/ImGuizmo.h"
 
-#ifndef __clang__
 #pragma GCC diagnostic pop
-#endif
 
 // How much space we keep for the labels on the left
 // Use gui_label_size_get to acquire, gui_label_size_push(value) to temp change from the default, and remember to gui_label_size_pop() afterwards
@@ -157,9 +156,9 @@ enum {
 };
 
 static const char *ATTR_NAMES[] = {
-    [A_POS_LOC]         = "a_pos",
-    [A_TEX_POS_LOC]     = "a_tex_pos",
-    [A_COLOR_LOC]       = "a_color",
+    "a_pos",      /* A_POS_LOC */
+    "a_tex_pos",  /* A_TEX_POS_LOC */
+    "a_color",    /* A_COLOR_LOC */
     NULL
 };
 
@@ -598,9 +597,8 @@ static void apply_camera_gizmo_preset(camera_t *camera, camera_mode_t mode,
         if (!box_is_null(goxel.image->box)) {
             int dims[3];
             box_get_dimensions(goxel.image->box, dims);
-            const float origin[3] = {0, 0, 0};
             map_xy = (float)max(dims[0], dims[1]);
-            mat4_mul_vec3(goxel.image->box, origin, image_center);
+            mat4_mul_vec3(goxel.image->box, vec3_zero, image_center);
             if (map_xy <= 0.f)
                 map_xy = 512.0f;
         }

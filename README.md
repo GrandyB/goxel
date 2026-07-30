@@ -176,7 +176,7 @@ You need to install msys2 mingw, and the following packages:
 
     pacman -S mingw-w64-x86_64-gcc
     pacman -S mingw-w64-x86_64-glfw
-    pacman -S mingw-w64-x86_64-libtre-git
+    pacman -S mingw-w64-x86_64-libtre
     pacman -S mingw-w64-x86_64-glew
     pacman -S mingw-w64-x86_64-libpng
     pacman -S scons
