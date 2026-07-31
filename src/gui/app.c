@@ -41,6 +41,7 @@
 static const float ITEM_HEIGHT = 18;
 static const float ICON_HEIGHT = 32;
 static const float TOP_BAR_HEIGHT = ICON_HEIGHT + 10;
+static const float MENU_BAR_HEIGHT = ITEM_HEIGHT + 2;
 
 void gui_menu(void);
 void gui_tools_panel(void);
@@ -183,7 +184,7 @@ void gui_app(void)
             gui_menu_bar_panel_toggles();
             gui_menu_bar_end();
         }
-        y = ITEM_HEIGHT + 2;
+        y = MENU_BAR_HEIGHT;
     }
 
     if (!goxel.gui.ui_visible) {
@@ -240,9 +241,8 @@ void gui_app(void)
             layers_max_w = GUI_PANEL_WIDTH_NORMAL;
 
         gui_window_begin("Right Bar",
-                (goxel.screen_size[0] - layers_w),
-                ICON_HEIGHT, layers_w,
-                (goxel.screen_size[1] - ICON_HEIGHT), 0);
+                (goxel.screen_size[0] - layers_w), MENU_BAR_HEIGHT , // x, y
+                layers_w, (goxel.screen_size[1] - MENU_BAR_HEIGHT), 0); // w, y, flags
         if (gui_panel_header("Layers"))
             goxel.gui.layers_panel_open = false;
         else
