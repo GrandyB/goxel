@@ -86,8 +86,15 @@ const tool_t *tool_get(int id);
 int tool_iter(tool_t *tool, const painter_t *painter, const float viewport[4]);
 int tool_gui(tool_t *tool);
 
+/* Wireframe boxes for the Cursor tool; call from the 3D view render path so
+ * they stay visible while the mouse is over UI. */
+void tool_cursor_render(void);
 /* Alt name labels for the Cursor tool; call during the gui frame. */
 void tool_cursor_render_labels(void);
+/* Clear panel-hover solo at the start of each GUI frame. */
+void tool_cursor_on_gui_frame(void);
+/* Solo this layer's bounding box while the cursor is over its panel row. */
+void tool_cursor_set_panel_hover(layer_t *layer);
 
 /* Brush / shape / laser / fill / etc. — show "recent map colors" in snap bar. */
 bool tool_uses_map_recent_colors(const tool_t *tool);

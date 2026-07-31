@@ -1490,6 +1490,7 @@ void goxel_render_view(const float viewport[4], bool render_mode)
     render_box(rend, goxel.selection, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
 
     custom_objects_render(rend, goxel.image);
+    tool_cursor_render();
 
     if (goxel.tool->flags & TOOL_SHOW_MASK)
         render_volume(rend, goxel.mask, NULL, EFFECT_GRID_ONLY);

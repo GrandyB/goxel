@@ -869,6 +869,7 @@ static void gui_iter(const inputs_t *inputs)
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 
+    tool_cursor_on_gui_frame();
     gui_app();
     custom_objects_render_labels(goxel.image);
     tool_cursor_render_labels();
@@ -2910,6 +2911,21 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
 bool gui_is_key_down(int key)
 {
     return ImGui::IsKeyDown((ImGuiKey)key);
+}
+
+void gui_item_group_begin(void)
+{
+    ImGui::BeginGroup();
+}
+
+void gui_item_group_end(void)
+{
+    ImGui::EndGroup();
+}
+
+bool gui_is_item_hovered(void)
+{
+    return ImGui::IsItemHovered();
 }
 
 bool gui_menu_bar_begin(void)

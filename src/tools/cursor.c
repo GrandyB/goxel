@@ -35,6 +35,8 @@ typedef struct {
 } cursor_edit_t;
 
 static cursor_edit_t g_edit = {};
+/* Set during the GUI frame when the mouse is over a layers-panel row. */
+static layer_t *g_panel_hover = NULL;
 
 static bool layer_gets_gizmo(const image_t *img, const layer_t *layer)
 {
@@ -70,7 +72,11 @@ static bool layer_gizmo_box(const layer_t *layer, float box[4][4])
     volume_get_box(vol, true, box);
     if (layer->shape)
         normalize_box(layer->mat, box);
-    return !box_is_null(box);
+    if (box_is_null(box)) return false;
+    /* Groups: pad so the parent wireframe sits outside child boxes. */
+    if (layer_has_children(goxel.image, layer))
+        bbox_grow(box, 0.5f, 0.5f, 0.5f, box);
+    return true;
 }
 
 static float box_volume_approx(const float box[4][4])
@@ -112,6 +118,14 @@ static void draw_gizmo_boxes(const image_t *img)
 {
     layer_t *layer;
     float box[4][4];
+
+    /* Panel hover solos a single layer/group box. */
+    if (g_panel_hover) {
+        if (layer_effectively_visible(img, g_panel_hover) &&
+            layer_gizmo_box(g_panel_hover, box))
+            render_box(&goxel.rend, box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
+        return;
+    }
 
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;
@@ -193,16 +207,14 @@ static int iter(tool_t *tool, const painter_t *painter,
             g_edit.state = 0;
             g_edit.layer = NULL;
         }
-        draw_gizmo_boxes(img);
         return 0;
     }
 
-    /* Draw wireframes and hit-test (prefer smallest volume). */
+    /* Hit-test only (boxes are drawn from tool_cursor_render). */
     DL_FOREACH_REVERSE(img->layers, layer) {
         float vol;
         if (!layer_gets_gizmo(img, layer)) continue;
         if (!layer_gizmo_box(layer, box)) continue;
-        render_box(&goxel.rend, box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
         if (!box_unproject(cam, viewport, curs->xy, box, false, hit, n, &face))
             continue;
         vol = box_volume_approx(box);
@@ -256,6 +268,25 @@ static int gui(tool_t *tool)
     return 0;
 }
 
+void tool_cursor_on_gui_frame(void)
+{
+    g_panel_hover = NULL;
+}
+
+void tool_cursor_set_panel_hover(layer_t *layer)
+{
+    g_panel_hover = layer;
+}
+
+void tool_cursor_render(void)
+{
+    image_t *img = goxel.image;
+
+    if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) return;
+    if (!img) return;
+    draw_gizmo_boxes(img);
+}
+
 void tool_cursor_render_labels(void)
 {
     image_t *img = goxel.image;
@@ -266,6 +297,14 @@ void tool_cursor_render_labels(void)
     if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) return;
     if (!(goxel.cursor.flags & CURSOR_LEFT_ALT)) return;
     if (!img) return;
+
+    if (g_panel_hover) {
+        if (g_panel_hover->name[0] && layer_gizmo_box(g_panel_hover, box)) {
+            box_center(box, pos);
+            gui_world_label(pos, g_panel_hover->name, color);
+        }
+        return;
+    }
 
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;

@@ -282,6 +282,10 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);
 
 bool gui_is_key_down(int key);
+/* Lightweight ImGui group for hover hit-testing a row of widgets. */
+void gui_item_group_begin(void);
+void gui_item_group_end(void);
+bool gui_is_item_hovered(void);
 
 void gui_query_quit(void);
 

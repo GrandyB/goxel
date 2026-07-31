@@ -208,6 +208,7 @@ static void render_layers_list(void)
         render_layer_dnd_gaps(img, prev, prev_depth, layer, depth,
                               &pending_drag, &pending_target, &pending_kind);
 
+        gui_item_group_begin();
         if (depth > 0) {
             gui_spacing_f((float)depth * 12.f);
             gui_same_line();
@@ -266,6 +267,10 @@ static void render_layers_list(void)
                 layer->collapsed = false;
             }
         }
+        gui_item_group_end();
+        if (goxel.tool && goxel.tool->id == TOOL_CURSOR &&
+            gui_is_item_hovered())
+            tool_cursor_set_panel_hover(layer);
 
         gui_pop_id();
         prev = layer;
