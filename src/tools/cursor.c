@@ -47,12 +47,13 @@ static bool layer_gets_gizmo(const image_t *img, const layer_t *layer)
 
     if (!img || !layer || !layer_effectively_visible(img, layer))
         return false;
-    /* Non-locked layers always get a cursor gizmo. */
-    if (!layer->locked)
-        return true;
-    /* Locked: only when the direct parent is selected. */
+
     active = img->active_layer;
-    return active && layer->parent_id == active->id;
+    if (active)
+        return active == layer;
+
+    /* Nothing selected: all non-locked layers. */
+    return !layer->locked;
 }
 
 static void normalize_box(const float box[4][4], float out[4][4])
