@@ -39,6 +39,16 @@ static void toggle_layer_only_visible(layer_t *layer)
     layer->visible = true;
 }
 
+/* Select a layer; clear brush/shape previews that still belong to the old
+ * active layer (hover END is skipped while the mouse is over this panel). */
+static void select_layer(image_t *img, layer_t *layer)
+{
+    if (img->active_layer == layer) return;
+    img->active_layer = layer;
+    tool_cursor_clear_edit();
+    tool_clear_preview();
+}
+
 /* Orbit: centre on the layer (or group) bbox and pull back to fit FOV. */
 static void frame_layer_in_orbit(const layer_t *layer)
 {
@@ -281,19 +291,14 @@ static void render_layers_list(void)
                 if (gui_is_key_down(KEY_LEFT_SHIFT))
                     toggle_layer_only_visible(layer);
             }
-            if (current && img->active_layer != layer) {
-                img->active_layer = layer;
-                tool_cursor_clear_edit();
-            }
+            if (current)
+                select_layer(img, layer);
 
             /* Bind DnD to the layer name row, before the trailing controls so
              * source/target are not stuck on lock / add-child. */
             if (gui_dnd_source(LAYER_DND_TYPE, &layer, (int)sizeof(layer),
                                layer->name)) {
-                if (img->active_layer != layer) {
-                    img->active_layer = layer;
-                    tool_cursor_clear_edit();
-                }
+                select_layer(img, layer);
             }
             drop_kind = gui_dnd_target(LAYER_DND_TYPE, &drop_payload,
                                        (int)sizeof(drop_payload));
@@ -312,12 +317,14 @@ static void render_layers_list(void)
                     gui_is_key_down(KEY_RIGHT_SHIFT)) {
                     /* Shift: force focus and frame the layer in orbit. */
                     image_set_layer_focus(layer);
-                    img->active_layer = layer;
+                    select_layer(img, layer);
+                    tool_clear_preview();
                     frame_layer_in_orbit(layer);
                 } else {
                     image_toggle_layer_focus(layer);
                     if (image_get_focused_layer(img) == layer)
-                        img->active_layer = layer;
+                        select_layer(img, layer);
+                    tool_clear_preview();
                 }
             }
             gui_same_line();
@@ -368,17 +375,21 @@ static void render_layers_list(void)
         gui_pop_id();
     }
 
-    /* Cursor tool: click empty list space to deselect; shift+click also
-     * clears focus and frames the image box. */
-    if (goxel.tool && goxel.tool->id == TOOL_CURSOR &&
-        gui_remaining_space_clicked()) {
+    /* Empty list space: shift+click clears focus and frames the image box
+     * (any tool). Plain click deselects only in Cursor (other tools need an
+     * active layer). */
+    if (gui_remaining_space_clicked()) {
         image_t *img = goxel.image;
-        img->active_layer = NULL;
-        tool_cursor_clear_edit();
-        if (gui_is_key_down(KEY_LEFT_SHIFT) ||
-            gui_is_key_down(KEY_RIGHT_SHIFT)) {
+        bool shift = gui_is_key_down(KEY_LEFT_SHIFT) ||
+                     gui_is_key_down(KEY_RIGHT_SHIFT);
+        if (shift) {
             image_clear_layer_focus();
+            tool_clear_preview();
             frame_image_box_in_orbit();
+        }
+        if (goxel.tool && goxel.tool->id == TOOL_CURSOR) {
+            img->active_layer = NULL;
+            tool_cursor_clear_edit();
         }
     }
 

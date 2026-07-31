@@ -20,13 +20,17 @@
 
 static const tool_t *g_tools[TOOL_COUNT] = {};
 
+void tool_clear_preview(void)
+{
+    if (!goxel.tool_volume) return;
+    volume_delete(goxel.tool_volume);
+    goxel.tool_volume = NULL;
+}
+
 static void a_tool_set(void *data)
 {
     tool_t *tool = (tool_t *)data;
-    if (goxel.tool_volume) {
-        volume_delete(goxel.tool_volume);
-        goxel.tool_volume = NULL;
-    }
+    tool_clear_preview();
     goxel.tool = tool;
     /* Cursor starts with no layer selected so all child gizmos show. */
     if (tool && tool->id == TOOL_CURSOR && goxel.image)

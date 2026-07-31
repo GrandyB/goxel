@@ -943,10 +943,17 @@ int goxel_iter(const inputs_t *inputs)
                 inputs->window_size[1] - inputs->touches[i].pos[1];
         }
         goxel_mouse_in_view(goxel.gui.viewport, &inputs2, true);
-    } else if (!inputs->touches[0].down[0]) {
-        /* Release over UI skips gesture END; clear stuck press so Cursor
-         * drag / other tools do not keep thinking the button is held. */
-        goxel.cursor.flags &= ~CURSOR_PRESSED;
+    } else {
+        /* Hover END never runs while the mouse is over UI, so brush/shape
+         * tool_volume would keep substituting the previous layer after a
+         * panel layer change (e.g. shift+focus). Drop idle previews only. */
+        if (!(goxel.cursor.flags & CURSOR_PRESSED))
+            tool_clear_preview();
+        if (!inputs->touches[0].down[0]) {
+            /* Release over UI skips gesture END; clear stuck press so Cursor
+             * drag / other tools do not keep thinking the button is held. */
+            goxel.cursor.flags &= ~CURSOR_PRESSED;
+        }
     }
 
     if (DEFINED(SOUND) && time - goxel.last_click_time > 0.1) {
