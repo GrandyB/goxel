@@ -107,35 +107,6 @@ void gui_snap_bar(void)
     gui_row_end();
 }
 
-// Same icons as the shape section of the tools panel (tool_gui_shape).
-static bool inline_shape_button(const char *label, const shape_t *shape,
-                               int icon)
-{
-    bool v = goxel.painter.shape == shape;
-    if (gui_condensed_selectable_icon(label, &v, icon)) {
-        goxel.painter.shape = shape;
-        return true;
-    }
-    return false;
-}
-
-void gui_shape_bar(void)
-{
-    gui_row_begin(0);
-    if (goxel.tool->has_shape) {
-        gui_group_begin(NULL);
-        gui_row_begin(0);
-        gui_text("Shape: ");
-        gui_same_line();
-        inline_shape_button("Sphere", &shape_sphere, ICON_SHAPE_SPHERE);
-        inline_shape_button("Cube", &shape_cube, ICON_SHAPE_CUBE);
-        inline_shape_button("Cylinder", &shape_cylinder, ICON_SHAPE_CYLINDER);
-        gui_row_end();
-        gui_group_end();
-    }
-    gui_row_end();
-}
-
 void gui_map_colors_bar(void)
 {
     int i, click;

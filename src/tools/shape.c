@@ -139,6 +139,7 @@ static int gui(tool_t *tool)
     gui_section_end();
 
     gui_checkbox("Planar", &tool_shape->planar, "Stay on original plane");
+    tool_gui_shape(NULL);
     tool_gui_symmetry();
     return 0;
 }
@@ -150,5 +151,4 @@ TOOL_REGISTER(TOOL_SHAPE, shape, tool_shape_t,
               .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_ALLOW_PICK_COLOR,
               .default_shortcut = "S",
               .has_snap = true,
-              .has_shape = true,
 )

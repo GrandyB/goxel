@@ -46,7 +46,6 @@ void gui_menu(void);
 void gui_tools_panel(void);
 void gui_top_bar(void);
 void gui_snap_bar(void);
-void gui_shape_bar(void);
 void gui_map_colors_bar(void);
 void gui_layers_panel(void);
 void gui_layers_panel_with_scroll();
@@ -199,12 +198,6 @@ void gui_app(void)
     if (goxel.tool->has_snap) {
         gui_window_begin("Snap Bar", 280, y, 0, 32.0f, 0);
         gui_snap_bar();
-        gui_window_end();
-    }
-    if (goxel.tool->has_shape) {
-        /* Docked directly under the snap bar. */
-        gui_window_begin("Shape Bar", 280, y + 32.0f, 0, 32.0f, 0);
-        gui_shape_bar();
         gui_window_end();
     }
     if (tool_uses_map_recent_colors(goxel.tool) && goxel.image) {

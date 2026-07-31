@@ -65,7 +65,6 @@ struct tool {
     int flags;
     const char *name;
     bool has_snap;
-    bool has_shape;
 };
 
 #define TOOL_REGISTER(id_, name_, klass_, ...) \
