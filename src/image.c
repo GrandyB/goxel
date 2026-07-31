@@ -20,6 +20,10 @@
 #include "metadata.h"
 #include "xxhash.h"
 
+/* Max layers in one nested subtree (root + descendants). Used for stack
+ * buffers in reparent / move / duplicate. Change this one value to retune. */
+#define LAYER_SUBTREE_MAX 2048
+
 /* History
     the images undo history is stored in a linked list.  Every time we call
     image_history_push, we add the current image snapshot in the list.
@@ -214,6 +218,63 @@ layer_t *last_in_layer_subtree(layer_t *list, const layer_t *root)
     return (layer_t *)root;
 }
 
+static bool layer_has_own_content(const layer_t *layer);
+
+static void layer_subtree_limit_alert(void)
+{
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+             "A nested layer group cannot exceed %d layers.",
+             LAYER_SUBTREE_MAX);
+    gui_alert("Layers", msg);
+}
+
+static int layer_subtree_size(const image_t *img, const layer_t *root)
+{
+    layer_t *first, *cur;
+    int n = 0;
+    if (!img || !root) return 0;
+    first = first_in_layer_subtree(img->layers, root);
+    for (cur = first; cur; cur = cur->next) {
+        n++;
+        if (cur == root) break;
+    }
+    return n;
+}
+
+/* Returns false (and alerts) if adding `add` nodes under parent would exceed
+ * LAYER_SUBTREE_MAX. parent_id 0 (top-level) is unrestricted. */
+static bool layer_parent_can_grow(image_t *img, int parent_id, int add)
+{
+    layer_t *parent;
+    if (!parent_id || add <= 0) return true;
+    parent = layer_find(img, parent_id);
+    if (!parent) return true;
+    if (layer_subtree_size(img, parent) + add > LAYER_SUBTREE_MAX) {
+        layer_subtree_limit_alert();
+        return false;
+    }
+    return true;
+}
+
+/* True if nesting `moved` under `new_parent` would exceed LAYER_SUBTREE_MAX.
+ * No-op when already in that subtree (reorder only). */
+static bool layer_reparent_would_exceed(image_t *img, layer_t *new_parent,
+                                        layer_t *moved)
+{
+    int dest, add, extra = 0;
+    if (!new_parent || !moved) return false;
+    if (layer_is_ancestor(img, new_parent, moved))
+        return false;
+    dest = layer_subtree_size(img, new_parent);
+    add = layer_subtree_size(img, moved);
+    if (!layer_has_children(img, new_parent) &&
+        layer_has_own_content(new_parent))
+        extra = 1;
+    return dest + extra + add > LAYER_SUBTREE_MAX;
+}
+
+/* Collect subtree into out[0..n). Returns n, or -1 if larger than max. */
 static int collect_layer_subtree(image_t *img, layer_t *root,
                                  layer_t **out, int max)
 {
@@ -222,10 +283,22 @@ static int collect_layer_subtree(image_t *img, layer_t *root,
     if (!img || !root || max <= 0) return 0;
     first = first_in_layer_subtree(img->layers, root);
     for (cur = first; cur; cur = cur->next) {
-        if (n >= max) break;
+        if (n >= max)
+            return -1;
         out[n++] = cur;
         if (cur == root) break;
     }
+    return n;
+}
+
+/* Like collect_layer_subtree(…, LAYER_SUBTREE_MAX); alerts and returns -1
+ * if the group is too large. */
+static int collect_layer_subtree_checked(image_t *img, layer_t *root,
+                                         layer_t **out)
+{
+    int n = collect_layer_subtree(img, root, out, LAYER_SUBTREE_MAX);
+    if (n < 0)
+        layer_subtree_limit_alert();
     return n;
 }
 
@@ -300,8 +373,15 @@ layer_t *image_extract_layer_content_to_child(image_t *img, layer_t *parent)
 layer_t *image_add_child_layer(image_t *img, layer_t *parent)
 {
     layer_t *child;
+    int need = 1;
 
     if (!img || !parent) return NULL;
+    /* Content peel inserts an extra child before the new empty one. */
+    if (!layer_has_children(img, parent) && layer_has_own_content(parent))
+        need = 2;
+    if (!layer_parent_can_grow(img, parent->id, need))
+        return NULL;
+
     image_extract_layer_content_to_child(img, parent);
 
     child = layer_new(NULL);
@@ -333,7 +413,7 @@ void image_sanitize_layer_parents(image_t *img)
 void image_reparent_layer(image_t *img, layer_t *layer, layer_t *new_parent,
                           layer_t *after_sibling)
 {
-    layer_t *nodes[512];
+    layer_t *nodes[LAYER_SUBTREE_MAX];
     layer_t *anchor;
     int n, i, new_parent_id;
 
@@ -342,13 +422,17 @@ void image_reparent_layer(image_t *img, layer_t *layer, layer_t *new_parent,
         return;
     if (after_sibling && layer_is_ancestor(img, layer, after_sibling))
         return;
+    if (layer_reparent_would_exceed(img, new_parent, layer)) {
+        layer_subtree_limit_alert();
+        return;
+    }
 
     /* First child into a content-bearing layer: peel content into a child. */
     if (new_parent && !layer_has_children(img, new_parent))
         image_extract_layer_content_to_child(img, new_parent);
 
     new_parent_id = new_parent ? new_parent->id : 0;
-    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    n = collect_layer_subtree_checked(img, layer, nodes);
     if (n <= 0) return;
 
     for (i = 0; i < n; i++)
@@ -378,7 +462,7 @@ void image_reparent_layer(image_t *img, layer_t *layer, layer_t *new_parent,
 void image_reparent_layer_before(image_t *img, layer_t *layer,
                                  layer_t *new_parent, layer_t *before)
 {
-    layer_t *nodes[512];
+    layer_t *nodes[LAYER_SUBTREE_MAX];
     int n, i, new_parent_id;
 
     if (!img || !layer || !before) return;
@@ -386,12 +470,16 @@ void image_reparent_layer_before(image_t *img, layer_t *layer,
         return;
     if (before != layer && layer_is_ancestor(img, layer, before))
         return;
+    if (layer_reparent_would_exceed(img, new_parent, layer)) {
+        layer_subtree_limit_alert();
+        return;
+    }
 
     if (new_parent && !layer_has_children(img, new_parent))
         image_extract_layer_content_to_child(img, new_parent);
 
     new_parent_id = new_parent ? new_parent->id : 0;
-    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    n = collect_layer_subtree_checked(img, layer, nodes);
     if (n <= 0) return;
 
     for (i = 0; i < n; i++)
@@ -417,18 +505,22 @@ void image_reparent_layer_before(image_t *img, layer_t *layer,
 void image_reparent_layer_as_last_child(image_t *img, layer_t *layer,
                                         layer_t *parent)
 {
-    layer_t *nodes[512];
+    layer_t *nodes[LAYER_SUBTREE_MAX];
     layer_t *first;
     int n, i;
 
     if (!img || !layer || !parent) return;
     if (layer_is_ancestor(img, layer, parent))
         return;
+    if (layer_reparent_would_exceed(img, parent, layer)) {
+        layer_subtree_limit_alert();
+        return;
+    }
 
     if (!layer_has_children(img, parent))
         image_extract_layer_content_to_child(img, parent);
 
-    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    n = collect_layer_subtree_checked(img, layer, nodes);
     if (n <= 0) return;
 
     for (i = 0; i < n; i++)
@@ -444,10 +536,11 @@ void image_reparent_layer_as_last_child(image_t *img, layer_t *layer,
 void image_move_layer_content_subtree(image_t *img, layer_t *layer,
                                       const float mat[4][4], bool only_origin)
 {
-    layer_t *nodes[512];
+    layer_t *nodes[LAYER_SUBTREE_MAX];
     int n, i;
     if (!img || !layer) return;
-    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    n = collect_layer_subtree_checked(img, layer, nodes);
+    if (n <= 0) return;
     for (i = 0; i < n; i++)
         do_move_layer(nodes[i], mat, NULL, only_origin);
 }
@@ -727,6 +820,9 @@ static layer_t *image_add_layer_impl(image_t *img, layer_t *layer,
     layer_t *active;
 
     assert(img);
+    active = img->active_layer;
+    if (active && !layer_parent_can_grow(img, active->parent_id, 1))
+        return NULL;
     if (!layer) {
         layer = layer_new(NULL);
         make_uniq_name(layer->name, sizeof(layer->name), "Layer", img,
@@ -735,7 +831,6 @@ static layer_t *image_add_layer_impl(image_t *img, layer_t *layer,
     layer->visible = true;
     layer->id = img_get_new_id(img);
     layer->material = img->active_material;
-    active = img->active_layer;
     if (active)
         layer->parent_id = active->parent_id;
     if (below_active && active) {
@@ -783,6 +878,9 @@ layer_t *image_add_shape_layer(image_t *img)
     layer_t *layer;
 
     assert(img);
+    if (img->active_layer &&
+        !layer_parent_can_grow(img, img->active_layer->parent_id, 1))
+        return NULL;
     layer = shape_layer_new_from_ui_state(img);
     if (img->active_layer)
         layer->parent_id = img->active_layer->parent_id;
@@ -796,6 +894,9 @@ layer_t *image_add_shape_layer_below_active(image_t *img)
     layer_t *layer;
 
     assert(img);
+    if (img->active_layer &&
+        !layer_parent_can_grow(img, img->active_layer->parent_id, 1))
+        return NULL;
     layer = shape_layer_new_from_ui_state(img);
     if (img->active_layer)
         layer->parent_id = img->active_layer->parent_id;
@@ -888,7 +989,7 @@ static void layer_relink_before(image_t *img, layer_t **nodes, int n,
 
 void image_move_layer_subtree(image_t *img, layer_t *layer, int d)
 {
-    layer_t *nodes[512];
+    layer_t *nodes[LAYER_SUBTREE_MAX];
     layer_t *first, *parent, *neighbor, *sib;
     int n, i;
 
@@ -896,7 +997,7 @@ void image_move_layer_subtree(image_t *img, layer_t *layer, int d)
     assert(layer);
     assert(d == -1 || d == +1);
 
-    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    n = collect_layer_subtree_checked(img, layer, nodes);
     if (n <= 0) return;
     first = nodes[0];
     parent = layer_find(img, layer->parent_id);
@@ -954,15 +1055,19 @@ static void image_move_layer(image_t *img, layer_t *layer, int d)
 
 layer_t *image_duplicate_layer(image_t *img, layer_t *other)
 {
-    layer_t *nodes[512];
-    layer_t *copies[512];
+    layer_t *nodes[LAYER_SUBTREE_MAX];
+    layer_t *copies[LAYER_SUBTREE_MAX];
     int n, i, j;
-    int id_map_from[512], id_map_to[512];
+    int id_map_from[LAYER_SUBTREE_MAX], id_map_to[LAYER_SUBTREE_MAX];
 
     assert(img);
     assert(other);
 
-    n = collect_layer_subtree(img, other, nodes, ARRAY_SIZE(nodes));
+    if (!layer_parent_can_grow(img, other->parent_id,
+                               layer_subtree_size(img, other)))
+        return NULL;
+
+    n = collect_layer_subtree_checked(img, other, nodes);
     if (n <= 0) return NULL;
 
     for (i = 0; i < n; i++) {
