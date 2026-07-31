@@ -253,6 +253,41 @@ void camera_fit_box(camera_t *cam, const float box[4][4])
 }
 
 /*
+ * Function: camera_frame_box
+ * Orbit around a box centre at a distance that fits its bounding sphere
+ * in the current FOV (keeps orientation). No-op if box is null.
+ */
+void camera_frame_box(camera_t *cam, const float box[4][4])
+{
+    float center[3], verts[8][3], radius = 0.f, dist;
+    float half_fovy, half_fovx, half_fov;
+    int i;
+
+    if (!cam || box_is_null(box)) return;
+
+    mat4_mul_vec3(box, VEC(0, 0, 0), center);
+    box_get_vertices(box, verts);
+    for (i = 0; i < 8; i++) {
+        float d = vec3_dist(center, verts[i]);
+        if (d > radius) radius = d;
+    }
+    if (radius < 0.5f) radius = 0.5f;
+
+    half_fovy = cam->fovy * 0.5f * (float)(M_PI / 180.0);
+    half_fovx = atanf(tanf(half_fovy) * max(cam->aspect, 0.01f));
+    half_fov = min(half_fovy, half_fovx);
+    if (half_fov < 1e-3f) half_fov = 1e-3f;
+
+    /* Bounding sphere in FOV, plus a little margin. */
+    dist = (radius / tanf(half_fov)) * 1.15f;
+    if (dist < 1.f) dist = 1.f;
+
+    mat4_mul_vec3(box, VEC(0, 0, 0), cam->mat[3]);
+    mat4_itranslate(cam->mat, 0, 0, dist);
+    cam->dist = dist;
+}
+
+/*
  * Function: camera_get_key
  * Return a value that is guarantied to change when the camera change.
  */

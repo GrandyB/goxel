@@ -136,6 +136,12 @@ void camera_get_ray(const camera_t *camera, const float win[2],
 void camera_fit_box(camera_t *camera, const float box[4][4]);
 
 /*
+ * Function: camera_frame_box
+ * Keep orientation; orbit the box centre at a FOV-fitting distance.
+ */
+void camera_frame_box(camera_t *camera, const float box[4][4]);
+
+/*
  * Function: camera_get_key
  * Return a value that is guarantied to change when the camera change.
  */

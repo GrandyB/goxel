@@ -2927,12 +2927,6 @@ bool _layer_item(int idx, int icons_count, const int *icons,
     return ret;
 }
 
-void gui_layer_start_rename(char *name)
-{
-    g_layer_edit_name = name;
-    g_layer_start_edit = true;
-}
-
 float gui_icon_height(bool condensed)
 {
     return ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1.f);

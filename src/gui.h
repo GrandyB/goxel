@@ -283,8 +283,6 @@ bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icon
     bool allow_deselect, bool solo_active, bool *solo_pressed,
     bool reserve_visibility_space, bool reserve_solo_space, bool selectable,
     bool *name_double_clicked);
-/* Enter in-place rename for a layer/item name buffer (focuses on next paint). */
-void gui_layer_start_rename(char *name);
 float gui_icon_height(bool condensed);
 bool gui_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);

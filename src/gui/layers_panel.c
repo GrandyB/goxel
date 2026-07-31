@@ -39,6 +39,30 @@ static void toggle_layer_only_visible(layer_t *layer)
     layer->visible = true;
 }
 
+/* Orbit: centre on the layer (or group) bbox and pull back to fit FOV. */
+static void frame_layer_in_orbit(const layer_t *layer)
+{
+    camera_t *cam;
+    const volume_t *vol;
+    float box[4][4];
+
+    if (!layer || !goxel.image) return;
+    cam = goxel.image->active_camera;
+    if (!cam || cam->mode != CAMERA_MODE_ORBIT) return;
+
+    vol = goxel_get_layer_move_volume(layer);
+    if (vol) {
+        volume_get_box(vol, true, box);
+        if (!box_is_null(box)) {
+            camera_frame_box(cam, box);
+            return;
+        }
+    }
+    layer_get_bounding_box(layer, box);
+    if (!box_is_null(box))
+        camera_frame_box(cam, box);
+}
+
 static bool ancestor_collapsed(const image_t *img, const layer_t *layer)
 {
     const layer_t *p;
@@ -229,29 +253,23 @@ static void render_layers_list(void)
         {
             float icon_h = gui_icon_height(true);
             float spacing = gui_style_item_spacing_x();
-            float trailing = 4.f * (icon_h + spacing);
+            float trailing = 3.f * (icon_h + spacing);
             bool add_press = false;
             bool lock_press = false;
             bool focus_press = false;
-            bool rename_press = false;
-            bool name_dbl = false;
             bool focus_active = image_get_focused_layer(img) == layer;
             int lock_icon = layer->locked ? ICON_LOCKED : ICON_UNLOCKED;
 
             gui_condensed_layer_item_trailing(
                     idx, icons_count, icons, &visible, &current,
                     layer->name, sizeof(layer->name), trailing,
-                    false, false, NULL, false, false, true, &name_dbl);
+                    false, false, NULL, false, false, true, NULL);
             if (visible != layer->visible) {
                 layer->visible = visible;
                 if (gui_is_key_down(KEY_LEFT_SHIFT))
                     toggle_layer_only_visible(layer);
             }
             if (current && img->active_layer != layer) {
-                img->active_layer = layer;
-            }
-            if (name_dbl) {
-                image_set_layer_focus(layer);
                 img->active_layer = layer;
             }
 
@@ -271,18 +289,21 @@ static void render_layers_list(void)
             }
 
             gui_same_line();
-            if (gui_condensed_selectable_icon("Rename layer", &rename_press,
-                                              ICON_EDIT)) {
-                gui_layer_start_rename(layer->name);
-            }
-            gui_same_line();
             focus_press = focus_active;
             if (gui_condensed_selectable_icon(
                         focus_active ? "Unfocus layer" : "Focus layer",
                         &focus_press, ICON_FOCUS)) {
-                image_toggle_layer_focus(layer);
-                if (image_get_focused_layer(img) == layer)
+                if (gui_is_key_down(KEY_LEFT_SHIFT) ||
+                    gui_is_key_down(KEY_RIGHT_SHIFT)) {
+                    /* Shift: force focus and frame the layer in orbit. */
+                    image_set_layer_focus(layer);
                     img->active_layer = layer;
+                    frame_layer_in_orbit(layer);
+                } else {
+                    image_toggle_layer_focus(layer);
+                    if (image_get_focused_layer(img) == layer)
+                        img->active_layer = layer;
+                }
             }
             gui_same_line();
             if (gui_condensed_selectable_icon(
