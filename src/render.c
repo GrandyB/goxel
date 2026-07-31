@@ -85,6 +85,51 @@ static const int BATCH_QUAD_COUNT = 1 << 14;
 static model3d_t *g_cube_model;
 static model3d_t *g_line_model;
 static model3d_t *g_wire_cube_model;
+
+/* When set, EFFECT_RENDER_POS records tile origins in assignment order so
+ * callers can decode pick-FBO tile_ids without re-walking the volume. */
+static bool g_pos_tile_map_enabled = false;
+static int *g_pos_tile_map = NULL;
+static int g_pos_tile_map_count = 0;
+static int g_pos_tile_map_cap = 0;
+
+void render_pos_tile_map_begin(void)
+{
+    g_pos_tile_map_enabled = true;
+    g_pos_tile_map_count = 0;
+}
+
+void render_pos_tile_map_end(void)
+{
+    g_pos_tile_map_enabled = false;
+}
+
+int render_pos_tile_map_get(const int **map_out)
+{
+    if (map_out) *map_out = g_pos_tile_map;
+    return g_pos_tile_map_count;
+}
+
+static void pos_tile_map_push(const int tile_pos[3])
+{
+    int id = g_pos_tile_map_count + 1; /* 1-based, matches u_tile_id */
+    if (id >= g_pos_tile_map_cap) {
+        int ncap = g_pos_tile_map_cap ? g_pos_tile_map_cap * 2 : 256;
+        int *nmap = realloc(g_pos_tile_map, (size_t)(ncap + 1) * 3 * sizeof(int));
+        if (!nmap) return;
+        if (!g_pos_tile_map)
+            memset(nmap, 0, (size_t)(ncap + 1) * 3 * sizeof(int));
+        else
+            memset(nmap + (g_pos_tile_map_cap + 1) * 3, 0,
+                   (size_t)(ncap - g_pos_tile_map_cap) * 3 * sizeof(int));
+        g_pos_tile_map = nmap;
+        g_pos_tile_map_cap = ncap;
+    }
+    g_pos_tile_map[id * 3 + 0] = tile_pos[0];
+    g_pos_tile_map[id * 3 + 1] = tile_pos[1];
+    g_pos_tile_map[id * 3 + 2] = tile_pos[2];
+    g_pos_tile_map_count = id;
+}
 static model3d_t *g_sphere_model;
 static model3d_t *g_grid_model;
 static model3d_t *g_rect_model;
@@ -357,6 +402,11 @@ void render_deinit(void)
     model3d_delete(g_rect_model);
     model3d_delete(g_wire_rect_model);
     model3d_delete(g_cone_model);
+    free(g_pos_tile_map);
+    g_pos_tile_map = NULL;
+    g_pos_tile_map_count = 0;
+    g_pos_tile_map_cap = 0;
+    g_pos_tile_map_enabled = false;
 }
 
 // A global buffer large enough to contain all the vertices for any tile.
@@ -678,6 +728,8 @@ static void render_volume_(renderer_t *rend, volume_t *volume,
     iter = volume_get_iterator(volume,
             VOLUME_ITER_TILES | VOLUME_ITER_INCLUDES_NEIGHBORS);
     while (volume_iter(&iter, tile_pos)) {
+        if ((effects & EFFECT_RENDER_POS) && g_pos_tile_map_enabled)
+            pos_tile_map_push(tile_pos);
         render_tile_(rend, volume, &iter, tile_pos,
                       tile_id++, material, effects, shader, model);
     }
@@ -690,27 +742,6 @@ static void render_volume_(renderer_t *rend, volume_t *volume,
         render_volume_(rend, volume, material, effects, shadow_mvp, base_model);
     }
     GL(glDisable(GL_BLEND));
-}
-
-// XXX: this is quite ugly.  We could maybe use a callback of some sort
-// in the renderer instead.
-void render_get_tile_pos(renderer_t *rend, const volume_t *volume,
-                          int id, int pos[3])
-{
-    // Basically we simulate the algo of render_volume_ but without rendering
-    // anything.
-    int tile_id, tile_pos[3];
-    volume_iterator_t iter;
-    tile_id = 1;
-    iter = volume_get_iterator(volume,
-            VOLUME_ITER_TILES | VOLUME_ITER_INCLUDES_NEIGHBORS);
-    while (volume_iter(&iter, tile_pos)) {
-        if (tile_id == id) {
-            memcpy(pos, tile_pos, sizeof(tile_pos));
-            return;
-        }
-        tile_id++;
-    }
 }
 
 void render_volume(renderer_t *rend, const volume_t *volume,

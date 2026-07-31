@@ -365,13 +365,20 @@ static bool goxel_unproject_on_box(
                          out, normal, face);
 }
 
-/* Skip pick-FBO re-render when volume + camera + size are unchanged. */
+/* Skip pick-FBO re-render when volume + camera + size are unchanged.
+ * tile_map stores tile origins in the same order as u_tile_id during the
+ * pick render (required: a later live-volume walk can disagree).
+ * volume_ptr is required too: layers vs layers_for_snap can share a
+ * volume_get_key while differing in tile layout. */
 static struct {
     bool valid;
+    const volume_t *volume_ptr;
     uint64_t volume_key;
     float view_mat[4][4];
     float proj_mat[4][4];
     int w, h;
+    int *tile_map;     /* 3 ints per tile_id, index 0 unused (ids are 1-based) */
+    int tile_map_count;
 } g_pick_cache;
 
 /* Skip full unproject when mouse/camera/snap geometry are unchanged. */
@@ -394,9 +401,42 @@ static struct {
     int ret;
 } g_unproject_cache;
 
+static void pick_cache_free_tile_map(void)
+{
+    free(g_pick_cache.tile_map);
+    g_pick_cache.tile_map = NULL;
+    g_pick_cache.tile_map_count = 0;
+}
+
 static void invalidate_pick_cache(void)
 {
     g_pick_cache.valid = false;
+    g_pick_cache.volume_ptr = NULL;
+    pick_cache_free_tile_map();
+}
+
+/* Copy the tile map recorded during the pick render into g_pick_cache. */
+static void pick_cache_adopt_render_tile_map(void)
+{
+    const int *src;
+    int count, bytes;
+    int *dst;
+
+    count = render_pos_tile_map_get(&src);
+    if (count < 1 || !src) {
+        pick_cache_free_tile_map();
+        return;
+    }
+    bytes = (count + 1) * 3 * (int)sizeof(int);
+    dst = malloc((size_t)bytes);
+    if (!dst) {
+        pick_cache_free_tile_map();
+        return;
+    }
+    memcpy(dst, src, (size_t)bytes);
+    free(g_pick_cache.tile_map);
+    g_pick_cache.tile_map = dst;
+    g_pick_cache.tile_map_count = count;
 }
 
 static bool goxel_unproject_on_volume(
@@ -432,6 +472,9 @@ static bool goxel_unproject_on_volume(
 
     volume_key = volume_get_key(volume);
     dirty = !g_pick_cache.valid ||
+            !g_pick_cache.tile_map ||
+            g_pick_cache.tile_map_count < 1 ||
+            g_pick_cache.volume_ptr != volume ||
             g_pick_cache.volume_key != volume_key ||
             g_pick_cache.w != view_size[0] ||
             g_pick_cache.h != view_size[1] ||
@@ -442,9 +485,14 @@ static bool goxel_unproject_on_volume(
     rend.fbo = goxel.pick_fbo->framebuffer;
     rend.scale = 1;
     if (dirty) {
+        volume_remove_empty_tiles((volume_t *)volume, true);
+        render_pos_tile_map_begin();
         render_volume(&rend, volume, NULL, EFFECT_RENDER_POS);
         render_submit(&rend, rect, clear_color);
-        g_pick_cache.valid = true;
+        render_pos_tile_map_end();
+        pick_cache_adopt_render_tile_map();
+        g_pick_cache.valid = g_pick_cache.tile_map != NULL;
+        g_pick_cache.volume_ptr = volume;
         g_pick_cache.volume_key = volume_key;
         g_pick_cache.w = view_size[0];
         g_pick_cache.h = view_size[1];
@@ -456,14 +504,19 @@ static bool goxel_unproject_on_volume(
 
     x = round(pos[0] - view[0]);
     y = round(pos[1] - view[1]);
+    GL(glDisable(GL_SCISSOR_TEST));
     GL(glViewport(0, 0, goxel.pick_fbo->w, goxel.pick_fbo->h));
     if (x < 0 || x >= view_size[0] ||
         y < 0 || y >= view_size[1]) return false;
     GL(glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, &pixel));
 
     unpack_pos_data(pixel, voxel_pos, &face, &tile_id);
-    if (!tile_id) return false;
-    render_get_tile_pos(&rend, volume, tile_id, tile_pos);
+    if (!tile_id || !g_pick_cache.tile_map ||
+            tile_id < 1 || tile_id > g_pick_cache.tile_map_count)
+        return false;
+    tile_pos[0] = g_pick_cache.tile_map[tile_id * 3 + 0];
+    tile_pos[1] = g_pick_cache.tile_map[tile_id * 3 + 1];
+    tile_pos[2] = g_pick_cache.tile_map[tile_id * 3 + 2];
     out[0] = tile_pos[0] + voxel_pos[0] + 0.5;
     out[1] = tile_pos[1] + voxel_pos[1] + 0.5;
     out[2] = tile_pos[2] + voxel_pos[2] + 0.5;
@@ -1559,6 +1612,7 @@ const volume_t *goxel_get_layers_volume(const image_t *img)
             if (!layer_effectively_visible(img, layer)) continue;
             volume_merge(goxel.layers_volume_, layer->volume, MODE_OVER, NULL);
         }
+        invalidate_pick_cache();
     }
     return goxel.layers_volume_;
 }
@@ -1585,6 +1639,7 @@ const volume_t *goxel_get_layers_volume_for_snap(const image_t *img)
             if (!layer->volume_snap) continue;
             volume_merge(goxel.layers_snap_volume_, layer->volume, MODE_OVER, NULL);
         }
+        invalidate_pick_cache();
     }
     return goxel.layers_snap_volume_;
 }
@@ -2555,44 +2610,42 @@ static void select_layer_under_cursor(void)
 {
     image_t *img = goxel.image;
     layer_t *layer;
-    volume_iterator_t *it = {0};
-
-    // Use the raw unproject on volume, which bypasses the 'snap' setting
-    float pos[3];
-    float normal[3];
-    goxel_unproject_on_volume(goxel.gui.viewport, goxel.cursor.xy,
-                            goxel_get_layers_volume(goxel.image), pos, normal);
-    LOG_D("Cursor: %f / %f / %f", pos[0], pos[1], pos[2]);
-    LOG_D("Normal: %f / %f / %f", normal[0], normal[1], normal[2]);
-
-    // Setup position with normals from the cursor, so that it handles the snapped side
-    vec3_sub(pos, normal, pos);
-    // Default snap offset value
-    pos[0] -= 0.5;
-    pos[1] -= 0.5;
-    pos[2] -= 0.5;
+    float pos[3], normal[3];
     int int_pos[3];
-    vec3_set(int_pos, (int)pos[0], (int)pos[1], (int)pos[2]);
+    bool found = false;
+
+    /* Brush snap may have filled the pick FBO from layers_for_snap; always
+     * take a fresh pick against the full layers volume. */
+    invalidate_pick_cache();
+    g_unproject_cache.valid = false;
+
+    /* Face hit then -0.5 along the normal (same as color picker). Locked
+     * layers are included — lock only affects cursor-tool gizmos. */
+    if (!goxel_unproject_on_volume(goxel.gui.viewport, goxel.cursor.xy,
+                            goxel_get_layers_volume(goxel.image), pos, normal))
+        return;
+    vec3_iaddk(pos, normal, -0.5);
+    int_pos[0] = floor(pos[0]);
+    int_pos[1] = floor(pos[1]);
+    int_pos[2] = floor(pos[2]);
     LOG_D("Position to analyse: %i / %i / %i", int_pos[0], int_pos[1], int_pos[2]);
 
-    bool found = false;
     DL_FOREACH_REVERSE(img->layers, layer) {
-        if (!layer->visible) continue;
+        uint8_t out[4];
+        if (!layer_effectively_visible(img, layer)) continue;
         if (!layer->volume) continue;
 
-        uint8_t out[4];
-        volume_get_at(layer->volume, it, int_pos, out);
-        if (out[3] != 0) { // not a completely transparent block
-            goxel.image->active_layer = layer;
-            image_expand_to_show_layer(goxel.image, layer);
+        volume_get_at(layer->volume, NULL, int_pos, out);
+        if (out[3] != 0) {
+            img->active_layer = layer;
+            image_expand_to_show_layer(img, layer);
             LOG_D("Found: %s", layer->name);
             found = true;
             break;
         }
     }
-    if (!found) {
+    if (!found)
         LOG_D("Unable to find.");
-    }
 }
 ACTION_REGISTER(ACTION_select_layer_under_cursor,
     .help = "Select layer under cursor",
