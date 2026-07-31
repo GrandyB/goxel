@@ -27,6 +27,16 @@ typedef struct {
     tool_t tool;
 } tool_move_t;
 
+static void apply_move(layer_t *layer, const float transf[4][4],
+                       bool only_origin)
+{
+    image_t *img = goxel.image;
+    if (layer_has_children(img, layer))
+        image_move_layer_content_subtree(img, layer, transf, only_origin);
+    else
+        do_move_layer(layer, transf, NULL, only_origin);
+}
+
 static void update_view(void)
 {
     float transf[4][4];
@@ -37,12 +47,12 @@ static void update_view(void)
 
     layer_t *layer = goxel.image->active_layer;
 
-    if (layer_is_volume(layer)) {
+    if (layer_is_volume(layer) || layer_has_children(goxel.image, layer)) {
         goxel.tool_drag_mode = DRAG_MOVE;
     }
     if (box_edit(SNAP_LAYER_OUT, goxel.tool_drag_mode, transf, &first)) {
         if (first) image_history_push(goxel.image);
-        do_move_layer(layer, transf, VEC(0, 0, 0), false);
+        apply_move(layer, transf, false);
     }
 
     if (layer_is_volume(layer)) {
@@ -65,14 +75,15 @@ static void center_origin(layer_t *layer)
     int bbox[2][3];
     float pos[3];
     float translation[4][4] = MAT4_IDENTITY;
+    const volume_t *vol = goxel_get_layer_move_volume(layer);
 
-    volume_get_bbox(layer->volume, bbox, true);
+    volume_get_bbox(vol, bbox, true);
     pos[0] = round((bbox[0][0] + bbox[1][0] - 1) / 2.0);
     pos[1] = round((bbox[0][1] + bbox[1][1] - 1) / 2.0);
     pos[2] = round((bbox[0][2] + bbox[1][2] - 1) / 2.0);
 
     vec3_sub(pos, layer->mat[3], translation[3]);
-    do_move_layer(layer, translation, NULL, true);
+    apply_move(layer, translation, true);
 }
 
 int degX = 0, degY = 0, degZ = 0;
@@ -207,7 +218,7 @@ static int gui(tool_t *tool)
 
     if (memcmp(&mat, &mat4_identity, sizeof(mat))) {
         image_history_push(goxel.image);
-        do_move_layer(layer, mat, NULL, only_origin);
+        apply_move(layer, mat, only_origin);
     }
 
     return 0;

@@ -467,6 +467,10 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
                                sizeof(layer->opacity));
         chunk_write_dict_value(&c, out, "vol_snap", &layer->volume_snap,
                                sizeof(layer->volume_snap));
+        chunk_write_dict_value(&c, out, "parent_id", &layer->parent_id,
+                               sizeof(layer->parent_id));
+        chunk_write_dict_value(&c, out, "collapsed", &layer->collapsed,
+                               sizeof(layer->collapsed));
 
         chunk_write_finish(&c, out);
     }
@@ -793,6 +797,8 @@ int load_from_file(const char *path, bool replace)
                     memcpy(&layer->volume_snap, dict_value,
                            sizeof(layer->volume_snap));
                 }
+                DICT_CPY("parent_id", layer->parent_id);
+                DICT_CPY("collapsed", layer->collapsed);
                 if (DICT_CPY("material", material_idx))
                     layer->material = get_material(goxel.image, material_idx);
             }
@@ -940,6 +946,8 @@ int load_from_file(const char *path, bool replace)
     // Update plane, snap mask not to confuse people.
     plane_from_vectors(goxel.plane, goxel.image->box[3],
                        VEC(1, 0, 0), VEC(0, 1, 0));
+
+    image_sanitize_layer_parents(goxel.image);
 
     return 0;
 

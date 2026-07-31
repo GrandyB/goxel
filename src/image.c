@@ -112,6 +112,8 @@ void make_uniq_name(
     LOG_E("Error: unable to create a unique name, please report to the developer");
 }
 
+static int img_get_new_id(const image_t *img);
+
 layer_t *img_get_layer(const image_t *img, int id)
 {
     layer_t *layer;
@@ -120,6 +122,328 @@ layer_t *img_get_layer(const image_t *img, int id)
         if (layer->id == id) return layer;
     assert(false);
     return NULL;
+}
+
+layer_t *layer_find(const image_t *img, int id)
+{
+    layer_t *layer;
+    if (!img || id == 0) return NULL;
+    DL_FOREACH(img->layers, layer)
+        if (layer->id == id) return layer;
+    return NULL;
+}
+
+int layer_depth(const image_t *img, const layer_t *layer)
+{
+    int depth = 0;
+    const layer_t *p;
+    if (!img || !layer) return 0;
+    for (p = layer_find(img, layer->parent_id); p;
+         p = layer_find(img, p->parent_id))
+        depth++;
+    return depth;
+}
+
+bool layer_effectively_visible(const image_t *img, const layer_t *layer)
+{
+    const layer_t *p;
+    if (!layer || !layer->visible) return false;
+    for (p = layer_find(img, layer->parent_id); p;
+         p = layer_find(img, p->parent_id)) {
+        if (!p->visible) return false;
+    }
+    return true;
+}
+
+bool layer_is_ancestor(const image_t *img, const layer_t *ancestor,
+                       const layer_t *layer)
+{
+    const layer_t *p;
+    if (!img || !ancestor || !layer) return false;
+    for (p = layer; p; p = layer_find(img, p->parent_id)) {
+        if (p == ancestor) return true;
+    }
+    return false;
+}
+
+bool layer_has_children(const image_t *img, const layer_t *layer)
+{
+    layer_t *other;
+    if (!img || !layer) return false;
+    DL_FOREACH(img->layers, other) {
+        if (other->parent_id == layer->id) return true;
+    }
+    return false;
+}
+
+static bool layer_is_strict_descendant(const image_t *img,
+                                       const layer_t *layer,
+                                       const layer_t *root)
+{
+    return layer && root && layer != root &&
+           layer_is_ancestor(img, root, layer);
+}
+
+/*
+ * Children come before their parent in the forward list so reverse UI shows
+ * the parent row above its children. Subtree span is [first .. root].
+ */
+layer_t *first_in_layer_subtree(layer_t *list, const layer_t *root)
+{
+    layer_t *first = (layer_t *)root;
+    image_t tmp = { .layers = list };
+    if (!root || !list) return (layer_t *)root;
+    while (first != list) {
+        layer_t *prev = first->prev;
+        if (!prev) break;
+        if (!layer_is_strict_descendant(&tmp, prev, root)) break;
+        first = prev;
+    }
+    return first;
+}
+
+layer_t *last_in_layer_subtree(layer_t *list, const layer_t *root)
+{
+    (void)list;
+    return (layer_t *)root;
+}
+
+static int collect_layer_subtree(image_t *img, layer_t *root,
+                                 layer_t **out, int max)
+{
+    layer_t *first, *cur;
+    int n = 0;
+    if (!img || !root || max <= 0) return 0;
+    first = first_in_layer_subtree(img->layers, root);
+    for (cur = first; cur; cur = cur->next) {
+        if (n >= max) break;
+        out[n++] = cur;
+        if (cur == root) break;
+    }
+    return n;
+}
+
+/* Insert nodes[0..n) as a contiguous block immediately before `before`.
+ * nodes must be in forward-list order (children … root). Always prepend
+ * before the same anchor — iterating 0..n-1 yields [nodes…, before].
+ * (Iterating n-1..0 would put the root first and break nesting order.) */
+static void layer_insert_block_before(image_t *img, layer_t **nodes, int n,
+                                      layer_t *before)
+{
+    int i;
+    for (i = 0; i < n; i++) {
+        nodes[i]->prev = nodes[i]->next = NULL;
+        DL_PREPEND_ELEM(img->layers, before, nodes[i]);
+    }
+}
+
+static bool layer_has_own_content(const layer_t *layer)
+{
+    if (!layer) return false;
+    if (layer->shape || layer->image || layer->base_id) return true;
+    if (layer->volume && !volume_is_empty(layer->volume)) return true;
+    return false;
+}
+
+layer_t *image_extract_layer_content_to_child(image_t *img, layer_t *parent)
+{
+    layer_t *child;
+    char name[256];
+
+    if (!img || !parent) return NULL;
+    if (layer_has_children(img, parent)) return NULL;
+    if (!layer_has_own_content(parent)) return NULL;
+
+    snprintf(name, sizeof(name), "%s", parent->name);
+    child = layer_new(name);
+    make_uniq_name(child->name, sizeof(child->name), name, img,
+                   layer_name_exists);
+    child->id = img_get_new_id(img);
+    child->visible = true;
+    child->opacity = parent->opacity;
+    child->volume_snap = parent->volume_snap;
+    child->material = parent->material;
+    child->parent_id = parent->id;
+    memcpy(child->marker_color, parent->marker_color, sizeof(child->marker_color));
+
+    /* Move content from parent into child. */
+    volume_delete(child->volume);
+    child->volume = parent->volume;
+    parent->volume = volume_new();
+    mat4_copy(parent->mat, child->mat);
+    mat4_set_identity(parent->mat);
+    mat4_copy(parent->box, child->box);
+    mat4_copy(mat4_zero, parent->box);
+    child->shape = parent->shape;
+    parent->shape = NULL;
+    child->shape_key = parent->shape_key;
+    parent->shape_key = 0;
+    memcpy(child->color, parent->color, sizeof(child->color));
+    child->image = parent->image;
+    parent->image = NULL;
+    child->base_id = parent->base_id;
+    parent->base_id = 0;
+    child->base_volume_key = parent->base_volume_key;
+    parent->base_volume_key = 0;
+
+    /* Immediately before parent => just below parent in reverse UI. */
+    DL_PREPEND_ELEM(img->layers, parent, child);
+    return child;
+}
+
+layer_t *image_add_child_layer(image_t *img, layer_t *parent)
+{
+    layer_t *child;
+
+    if (!img || !parent) return NULL;
+    image_extract_layer_content_to_child(img, parent);
+
+    child = layer_new(NULL);
+    make_uniq_name(child->name, sizeof(child->name), "Layer", img,
+                   layer_name_exists);
+    child->visible = true;
+    child->id = img_get_new_id(img);
+    child->material = img->active_material;
+    child->parent_id = parent->id;
+    /* Immediately before parent => just below parent in reverse UI. */
+    DL_PREPEND_ELEM(img->layers, parent, child);
+    img->active_layer = child;
+    return child;
+}
+
+void image_sanitize_layer_parents(image_t *img)
+{
+    layer_t *layer;
+    layer_t *parent;
+    if (!img) return;
+    DL_FOREACH(img->layers, layer) {
+        if (!layer->parent_id) continue;
+        parent = layer_find(img, layer->parent_id);
+        if (!parent || layer_is_ancestor(img, layer, parent))
+            layer->parent_id = 0;
+    }
+}
+
+void image_reparent_layer(image_t *img, layer_t *layer, layer_t *new_parent,
+                          layer_t *after_sibling)
+{
+    layer_t *nodes[512];
+    layer_t *anchor;
+    int n, i, new_parent_id;
+
+    if (!img || !layer) return;
+    if (new_parent && layer_is_ancestor(img, layer, new_parent))
+        return;
+    if (after_sibling && layer_is_ancestor(img, layer, after_sibling))
+        return;
+
+    /* First child into a content-bearing layer: peel content into a child. */
+    if (new_parent && !layer_has_children(img, new_parent))
+        image_extract_layer_content_to_child(img, new_parent);
+
+    new_parent_id = new_parent ? new_parent->id : 0;
+    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    if (n <= 0) return;
+
+    for (i = 0; i < n; i++)
+        DL_DELETE(img->layers, nodes[i]);
+
+    layer->parent_id = new_parent_id;
+
+    if (after_sibling && layer_find(img, after_sibling->id) == after_sibling) {
+        anchor = after_sibling;
+        for (i = 0; i < n; i++) {
+            nodes[i]->prev = nodes[i]->next = NULL;
+            DL_APPEND_ELEM(img->layers, anchor, nodes[i]);
+            anchor = nodes[i];
+        }
+    } else if (new_parent) {
+        /* Topmost child under parent: insert block immediately before parent. */
+        layer_insert_block_before(img, nodes, n, new_parent);
+    } else {
+        /* Top-level: append at end of list (top of UI). */
+        for (i = 0; i < n; i++) {
+            nodes[i]->prev = nodes[i]->next = NULL;
+            DL_APPEND(img->layers, nodes[i]);
+        }
+    }
+}
+
+void image_reparent_layer_before(image_t *img, layer_t *layer,
+                                 layer_t *new_parent, layer_t *before)
+{
+    layer_t *nodes[512];
+    int n, i, new_parent_id;
+
+    if (!img || !layer || !before) return;
+    if (new_parent && layer_is_ancestor(img, layer, new_parent))
+        return;
+    if (before != layer && layer_is_ancestor(img, layer, before))
+        return;
+
+    if (new_parent && !layer_has_children(img, new_parent))
+        image_extract_layer_content_to_child(img, new_parent);
+
+    new_parent_id = new_parent ? new_parent->id : 0;
+    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    if (n <= 0) return;
+
+    for (i = 0; i < n; i++)
+        DL_DELETE(img->layers, nodes[i]);
+
+    layer->parent_id = new_parent_id;
+
+    if (!layer_find(img, before->id)) {
+        if (new_parent) {
+            layer_insert_block_before(img, nodes, n, new_parent);
+        } else {
+            for (i = 0; i < n; i++) {
+                nodes[i]->prev = nodes[i]->next = NULL;
+                DL_APPEND(img->layers, nodes[i]);
+            }
+        }
+        return;
+    }
+
+    layer_insert_block_before(img, nodes, n, before);
+}
+
+void image_reparent_layer_as_last_child(image_t *img, layer_t *layer,
+                                        layer_t *parent)
+{
+    layer_t *nodes[512];
+    layer_t *first;
+    int n, i;
+
+    if (!img || !layer || !parent) return;
+    if (layer_is_ancestor(img, layer, parent))
+        return;
+
+    if (!layer_has_children(img, parent))
+        image_extract_layer_content_to_child(img, parent);
+
+    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    if (n <= 0) return;
+
+    for (i = 0; i < n; i++)
+        DL_DELETE(img->layers, nodes[i]);
+    layer->parent_id = parent->id;
+
+    /* Remaining first of parent's block = current bottom-most child start;
+     * if no children left, first == parent. Prepend block before that. */
+    first = first_in_layer_subtree(img->layers, parent);
+    layer_insert_block_before(img, nodes, n, first);
+}
+
+void image_move_layer_content_subtree(image_t *img, layer_t *layer,
+                                      const float mat[4][4], bool only_origin)
+{
+    layer_t *nodes[512];
+    int n, i;
+    if (!img || !layer) return;
+    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    for (i = 0; i < n; i++)
+        do_move_layer(nodes[i], mat, NULL, only_origin);
 }
 
 static int img_get_new_id(const image_t *img)
@@ -162,8 +486,9 @@ void image_update(image_t *img)
     layer_t *layer, *base;
 
     DL_FOREACH(img->layers, layer) {
-        base = img_get_layer(img, layer->base_id);
-        if (base && layer->base_volume_key != volume_get_key(base->volume) && layer->visible) {
+        base = layer->base_id ? layer_find(img, layer->base_id) : NULL;
+        if (base && layer->base_volume_key != volume_get_key(base->volume) &&
+            layer->visible) {
             volume_set(layer->volume, base->volume);
             volume_move(layer->volume, layer->mat);
             layer->base_volume_key = volume_get_key(base->volume);
@@ -391,6 +716,8 @@ static void image_link_layer_on_stack(image_t *img, layer_t *layer,
 static layer_t *image_add_layer_impl(image_t *img, layer_t *layer,
                                      bool below_active)
 {
+    layer_t *active;
+
     assert(img);
     if (!layer) {
         layer = layer_new(NULL);
@@ -400,7 +727,16 @@ static layer_t *image_add_layer_impl(image_t *img, layer_t *layer,
     layer->visible = true;
     layer->id = img_get_new_id(img);
     layer->material = img->active_material;
-    image_link_layer_on_stack(img, layer, below_active);
+    active = img->active_layer;
+    if (active)
+        layer->parent_id = active->parent_id;
+    if (below_active && active) {
+        /* Visually below active's block = before the subtree's first node. */
+        layer_t *first = first_in_layer_subtree(img->layers, active);
+        DL_PREPEND_ELEM(img->layers, first, layer);
+    } else {
+        DL_APPEND(img->layers, layer);
+    }
     img->active_layer = layer;
     return layer;
 }
@@ -440,6 +776,8 @@ layer_t *image_add_shape_layer(image_t *img)
 
     assert(img);
     layer = shape_layer_new_from_ui_state(img);
+    if (img->active_layer)
+        layer->parent_id = img->active_layer->parent_id;
     image_link_layer_on_stack(img, layer, false);
     img->active_layer = layer;
     return layer;
@@ -451,6 +789,8 @@ layer_t *image_add_shape_layer_below_active(image_t *img)
 
     assert(img);
     layer = shape_layer_new_from_ui_state(img);
+    if (img->active_layer)
+        layer->parent_id = img->active_layer->parent_id;
     image_link_layer_on_stack(img, layer, true);
     img->active_layer = layer;
     return layer;
@@ -460,13 +800,22 @@ void image_delete_layer(image_t *img, layer_t *layer)
 {
     layer_t *other;
     layer_t *sel_after_delete = NULL;
+    layer_t *child;
+    int orphan_parent_id;
     assert(img);
     assert(layer);
+
+    orphan_parent_id = layer->parent_id;
+    /* Promote direct children to the deleted layer's parent. */
+    DL_FOREACH(img->layers, child) {
+        if (child->parent_id == layer->id)
+            child->parent_id = orphan_parent_id;
+    }
+
     /*
-     * Layers panel renders tail-to-head with DL_FOREACH_REVERSE (gui_list).
+     * Layers panel renders tail-to-head with DL_FOREACH_REVERSE.
      * The row visually below deleted is layer->prev. If deleting the bottom row
-     * (forward head img->layers), that index no longer exists: pick last row /
-     * new forward head layer->next.
+     * (forward head img->layers), pick last row / new forward head layer->next.
      */
     if (layer->next != layer && img->layers) {
         sel_after_delete = (layer == img->layers)
@@ -476,11 +825,9 @@ void image_delete_layer(image_t *img, layer_t *layer)
     DL_DELETE(img->layers, layer);
     if (layer == img->active_layer) img->active_layer = NULL;
 
-    // Unclone all layers cloned from this one.
-    DL_FOREACH(goxel.image->layers, other) {
-        if (other->base_id == layer->id) {
+    DL_FOREACH(img->layers, other) {
+        if (other->base_id == layer->id)
             other->base_id = 0;
-        }
     }
 
     layer_delete(layer);
@@ -491,45 +838,162 @@ void image_delete_layer(image_t *img, layer_t *layer)
         DL_APPEND(img->layers, layer);
     }
     if (!img->active_layer) {
-        if (sel_after_delete)
+        if (sel_after_delete && layer_find(img, sel_after_delete->id))
             img->active_layer = sel_after_delete;
         else
             img->active_layer = img->layers;
     }
 }
 
-static void image_move_layer(image_t *img, layer_t *layer, int d)
+/* Walk node up until it is a direct child of parent_id (a sibling unit of
+ * the mover). NULL if we hit parent_id itself or leave that family. */
+static layer_t *layer_sibling_root(image_t *img, layer_t *node, int parent_id)
 {
-    layer_t *other = NULL;
+    while (node) {
+        if (node->parent_id == parent_id)
+            return node;
+        if (parent_id != 0 && node->id == parent_id)
+            return NULL;
+        if (node->parent_id == 0)
+            return NULL;
+        node = layer_find(img, node->parent_id);
+    }
+    return NULL;
+}
+
+static void layer_relink_after(image_t *img, layer_t **nodes, int n,
+                               layer_t *anchor)
+{
+    int i;
+    for (i = 0; i < n; i++) {
+        nodes[i]->prev = nodes[i]->next = NULL;
+        DL_APPEND_ELEM(img->layers, anchor, nodes[i]);
+        anchor = nodes[i];
+    }
+}
+
+static void layer_relink_before(image_t *img, layer_t **nodes, int n,
+                                layer_t *before)
+{
+    layer_insert_block_before(img, nodes, n, before);
+}
+
+void image_move_layer_subtree(image_t *img, layer_t *layer, int d)
+{
+    layer_t *nodes[512];
+    layer_t *first, *parent, *neighbor, *sib;
+    int n, i;
 
     assert(img);
     assert(layer);
     assert(d == -1 || d == +1);
+
+    n = collect_layer_subtree(img, layer, nodes, ARRAY_SIZE(nodes));
+    if (n <= 0) return;
+    first = nodes[0];
+    parent = layer_find(img, layer->parent_id);
+
     if (d == -1) {
-        other = layer->next;
-        SWAP(other, layer);
-    } else if (layer != img->layers) {
-        other = layer->prev;
+        /* Up in UI = toward list tail. */
+        neighbor = layer->next;
+        if (!neighbor) return;
+
+        if (parent && neighbor == parent) {
+            /* Topmost child: exit above parent (sibling just above parent). */
+            for (i = 0; i < n; i++)
+                DL_DELETE(img->layers, nodes[i]);
+            layer->parent_id = parent->parent_id;
+            layer_relink_after(img, nodes, n, parent);
+            return;
+        }
+
+        sib = layer_sibling_root(img, neighbor, layer->parent_id);
+        if (!sib) return;
+        for (i = 0; i < n; i++)
+            DL_DELETE(img->layers, nodes[i]);
+        layer->parent_id = sib->parent_id;
+        layer_relink_after(img, nodes, n, sib);
+        return;
     }
-    if (!other || !layer) return;
-    DL_DELETE(img->layers, layer);
-    DL_PREPEND_ELEM(img->layers, other, layer);
+
+    /* Down in UI = toward list head. */
+    neighbor = (first == img->layers) ? NULL : first->prev;
+    sib = neighbor ? layer_sibling_root(img, neighbor, layer->parent_id)
+                   : NULL;
+    if (sib) {
+        layer_t *sib_first = first_in_layer_subtree(img->layers, sib);
+        for (i = 0; i < n; i++)
+            DL_DELETE(img->layers, nodes[i]);
+        layer->parent_id = sib->parent_id;
+        layer_relink_before(img, nodes, n, sib_first);
+        return;
+    }
+
+    if (!parent) return;
+
+    /* Bottommost child: exit below parent (sibling just under parent block). */
+    for (i = 0; i < n; i++)
+        DL_DELETE(img->layers, nodes[i]);
+    layer->parent_id = parent->parent_id;
+    layer_relink_before(img, nodes, n,
+                        first_in_layer_subtree(img->layers, parent));
+}
+
+static void image_move_layer(image_t *img, layer_t *layer, int d)
+{
+    image_move_layer_subtree(img, layer, d);
 }
 
 layer_t *image_duplicate_layer(image_t *img, layer_t *other)
 {
-    layer_t *layer;
+    layer_t *nodes[512];
+    layer_t *copies[512];
+    int n, i, j;
+    int id_map_from[512], id_map_to[512];
+
     assert(img);
     assert(other);
-    layer = layer_copy(other);
-    make_uniq_name(layer->name, sizeof(layer->name), other->name, img,
-                   layer_name_exists);
-    layer->visible = true;
-    layer->id = img_get_new_id(img);
-    /* Place on the row beneath *other* (gui_list uses DL_FOREACH_REVERSE). */
-    DL_PREPEND_ELEM(img->layers, other, layer);
-    img->active_layer = layer;
-    return layer;
+
+    n = collect_layer_subtree(img, other, nodes, ARRAY_SIZE(nodes));
+    if (n <= 0) return NULL;
+
+    for (i = 0; i < n; i++) {
+        copies[i] = layer_copy(nodes[i]);
+        make_uniq_name(copies[i]->name, sizeof(copies[i]->name),
+                       nodes[i]->name, img, layer_name_exists);
+        copies[i]->visible = true;
+        copies[i]->id = img_get_new_id(img);
+        id_map_from[i] = nodes[i]->id;
+        id_map_to[i] = copies[i]->id;
+        copies[i]->prev = copies[i]->next = NULL;
+    }
+
+    /* Place copy block immediately before `other`'s first (visually below
+     * the whole other subtree in reverse UI). */
+    layer_insert_block_before(img, copies, n, nodes[0]);
+
+    for (i = 0; i < n; i++) {
+        if (copies[i]->parent_id) {
+            for (j = 0; j < n; j++) {
+                if (id_map_from[j] == copies[i]->parent_id) {
+                    copies[i]->parent_id = id_map_to[j];
+                    break;
+                }
+            }
+        }
+        if (copies[i]->base_id) {
+            for (j = 0; j < n; j++) {
+                if (id_map_from[j] == copies[i]->base_id) {
+                    copies[i]->base_id = id_map_to[j];
+                    break;
+                }
+            }
+        }
+    }
+
+    /* Active = copy of the root (last in nodes / copies). */
+    img->active_layer = copies[n - 1];
+    return copies[n - 1];
 }
 
 layer_t *image_clone_layer(image_t *img, layer_t *other)
@@ -541,7 +1005,8 @@ layer_t *image_clone_layer(image_t *img, layer_t *other)
     layer = layer_clone(other);
     layer->visible = true;
     layer->id = img_get_new_id(img);
-    DL_APPEND(img->layers, layer);
+    layer->parent_id = other->parent_id;
+    DL_PREPEND_ELEM(img->layers, other, layer);
     img->active_layer = layer;
     return layer;
 }
@@ -568,15 +1033,13 @@ void image_merge_visible_layers(image_t *img)
     layer_t *layer, *other, *last = NULL;
     assert(img);
     DL_FOREACH(img->layers, layer) {
-        if (!layer->visible) continue;
+        if (!layer_effectively_visible(img, layer)) continue;
         image_unclone_layer(img, layer);
 
         if (last) {
-            // Unclone all layers cloned from this one.
-            DL_FOREACH(goxel.image->layers, other) {
-                if (other->base_id == last->id) {
+            DL_FOREACH(img->layers, other) {
+                if (other->base_id == last->id)
                     other->base_id = 0;
-                }
             }
             SWAP(layer->volume, last->volume);
             volume_merge(layer->volume, last->volume, MODE_OVER, NULL);
@@ -585,7 +1048,13 @@ void image_merge_visible_layers(image_t *img)
         }
         last = layer;
     }
-    if (last) img->active_layer = last;
+    if (last) {
+        last->parent_id = 0;
+        last->collapsed = false;
+        img->active_layer = last;
+        /* Clear remaining layers' parent links into deleted ids via sanitize. */
+        image_sanitize_layer_parents(img);
+    }
 }
 
 void image_merge_layer_down(image_t *img) {
@@ -596,7 +1065,11 @@ void image_merge_layer_down(image_t *img) {
     DL_FOREACH(img->layers, layer) {
         next = layer == active_layer;
         if (next && previous != NULL) {
-            // Force the layer into view if not already;
+            if (previous->parent_id != active_layer->parent_id)
+                break;
+            if (layer_is_ancestor(img, previous, active_layer) ||
+                layer_is_ancestor(img, active_layer, previous))
+                break;
             previous->visible = true;
             image_unclone_layer(img, previous);
             image_unclone_layer(img, layer);
@@ -605,9 +1078,9 @@ void image_merge_layer_down(image_t *img) {
             memcpy(&layer->name, previous->name, sizeof(layer->name));
             DL_DELETE(img->layers, previous);
             layer_delete(previous);
+            image_sanitize_layer_parents(img);
             break;
         } else if (next) {
-            // We're on the active layer but there's no previous; no merging to do
             break;
         }
         previous = layer;

@@ -490,9 +490,11 @@ int goxel_unproject(const float viewport[4],
     if ((snap_mask & SNAP_VOLUME) && plane_is_null(goxel.tool_plane))
         snap_volume_key = volume_get_key(
                 goxel_get_layers_volume_for_snap(goxel.image));
-    if ((snap_mask & SNAP_LAYER_OUT) && goxel.image->active_layer &&
-        goxel.image->active_layer->volume)
-        layer_volume_key = volume_get_key(goxel.image->active_layer->volume);
+    if ((snap_mask & SNAP_LAYER_OUT) && goxel.image->active_layer) {
+        const volume_t *mv = goxel_get_layer_move_volume(
+                goxel.image->active_layer);
+        if (mv) layer_volume_key = volume_get_key(mv);
+    }
 
     if (g_unproject_cache.valid &&
             g_unproject_cache.snap_mask == snap_mask &&
@@ -542,7 +544,8 @@ int goxel_unproject(const float viewport[4],
                                        goxel.selection, false,
                                        p, n, NULL);
         if ((1 << i) == SNAP_LAYER_OUT) {
-            volume_get_box(goxel.image->active_layer->volume, true, box);
+            volume_get_box(goxel_get_layer_move_volume(
+                                   goxel.image->active_layer), true, box);
             r = goxel_unproject_on_box(viewport, pos, box, false,
                                        p, n, NULL);
         }
@@ -1477,7 +1480,7 @@ void goxel_render_view(const float viewport[4], bool render_mode)
 
     // Render all the image layers.
     DL_FOREACH(goxel.image->layers, layer) {
-        if (layer->visible && layer->image)
+        if (layer_effectively_visible(goxel.image, layer) && layer->image)
             render_img(rend, layer->image, layer->mat, EFFECT_NO_SHADING,
                        clamp(layer->opacity, 0.f, 1.f));
     }
@@ -1540,7 +1543,7 @@ const volume_t *goxel_get_layers_volume(const image_t *img)
 
     image_update((image_t*)img);
     DL_FOREACH(img->layers, layer) {
-        if (!layer->visible) continue;
+        if (!layer_effectively_visible(img, layer)) continue;
         if (!layer->volume) continue;
         k = layer_get_key(layer);
         key = XXH32(&k, sizeof(k), key);
@@ -1550,7 +1553,7 @@ const volume_t *goxel_get_layers_volume(const image_t *img)
         if (!goxel.layers_volume_) goxel.layers_volume_ = volume_new();
         volume_clear(goxel.layers_volume_);
         DL_FOREACH(img->layers, layer) {
-            if (!layer->visible) continue;
+            if (!layer_effectively_visible(img, layer)) continue;
             volume_merge(goxel.layers_volume_, layer->volume, MODE_OVER, NULL);
         }
     }
@@ -1564,7 +1567,7 @@ const volume_t *goxel_get_layers_volume_for_snap(const image_t *img)
 
     image_update((image_t *)img);
     DL_FOREACH(img->layers, layer) {
-        if (!layer->visible) continue;
+        if (!layer_effectively_visible(img, layer)) continue;
         if (!layer->volume) continue;
         k = volume_get_key(layer->volume);
         key = XXH32(&k, sizeof(k), key);
@@ -1575,7 +1578,7 @@ const volume_t *goxel_get_layers_volume_for_snap(const image_t *img)
         if (!goxel.layers_snap_volume_) goxel.layers_snap_volume_ = volume_new();
         volume_clear(goxel.layers_snap_volume_);
         DL_FOREACH(img->layers, layer) {
-            if (!layer->visible) continue;
+            if (!layer_effectively_visible(img, layer)) continue;
             if (!layer->volume_snap) continue;
             volume_merge(goxel.layers_snap_volume_, layer->volume, MODE_OVER, NULL);
         }
@@ -1601,7 +1604,7 @@ const volume_t *goxel_get_render_volume(const image_t *img)
         if (!goxel.render_volume_) goxel.render_volume_ = volume_new();
         volume_clear(goxel.render_volume_);
         DL_FOREACH(goxel.image->layers, layer) {
-            if (!layer->visible) continue;
+            if (!layer_effectively_visible(img, layer)) continue;
             volume = layer->volume;
             if (volume == goxel.image->active_layer->volume)
                 volume = goxel.tool_volume;
@@ -1609,6 +1612,43 @@ const volume_t *goxel_get_render_volume(const image_t *img)
         }
     }
     return goxel.render_volume_;
+}
+
+const volume_t *goxel_get_layer_move_volume(const layer_t *layer)
+{
+    image_t *img = goxel.image;
+    layer_t *cur, *first;
+    uint32_t key = 0, k;
+
+    if (!img || !layer) return NULL;
+    image_update(img);
+
+    if (!layer_has_children(img, layer))
+        return layer->volume;
+
+    first = first_in_layer_subtree(img->layers, layer);
+    for (cur = first; cur; cur = cur->next) {
+        k = layer_get_key(cur);
+        key = XXH32(&k, sizeof(k), key);
+        if (cur == layer) break;
+    }
+    if (key == goxel.layer_subtree_volume_hash &&
+        goxel.layer_subtree_root_id == layer->id &&
+        goxel.layer_subtree_volume_)
+        return goxel.layer_subtree_volume_;
+
+    goxel.layer_subtree_volume_hash = key;
+    goxel.layer_subtree_root_id = layer->id;
+    if (!goxel.layer_subtree_volume_)
+        goxel.layer_subtree_volume_ = volume_new();
+    volume_clear(goxel.layer_subtree_volume_);
+    for (cur = first; cur; cur = cur->next) {
+        if (cur->volume)
+            volume_merge(goxel.layer_subtree_volume_, cur->volume,
+                         MODE_OVER, NULL);
+        if (cur == layer) break;
+    }
+    return goxel.layer_subtree_volume_;
 }
 
 const layer_t *goxel_get_render_layers(bool with_tool_preview)
@@ -1632,7 +1672,7 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview)
         }
 
         DL_FOREACH(goxel.image->layers, l) {
-            if (!l->visible) continue;
+            if (!layer_effectively_visible(goxel.image, l)) continue;
             if (!l->volume) continue;
             layer = layer_copy(l);
             if (    with_tool_preview && goxel.tool_volume &&

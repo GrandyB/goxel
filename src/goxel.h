@@ -447,6 +447,7 @@ enum {
     X(ICON_SETTINGS,                0, 4, 0),
     X(ICON_SHAPE,                   2, 4, 0),
     X(ICON_CLOSE,                   3, 4, 0),
+    X(ICON_CHEVRON_RIGHT,           4, 4, 0),
 
     X(ICON_TOOLS,                   0, 5, THEME_GROUP_ICON_EDIT),
     X(ICON_PALETTE,                 1, 5, THEME_GROUP_ICON_EDIT),
@@ -514,6 +515,11 @@ typedef struct goxel
 
     volume_t   *layers_snap_volume_;
     uint32_t   layers_snap_volume_hash;
+
+    /* Cached merge of active layer + descendants for move gizmo (not paint). */
+    volume_t   *layer_subtree_volume_;
+    uint32_t   layer_subtree_volume_hash;
+    int        layer_subtree_root_id;
 
     volume_t   *render_volume_; // All the layers + tool volume.
     uint32_t   render_volume_hash;
@@ -691,6 +697,8 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 const volume_t *goxel_get_layers_volume(const image_t *img);
 const volume_t *goxel_get_layers_volume_for_snap(const image_t *img);
 const volume_t *goxel_get_render_volume(const image_t *img);
+/* Active-layer volume, or merge of layer+descendants for move gizmo. */
+const volume_t *goxel_get_layer_move_volume(const layer_t *layer);
 
 /*
  * Function: goxel_get_render_layers

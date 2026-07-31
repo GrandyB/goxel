@@ -50,6 +50,10 @@ struct layer {
     const shape_t *shape;
     uint32_t    shape_key;
     uint8_t     color[4];
+    /* Nesting: parent_id 0 = top-level; else another layer's id (not clone
+     * base_id). collapsed hides descendants in the layers panel only. */
+    int         parent_id;
+    bool        collapsed;
 };
 
 layer_t *layer_new(const char *name);

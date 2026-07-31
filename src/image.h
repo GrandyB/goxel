@@ -90,6 +90,41 @@ void image_delete_layer(image_t *img, layer_t *layer);
 layer_t *image_duplicate_layer(image_t *img, layer_t *layer);
 void image_merge_visible_layers(image_t *img);
 layer_t *img_get_layer(const image_t *img, int id);
+layer_t *layer_find(const image_t *img, int id);
+int layer_depth(const image_t *img, const layer_t *layer);
+bool layer_effectively_visible(const image_t *img, const layer_t *layer);
+bool layer_is_ancestor(const image_t *img, const layer_t *ancestor,
+                       const layer_t *layer);
+bool layer_has_children(const image_t *img, const layer_t *layer);
+/* Nesting list order: children sit *before* the parent in the forward
+ * utlist so DL_FOREACH_REVERSE shows parent above its children. */
+layer_t *first_in_layer_subtree(layer_t *list, const layer_t *root);
+/* Root is always last in its contiguous subtree. */
+layer_t *last_in_layer_subtree(layer_t *list, const layer_t *root);
+void image_sanitize_layer_parents(image_t *img);
+/* If parent has paintable content and no children yet, move that content
+ * into a new child named after the parent. */
+layer_t *image_extract_layer_content_to_child(image_t *img, layer_t *parent);
+/* Add an empty child under parent (extracts parent content on first child). */
+layer_t *image_add_child_layer(image_t *img, layer_t *parent);
+/* Reparent layer (+subtree) under new_parent (NULL = top-level). Place after
+ * after_sibling in the forward list (NULL = as topmost child under parent,
+ * i.e. immediately before the parent node). */
+void image_reparent_layer(image_t *img, layer_t *layer, layer_t *new_parent,
+                          layer_t *after_sibling);
+
+/* Reparent as the last child under parent in the UI (first among parent's
+ * children in the forward list). parent must be non-NULL. */
+void image_reparent_layer_as_last_child(image_t *img, layer_t *layer,
+                                        layer_t *parent);
+
+/* Reparent under new_parent and insert the subtree immediately before
+ * `before` in the forward list (visually below `before`'s prior neighbor). */
+void image_reparent_layer_before(image_t *img, layer_t *layer,
+                                 layer_t *new_parent, layer_t *before);
+void image_move_layer_subtree(image_t *img, layer_t *layer, int d);
+void image_move_layer_content_subtree(image_t *img, layer_t *layer,
+                                      const float mat[4][4], bool only_origin);
 
 void image_delete_hidden_layers(image_t *img);
 

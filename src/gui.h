@@ -213,6 +213,10 @@ bool gui_color_opacity(uint8_t color[4]);
 /* Color swatch: 0=none, 1=left (apply), 2=right (e.g. remove from list). */
 int gui_color_swatch(const char *id, const uint8_t color[4], float size);
 bool gui_input_text(const char *label, char *buf, int size);
+/* Single-line text field with explicit width/height (e.g. condensed layer rows).
+ * height <= 0 keeps the default frame height. */
+bool gui_input_text_row(const char *label, char *buf, int size,
+                        float width, float height);
 bool gui_input_text_multiline(const char *label, char *buf, int size,
                               float width, float height);
 void gui_input_text_multiline_highlight(int line);
@@ -322,6 +326,20 @@ void gui_menu_checkbox_column(bool enabled);
 bool gui_menu_toggle(int action, const char *label, bool checked, bool enabled);
 
 void gui_tooltip(const char *str);
+
+/* Drag-drop for nested layers list. Call source after the row widgets;
+ * call target after the same row. payload is typically a layer pointer.
+ * preview is shown under the cursor while dragging (may be NULL). */
+bool gui_dnd_source(const char *type, const void *payload, int size,
+                    const char *preview);
+/* Returns 0 none, 1 onto, 2 insert above (UI), 3 insert below (UI). */
+int gui_dnd_target(const char *type, void *payload_out, int size);
+/* Gap hitbox overlay (no layout growth). indent_x shifts the line start;
+ * slot_index/slot_count stack multiple gaps in the same spacing band.
+ * On drop returns drop_kind (typically 2 or 3). */
+int gui_dnd_gap_target(const char *type, void *payload_out, int size,
+                       float height, float indent_x, int drop_kind,
+                       int slot_index, int slot_count);
 
 #endif // GUI_H
 

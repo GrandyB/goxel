@@ -21,6 +21,7 @@
 /* Height reserved under the scrollable layer list (toolbar, crop, bbox,
  * marker/opacity/snap, shape tools, material). Keep in sync when adding widgets. */
 #define LAYERS_PANEL_BOTTOM_RESERVE_PX 290
+#define LAYER_DND_TYPE "GOXEL_LAYER_PTR"
 
 static void toggle_layer_only_visible(layer_t *layer)
 {
@@ -38,27 +39,274 @@ static void toggle_layer_only_visible(layer_t *layer)
     layer->visible = true;
 }
 
-static bool render_layer_item(void *item, int idx, bool current)
+static bool ancestor_collapsed(const image_t *img, const layer_t *layer)
 {
-    layer_t *layer = item;
-    int icons_count, icons[8];
-    bool visible;
-    visible = layer->visible;
-    icons_count = 0;
-    if (layer->base_id) icons[icons_count++] = ICON_LINK;
-    if (layer->shape) icons[icons_count++] = ICON_SHAPE;
-    char str[12];  // Enough for any 32-bit int
-    sprintf(str, "%d", idx);
-    gui_color_small_no_label(str, layer->marker_color);
-    gui_same_line();
-    gui_condensed_layer_item(idx, icons_count, icons, &visible, &current,
-                   layer->name, sizeof(layer->name));
-    if (visible != layer->visible) {
-        layer->visible = visible;
-        if (gui_is_key_down(KEY_LEFT_SHIFT))
-            toggle_layer_only_visible(layer);
+    const layer_t *p;
+    for (p = layer_find(img, layer->parent_id); p;
+         p = layer_find(img, p->parent_id)) {
+        if (p->collapsed) return true;
     }
-    return current;
+    return false;
+}
+
+/* Indent for in-group drop lines: aligns with the name column at that depth. */
+static float layer_dnd_indent(int depth)
+{
+    if (depth <= 0) return 0.f;
+    return (float)depth * 12.f + gui_icon_height(true);
+}
+
+/* Ancestor of layer whose depth equals `depth` (layer itself if at depth). */
+static layer_t *layer_at_depth(const image_t *img, layer_t *layer, int depth)
+{
+    while (layer && layer_depth(img, layer) > depth)
+        layer = layer_find(img, layer->parent_id);
+    return layer;
+}
+
+static void try_pending_drop(layer_t **pending_drag, layer_t **pending_target,
+                             int *pending_kind, int drop_kind,
+                             layer_t *drop_payload, layer_t *target)
+{
+    if (!drop_kind || !drop_payload || !target) return;
+    *pending_drag = drop_payload;
+    *pending_target = target;
+    *pending_kind = drop_kind;
+}
+
+/* Gaps in the spacing above `layer` (or after the list if layer is NULL).
+ * When leaving deeper nests, emit last-child gaps per exited level, then
+ * (if layer) an insert-above gap for the next row. */
+static void render_layer_dnd_gaps(image_t *img, layer_t *prev, int prev_depth,
+                                  layer_t *layer, int depth,
+                                  layer_t **pending_drag, layer_t **pending_target,
+                                  int *pending_kind)
+{
+    layer_t *drop_payload = NULL;
+    layer_t *target;
+    int drop_kind;
+    int n_exit, n_slots, slot, d;
+    float indent;
+
+    /* Top of list: drop line above the first visible row. */
+    if (!prev) {
+        if (!layer) return;
+        gui_dummy(1, 2);
+        indent = layer_dnd_indent(depth);
+        drop_kind = gui_dnd_gap_target(LAYER_DND_TYPE, &drop_payload,
+                                       (int)sizeof(drop_payload), 3.f,
+                                       indent, 2, 0, 1);
+        try_pending_drop(pending_drag, pending_target, pending_kind,
+                         drop_kind, drop_payload, layer);
+        return;
+    }
+
+    n_exit = (prev_depth > depth) ? (prev_depth - depth) : 0;
+    n_slots = n_exit + (layer ? 1 : 0);
+    if (n_slots <= 0) return;
+
+    /* Extra space under a child group so the sibling/beneath-parent line is
+     * not covered by the next row. */
+    if (n_exit > 0)
+        gui_dummy(1, 1);
+
+    slot = 0;
+    for (d = prev_depth; d > depth; d--) {
+        /* Parent that owns the child list at depth d. */
+        target = layer_at_depth(img, prev, d - 1);
+        indent = layer_dnd_indent(d);
+        drop_kind = gui_dnd_gap_target(LAYER_DND_TYPE, &drop_payload,
+                                       (int)sizeof(drop_payload), 3.f,
+                                       indent, 4, slot, n_slots);
+        try_pending_drop(pending_drag, pending_target, pending_kind,
+                         drop_kind, drop_payload, target);
+        slot++;
+    }
+
+    if (layer) {
+        indent = layer_dnd_indent(depth);
+        drop_kind = gui_dnd_gap_target(LAYER_DND_TYPE, &drop_payload,
+                                       (int)sizeof(drop_payload), 3.f,
+                                       indent, 2, slot, n_slots);
+        try_pending_drop(pending_drag, pending_target, pending_kind,
+                         drop_kind, drop_payload, layer);
+    }
+}
+
+static void apply_layer_drop(layer_t *drag, layer_t *target, int kind)
+{
+    image_t *img = goxel.image;
+    layer_t *parent;
+    layer_t *target_first;
+
+    if (!drag || !target || drag == target) return;
+    if (layer_is_ancestor(img, drag, target)) return;
+
+    image_history_push(img);
+
+    if (kind == 1) {
+        /* Onto: become child of target (topmost under target in UI). */
+        image_reparent_layer(img, drag, target, NULL);
+        return;
+    }
+
+    if (kind == 4) {
+        /* Last child under target (target is the parent). */
+        image_reparent_layer_as_last_child(img, drag, target);
+        return;
+    }
+
+    parent = layer_find(img, target->parent_id);
+    target_first = first_in_layer_subtree(img->layers, target);
+
+    if (kind == 2) {
+        /* Insert above in UI = after target (target is last of its unit). */
+        image_reparent_layer(img, drag, parent, target);
+    } else if (kind == 3) {
+        /* Insert below in UI = before target's subtree in the forward list.
+         * Resolve the insert point after unlink so a drag that currently sits
+         * just below the target does not fall back to topmost-child. */
+        image_reparent_layer_before(img, drag, parent, target_first);
+    }
+}
+
+static void render_layers_list(void)
+{
+    image_t *img = goxel.image;
+    layer_t *layer;
+    layer_t *prev = NULL;
+    int prev_depth = 0;
+    int idx = 0;
+    int drop_kind;
+    layer_t *drop_payload = NULL;
+    /* Defer reparent until after the list walk — mutating mid-iteration
+     * corrupts DL_FOREACH_REVERSE. */
+    layer_t *pending_drag = NULL;
+    layer_t *pending_target = NULL;
+    int pending_kind = 0;
+
+    gui_group_begin(NULL);
+    DL_FOREACH_REVERSE(img->layers, layer) {
+        int icons_count, icons[8];
+        bool visible, current, has_kids;
+        int depth;
+        char id[32];
+
+        if (ancestor_collapsed(img, layer)) continue;
+
+        depth = layer_depth(img, layer);
+        has_kids = layer_has_children(img, layer);
+        visible = layer->visible;
+        current = (img->active_layer == layer);
+        icons_count = 0;
+        if (layer->base_id) icons[icons_count++] = ICON_LINK;
+        if (layer->shape) icons[icons_count++] = ICON_SHAPE;
+
+        snprintf(id, sizeof(id), "lyr%d", layer->id);
+        gui_push_id(id);
+
+        render_layer_dnd_gaps(img, prev, prev_depth, layer, depth,
+                              &pending_drag, &pending_target, &pending_kind);
+
+        if (depth > 0) {
+            gui_spacing_f((float)depth * 12.f);
+            gui_same_line();
+        }
+
+        if (has_kids) {
+            bool fold = false;
+            int fold_icon = layer->collapsed ? ICON_CHEVRON_RIGHT
+                                             : ICON_ARROW_DOWNWARD;
+            if (gui_condensed_selectable_icon("Expand/collapse", &fold, fold_icon))
+                layer->collapsed = !layer->collapsed;
+            gui_same_line();
+        } else {
+            gui_spacing_f(gui_icon_height(true));
+            gui_same_line();
+        }
+
+        {
+            float icon_h = gui_icon_height(true);
+            float spacing = gui_style_item_spacing_x();
+            float trailing = icon_h + spacing;
+            bool add_press = false;
+
+            gui_condensed_layer_item_trailing(
+                    idx, icons_count, icons, &visible, &current,
+                    layer->name, sizeof(layer->name), trailing,
+                    false, false, NULL, false, false, true);
+            if (visible != layer->visible) {
+                layer->visible = visible;
+                if (gui_is_key_down(KEY_LEFT_SHIFT))
+                    toggle_layer_only_visible(layer);
+            }
+            if (current && img->active_layer != layer) {
+                img->active_layer = layer;
+                /* Parents: switch to move so the combined subtree gizmo shows.
+                 * Leaves keep the current tool for painting. */
+                if (layer_has_children(img, layer))
+                    action_exec2(ACTION_tool_set_move);
+            }
+
+            /* Bind DnD to the layer name row, before the trailing [+] so
+             * source/target are not stuck on the add-child control. */
+            if (gui_dnd_source(LAYER_DND_TYPE, &layer, (int)sizeof(layer),
+                               layer->name)) {
+                if (img->active_layer != layer) {
+                    img->active_layer = layer;
+                    if (layer_has_children(img, layer))
+                        action_exec2(ACTION_tool_set_move);
+                }
+            }
+            drop_kind = gui_dnd_target(LAYER_DND_TYPE, &drop_payload,
+                                       (int)sizeof(drop_payload));
+            if (drop_kind && drop_payload) {
+                pending_drag = drop_payload;
+                pending_target = layer;
+                pending_kind = drop_kind;
+            }
+
+            gui_same_line();
+            if (gui_condensed_selectable_icon("Add child", &add_press, ICON_ADD)) {
+                image_history_push(img);
+                image_add_child_layer(img, layer);
+                layer->collapsed = false;
+            }
+        }
+
+        gui_pop_id();
+        prev = layer;
+        prev_depth = depth;
+        idx++;
+    }
+
+    /* End of list: last-child exits when nested, then always a line beneath
+     * the last visible layer. */
+    if (prev) {
+        gui_push_id("lyr_end_gaps");
+        if (prev_depth > 0) {
+            render_layer_dnd_gaps(img, prev, prev_depth, NULL, 0,
+                                  &pending_drag, &pending_target,
+                                  &pending_kind);
+        }
+        {
+            layer_t *drop_payload = NULL;
+            float indent = layer_dnd_indent(prev_depth);
+            int drop_kind;
+
+            gui_dummy(1, 2);
+            drop_kind = gui_dnd_gap_target(LAYER_DND_TYPE, &drop_payload,
+                                           (int)sizeof(drop_payload), 3.f,
+                                           indent, 3, 0, 1);
+            try_pending_drop(&pending_drag, &pending_target, &pending_kind,
+                             drop_kind, drop_payload, prev);
+        }
+        gui_pop_id();
+    }
+    gui_group_end();
+
+    if (pending_kind && pending_drag)
+        apply_layer_drop(pending_drag, pending_target, pending_kind);
 }
 
 void gui_layers_panel_impl(bool inner_scroll)
@@ -72,11 +320,7 @@ void gui_layers_panel_impl(bool inner_scroll)
         gui_scrollable_begin(gui_get_available_height() -
                               LAYERS_PANEL_BOTTOM_RESERVE_PX);
     }
-    gui_list(&(gui_list_t) {
-        .items = (void**)&goxel.image->layers,
-        .current = (void**)&goxel.image->active_layer,
-        .render = render_layer_item,
-    });
+    render_layers_list();
     if (inner_scroll) {
         gui_scrollable_end();
     }
@@ -123,6 +367,15 @@ void gui_layers_panel_impl(bool inner_scroll)
         gui_action_button(ACTION_img_unclone_layer, "Unclone", 1);
         gui_action_button(ACTION_img_select_parent_layer, "Select parent", 1);
         gui_group_end();
+    }
+    if (layer->parent_id) {
+        if (gui_button("Select nest parent", 1, 0)) {
+            layer_t *p = layer_find(goxel.image, layer->parent_id);
+            if (p) {
+                goxel.image->active_layer = p;
+                action_exec2(ACTION_tool_set_move);
+            }
+        }
     }
     if (layer->image) {
         gui_action_button(ACTION_img_image_layer_to_volume, "To Volume", 1);

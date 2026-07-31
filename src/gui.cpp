@@ -2489,6 +2489,26 @@ bool gui_input_text(const char *label, char *txt, int size)
     return ret;
 }
 
+bool gui_input_text_row(const char *label, char *buf, int size,
+                        float width, float height)
+{
+    ImGuiStyle &style = ImGui::GetStyle();
+    float font_size = ImGui::GetFontSize();
+    float h = (height > 0.f) ? height
+                             : (font_size + style.FramePadding.y * 2.f);
+    float pad_y = ImMax(0.f, (h - font_size) * 0.5f);
+    bool ret;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(style.FramePadding.x, pad_y));
+    if (width > 0.f)
+        ImGui::SetNextItemWidth(width);
+    ret = ImGui::InputText(label ? label : "##input", buf, (size_t)size,
+                           ImGuiInputTextFlags_AutoSelectAll);
+    ImGui::PopStyleVar();
+    return ret;
+}
+
 bool gui_input_text_multiline(const char *label, char *buf, int size,
                               float width, float height)
 {
@@ -2740,7 +2760,6 @@ bool _layer_item(int idx, int icons_count, const int *icons,
     bool highlighted = selectable && *selected;
     static char *edit_name = NULL;
     static bool start_edit;
-    float font_size = ImGui::GetFontSize();
     int icon;
     int i;
     ImVec2 center;
@@ -2839,17 +2858,14 @@ bool _layer_item(int idx, int icons_count, const int *icons,
     }
     else
     {
+        name_w = ImGui::GetContentRegionAvail().x - trailing_w;
+        if (name_w < btn_h) name_w = btn_h;
         if (start_edit)
             ImGui::SetKeyboardFocusHere();
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                            ImVec2(style.FramePadding.x,
-                                   (GUI_ICON_HEIGHT - font_size) / 2));
-        ImGui::InputText("##name_edit", name, len,
-                         ImGuiInputTextFlags_AutoSelectAll);
+        gui_input_text_row("##name_edit", name, len, name_w, btn_h);
         if (!start_edit && !ImGui::IsItemActive())
             edit_name = NULL;
         start_edit = false;
-        ImGui::PopStyleVar();
     }
     ImGui::PopStyleColor(2);
     ImGui::PopID();
@@ -3347,4 +3363,95 @@ void gui_list(const gui_list_t *list)
         move_item = NULL;
         move_dir = 0;
     }
+}
+
+bool gui_dnd_source(const char *type, const void *payload, int size,
+                    const char *preview)
+{
+    if (!ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
+        return false;
+    ImGui::SetDragDropPayload(type, payload, (size_t)size);
+    if (preview && preview[0])
+        ImGui::TextUnformatted(preview);
+    ImGui::EndDragDropSource();
+    return true;
+}
+
+int gui_dnd_target(const char *type, void *payload_out, int size)
+{
+    const ImGuiPayload *payload;
+    float my, y0, y1, t;
+    int kind = 0;
+
+    if (!ImGui::BeginDragDropTarget())
+        return 0;
+    payload = ImGui::AcceptDragDropPayload(type);
+    if (payload && payload->DataSize == size) {
+        memcpy(payload_out, payload->Data, (size_t)size);
+        y0 = ImGui::GetItemRectMin().y;
+        y1 = ImGui::GetItemRectMax().y;
+        my = ImGui::GetMousePos().y;
+        t = (y1 > y0) ? (my - y0) / (y1 - y0) : 0.5f;
+        if (t < 0.25f)
+            kind = 2; /* above in UI */
+        else if (t > 0.75f)
+            kind = 3; /* below in UI */
+        else
+            kind = 1; /* onto */
+    }
+    ImGui::EndDragDropTarget();
+    return kind;
+}
+
+/* Drop hitbox in the spacing above the next row. Does not add layout height.
+ * indent_x: line starts this many px from the content left (child-level hint).
+ * slot_index / slot_count: stack several gaps in one spacing band (0 = top).
+ * On delivery returns drop_kind; otherwise 0. */
+int gui_dnd_gap_target(const char *type, void *payload_out, int size,
+                       float height, float indent_x, int drop_kind,
+                       int slot_index, int slot_count)
+{
+    const ImGuiPayload *payload;
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    float spacing_y = ImGui::GetStyle().ItemSpacing.y;
+    float h = (height > 0.f) ? height : 3.f;
+    ImVec2 restore = ImGui::GetCursorScreenPos();
+    float x0 = window->WorkRect.Min.x + ImMax(0.f, indent_x);
+    float x1 = window->WorkRect.Max.x;
+    float base_y = restore.y - spacing_y * 0.5f;
+    int slots = (slot_count > 0) ? slot_count : 1;
+    int slot = (slot_index < 0) ? 0 : slot_index;
+    /* Keep stacked lines tight — step by ~2px, not full hitbox height. */
+    float step = 2.f;
+    float y_center = base_y - (slots - 1) * (step * 0.5f) + slot * step;
+    float y0 = y_center - h * 0.5f;
+    ImU32 col = ImGui::GetColorU32(ImGuiCol_DragDropTarget);
+    int kind = 0;
+    char id[32];
+
+    if (x1 <= x0 + 1.f)
+        x1 = x0 + 1.f;
+
+    snprintf(id, sizeof(id), "##dnd_gap_%d", slot);
+    ImGui::SetCursorScreenPos(ImVec2(x0, y0));
+    ImGui::InvisibleButton(id, ImVec2(x1 - x0, h));
+
+    if (ImGui::BeginDragDropTarget()) {
+        payload = ImGui::AcceptDragDropPayload(
+                type, ImGuiDragDropFlags_AcceptBeforeDelivery |
+                      ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
+        if (payload && payload->DataSize == size) {
+            memcpy(payload_out, payload->Data, (size_t)size);
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImVec2(x0, y_center - 1.f),
+                    ImVec2(x1, y_center + 1.f),
+                    col);
+            if (payload->IsDelivery())
+                kind = drop_kind;
+        }
+        ImGui::EndDragDropTarget();
+    }
+
+    ImGui::SetCursorScreenPos(restore);
+    return kind;
 }
