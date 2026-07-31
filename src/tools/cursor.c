@@ -47,19 +47,12 @@ static bool layer_gets_gizmo(const image_t *img, const layer_t *layer)
 
     if (!img || !layer || !layer_effectively_visible(img, layer))
         return false;
-
+    /* Non-locked layers always get a cursor gizmo. */
+    if (!layer->locked)
+        return true;
+    /* Locked: only when the direct parent is selected. */
     active = img->active_layer;
-    if (!active) {
-        if (goxel.cursor.flags & CURSOR_CTRL) {
-            /* Ctrl: top-level only — ungrouped leaves and group overall
-             * boxes; hide everything nested under a parent. */
-            return layer->parent_id == 0;
-        }
-        /* Default: leaf layers only. */
-        return !layer_has_children(img, layer);
-    }
-    /* Selected: that layer and every descendant. */
-    return layer_is_ancestor(img, active, layer);
+    return active && layer->parent_id == active->id;
 }
 
 static void normalize_box(const float box[4][4], float out[4][4])
@@ -415,7 +408,6 @@ static int gui(tool_t *tool)
     (void)tool;
     gui_text("Click a box to select a layer.");
     gui_text("With a layer selected, drag the arrows to move.");
-    gui_text("Hold Ctrl to show group boxes (hides children).");
     gui_text("Hold Alt to show layer names.");
     return 0;
 }

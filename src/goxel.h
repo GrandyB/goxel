@@ -449,6 +449,8 @@ enum {
     X(ICON_SHAPE,                   2, 4, 0),
     X(ICON_CLOSE,                   3, 4, 0),
     X(ICON_CHEVRON_RIGHT,           4, 4, 0),
+    X(ICON_LOCKED,                  5, 4, 0),
+    X(ICON_UNLOCKED,                6, 4, 0),
 
     X(ICON_TOOLS,                   0, 5, THEME_GROUP_ICON_EDIT),
     X(ICON_PALETTE,                 1, 5, THEME_GROUP_ICON_EDIT),

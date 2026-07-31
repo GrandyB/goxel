@@ -574,6 +574,7 @@ static layer_t *layer_clone(layer_t *other)
     layer->base_volume_key = volume_get_key(other->volume);
     layer->opacity = other->opacity;
     layer->volume_snap = other->volume_snap;
+    layer->locked = other->locked;
     return layer;
 }
 

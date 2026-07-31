@@ -1715,12 +1715,14 @@ static bool prepare_building_layers(layer_t *buildings_root, int building_idx,
         floor_layer = add_named_child_layer(building, name);
         if (!floor_layer)
             return false;
+        floor_layer->locked = true;
         floor_volumes[f] = floor_layer->volume;
     }
 
     floor_layer = add_named_child_layer(building, "Roofs");
     if (!floor_layer)
         return false;
+    floor_layer->locked = true;
     *roof_volume = floor_layer->volume;
 
     /* image_add_child_layer inserts as topmost; keep earlier buildings above. */

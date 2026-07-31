@@ -54,6 +54,8 @@ struct layer {
      * base_id). collapsed hides descendants in the layers panel only. */
     int         parent_id;
     bool        collapsed;
+    /* When true, layer is ignored by the cursor tool (no gizmo / pick). */
+    bool        locked;
 };
 
 layer_t *layer_new(const char *name);

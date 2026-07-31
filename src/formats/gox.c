@@ -65,6 +65,7 @@
  *      [DICT] entries include:
  *          opacity: float in 0..1 (default 1)
  *          vol_snap: bool, if false the layer is skipped for snap-to-volume
+ *          locked: bool, if true the layer is ignored by the cursor tool
  *
  *  CAMR: a camera:
  *      [DICT] containing the following entries:
@@ -471,6 +472,8 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
                                sizeof(layer->parent_id));
         chunk_write_dict_value(&c, out, "collapsed", &layer->collapsed,
                                sizeof(layer->collapsed));
+        chunk_write_dict_value(&c, out, "locked", &layer->locked,
+                               sizeof(layer->locked));
 
         chunk_write_finish(&c, out);
     }
@@ -800,6 +803,7 @@ int load_from_file(const char *path, bool replace)
                 }
                 DICT_CPY("parent_id", layer->parent_id);
                 DICT_CPY("collapsed", layer->collapsed);
+                DICT_CPY("locked", layer->locked);
                 if (DICT_CPY("material", material_idx))
                     layer->material = get_material(goxel.image, material_idx);
             }

@@ -229,8 +229,10 @@ static void render_layers_list(void)
         {
             float icon_h = gui_icon_height(true);
             float spacing = gui_style_item_spacing_x();
-            float trailing = icon_h + spacing;
+            float trailing = 2.f * (icon_h + spacing);
             bool add_press = false;
+            bool lock_press = false;
+            int lock_icon = layer->locked ? ICON_LOCKED : ICON_UNLOCKED;
 
             gui_condensed_layer_item_trailing(
                     idx, icons_count, icons, &visible, &current,
@@ -245,8 +247,8 @@ static void render_layers_list(void)
                 img->active_layer = layer;
             }
 
-            /* Bind DnD to the layer name row, before the trailing [+] so
-             * source/target are not stuck on the add-child control. */
+            /* Bind DnD to the layer name row, before the trailing controls so
+             * source/target are not stuck on lock / add-child. */
             if (gui_dnd_source(LAYER_DND_TYPE, &layer, (int)sizeof(layer),
                                layer->name)) {
                 if (img->active_layer != layer)
@@ -260,6 +262,12 @@ static void render_layers_list(void)
                 pending_kind = drop_kind;
             }
 
+            gui_same_line();
+            if (gui_condensed_selectable_icon(
+                        layer->locked ? "Unlock layer" : "Lock layer",
+                        &lock_press, lock_icon)) {
+                layer->locked = !layer->locked;
+            }
             gui_same_line();
             if (gui_condensed_selectable_icon("Add child", &add_press, ICON_ADD)) {
                 image_history_push(img);

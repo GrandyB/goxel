@@ -63,6 +63,7 @@ uint32_t layer_get_key(const layer_t *layer)
     key = XXH32(&mat_key, sizeof(mat_key), key);
     key = XXH32(&layer->parent_id, sizeof(layer->parent_id), key);
     key = XXH32(&layer->collapsed, sizeof(layer->collapsed), key);
+    key = XXH32(&layer->locked, sizeof(layer->locked), key);
     return key;
 }
 
@@ -89,6 +90,7 @@ layer_t *layer_copy(layer_t *other)
     memcpy(layer->color, other->color, sizeof(layer->color));
     layer->parent_id = other->parent_id;
     layer->collapsed = other->collapsed;
+    layer->locked = other->locked;
     return layer;
 }
 
