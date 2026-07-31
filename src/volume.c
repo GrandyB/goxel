@@ -63,6 +63,11 @@ struct volume
     tile_t *tiles;
     int *tiles_ref;   // Used to implement copy on write of the tiles.
     uint64_t key; // Two volumes with the same key have the same value.
+    /* Lazy AABB cache for volume_get_bbox; bbox_key==0 means invalid. */
+    uint64_t bbox_key;
+    bool bbox_exact;
+    bool bbox_nonempty;
+    int bbox[2][3];
 };
 
 static uint64_t g_uid = 2; // Global id counter.
@@ -253,12 +258,20 @@ static void tile_get_at(const tile_t *tile, const int pos[3],
  */
 bool volume_get_bbox(const volume_t *volume, int bbox[2][3], bool exact)
 {
+    volume_t *v = (volume_t *)volume;
     tile_t *tile;
     int ret[2][3] = {{INT_MAX, INT_MAX, INT_MAX},
                      {INT_MIN, INT_MIN, INT_MIN}};
     int pos[3];
     volume_iterator_t iter;
     bool empty = false;
+
+    /* Serve cache when key matches; exact may satisfy an approx request. */
+    if (volume->bbox_key == volume->key &&
+            (!exact || volume->bbox_exact)) {
+        memcpy(bbox, volume->bbox, sizeof(volume->bbox));
+        return volume->bbox_nonempty;
+    }
 
     if (!exact) {
         for (tile = volume->tiles; tile; tile = tile->hh.next) {
@@ -268,7 +281,7 @@ bool volume_get_bbox(const volume_t *volume, int bbox[2][3], bool exact)
             ret[0][2] = min(ret[0][2], tile->pos[2]);
             ret[1][0] = max(ret[1][0], tile->pos[0] + N);
             ret[1][1] = max(ret[1][1], tile->pos[1] + N);
-            ret[1][2] = max(ret[1][2], tile->pos[1] + N);
+            ret[1][2] = max(ret[1][2], tile->pos[2] + N);
         }
     } else {
         iter = volume_get_iterator(volume, VOLUME_ITER_SKIP_EMPTY);
@@ -285,6 +298,11 @@ bool volume_get_bbox(const volume_t *volume, int bbox[2][3], bool exact)
     empty = ret[0][0] >= ret[1][0];
     if (empty) memset(ret, 0, sizeof(ret));
     memcpy(bbox, ret, sizeof(ret));
+
+    v->bbox_key = volume->key;
+    v->bbox_exact = exact;
+    v->bbox_nonempty = !empty;
+    memcpy(v->bbox, ret, sizeof(ret));
     return !empty;
 }
 
@@ -458,6 +476,10 @@ volume_t *volume_copy(const volume_t *other)
     volume->tiles = other->tiles;
     volume->tiles_ref = other->tiles_ref;
     volume->key = other->key;
+    volume->bbox_key = other->bbox_key;
+    volume->bbox_exact = other->bbox_exact;
+    volume->bbox_nonempty = other->bbox_nonempty;
+    memcpy(volume->bbox, other->bbox, sizeof(volume->bbox));
     (*volume->tiles_ref)++;
     return volume;
 }
@@ -466,7 +488,14 @@ void volume_set(volume_t *volume, const volume_t *other)
 {
     tile_t *tile, *tmp;
     assert(volume && other);
-    if (volume->tiles == other->tiles) return; // Already the same.
+    if (volume->tiles == other->tiles) {
+        volume->key = other->key;
+        volume->bbox_key = other->bbox_key;
+        volume->bbox_exact = other->bbox_exact;
+        volume->bbox_nonempty = other->bbox_nonempty;
+        memcpy(volume->bbox, other->bbox, sizeof(volume->bbox));
+        return; // Already the same.
+    }
     (*volume->tiles_ref)--;
     if (*volume->tiles_ref == 0) {
         HASH_ITER(hh, volume->tiles, tile, tmp) {
@@ -480,6 +509,10 @@ void volume_set(volume_t *volume, const volume_t *other)
     volume->tiles = other->tiles;
     volume->tiles_ref = other->tiles_ref;
     volume->key = other->key;
+    volume->bbox_key = other->bbox_key;
+    volume->bbox_exact = other->bbox_exact;
+    volume->bbox_nonempty = other->bbox_nonempty;
+    memcpy(volume->bbox, other->bbox, sizeof(volume->bbox));
     (*volume->tiles_ref)++;
 }
 

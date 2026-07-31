@@ -168,6 +168,10 @@ bool volume_is_empty(const volume_t *volume);
  *            an approximation that might be slightly bigger than the
  *            actual box, but faster to compute.
  *
+ * Notes:
+ *   Results are cached on the volume and reused while volume_get_key() is
+ *   unchanged.  An exact cache also satisfies later approximate requests.
+ *
  * Outputs:
  *   bbox  - The bounding box as the bottom left and top right corner of
  *           the volume.  If the volume is empty, this will contain all zero.
