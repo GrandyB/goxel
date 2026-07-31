@@ -93,6 +93,12 @@ layer_t *img_get_layer(const image_t *img, int id);
 layer_t *layer_find(const image_t *img, int id);
 int layer_depth(const image_t *img, const layer_t *layer);
 bool layer_effectively_visible(const image_t *img, const layer_t *layer);
+/* Session-only solo focus: overrides visibility so only one layer shows.
+ * Does not change layer->visible. Cleared when the focused layer is deleted. */
+void image_toggle_layer_focus(layer_t *layer);
+void image_set_layer_focus(layer_t *layer);
+void image_clear_layer_focus(void);
+layer_t *image_get_focused_layer(const image_t *img);
 bool layer_is_ancestor(const image_t *img, const layer_t *ancestor,
                        const layer_t *layer);
 /* True if layer is the active layer or a descendant of it. Used by

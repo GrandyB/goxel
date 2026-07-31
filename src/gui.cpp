@@ -2798,18 +2798,19 @@ bool _model_item(int idx, bool *selected, const char *name, int len)
 }
 
 
+static char *g_layer_edit_name = NULL;
+static bool g_layer_start_edit = false;
+
 bool _layer_item(int idx, int icons_count, const int *icons,
                     bool *visible, bool *selected,
                     char *name, int len, bool condensed, float trailing_w,
                     bool allow_deselect, bool solo_active, bool *solo_pressed,
                     bool reserve_visibility_space, bool reserve_solo_space,
-                    bool selectable)
+                    bool selectable, bool *name_double_clicked)
 {
     bool ret = false;
     bool selected_ = *selected;
     bool highlighted = selectable && *selected;
-    static char *edit_name = NULL;
-    static bool start_edit;
     int icon;
     int i;
     ImVec2 center;
@@ -2866,7 +2867,7 @@ bool _layer_item(int idx, int icons_count, const int *icons,
         ImGui::SameLine();
     }
 
-    if (edit_name != name)
+    if (g_layer_edit_name != name)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5));
         padding = style.FramePadding;
@@ -2902,24 +2903,34 @@ bool _layer_item(int idx, int icons_count, const int *icons,
         ImGui::PopStyleVar();
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
         {
-            edit_name = name;
-            start_edit = true;
+            if (name_double_clicked)
+                *name_double_clicked = true;
+            else {
+                g_layer_edit_name = name;
+                g_layer_start_edit = true;
+            }
         }
     }
     else
     {
         name_w = ImGui::GetContentRegionAvail().x - trailing_w;
         if (name_w < btn_h) name_w = btn_h;
-        if (start_edit)
+        if (g_layer_start_edit)
             ImGui::SetKeyboardFocusHere();
         gui_input_text_row("##name_edit", name, len, name_w, btn_h);
-        if (!start_edit && !ImGui::IsItemActive())
-            edit_name = NULL;
-        start_edit = false;
+        if (!g_layer_start_edit && !ImGui::IsItemActive())
+            g_layer_edit_name = NULL;
+        g_layer_start_edit = false;
     }
     ImGui::PopStyleColor(2);
     ImGui::PopID();
     return ret;
+}
+
+void gui_layer_start_rename(char *name)
+{
+    g_layer_edit_name = name;
+    g_layer_start_edit = true;
 }
 
 float gui_icon_height(bool condensed)
@@ -2932,7 +2943,7 @@ bool gui_condensed_layer_item(int idx, int icons_count, const int *icons,
                     char *name, int len)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
-                       true, 0, false, false, NULL, false, false, true);
+                       true, 0, false, false, NULL, false, false, true, NULL);
 }
 
 bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icons,
@@ -2940,12 +2951,12 @@ bool gui_condensed_layer_item_trailing(int idx, int icons_count, const int *icon
                     char *name, int len, float trailing_w,
                     bool allow_deselect, bool solo_active, bool *solo_pressed,
                     bool reserve_visibility_space, bool reserve_solo_space,
-                    bool selectable)
+                    bool selectable, bool *name_double_clicked)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
                        true, trailing_w, allow_deselect, solo_active,
                        solo_pressed, reserve_visibility_space,
-                       reserve_solo_space, selectable);
+                       reserve_solo_space, selectable, name_double_clicked);
 }
 
 bool gui_layer_item(int idx, int icons_count, const int *icons,
@@ -2953,7 +2964,7 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
                     char *name, int len)
 {
     return _layer_item(idx, icons_count, icons, visible, selected, name, len,
-                       false, 0, false, false, NULL, false, false, true);
+                       false, 0, false, false, NULL, false, false, true, NULL);
 }
 
 bool gui_is_key_down(int key)

@@ -107,7 +107,8 @@ static bool render_list_item(void *item, int idx, bool current)
                                           obj->name, sizeof(obj->name),
                                           trailing, true, solo_active,
                                           show_solo ? &solo_press : NULL,
-                                          !show_visibility, !show_solo, true))
+                                          !show_visibility, !show_solo, true,
+                                          NULL))
         ret = true;
     if (show_solo && solo_press)
         custom_objects_toggle_solo(obj);

@@ -24,6 +24,9 @@
  * buffers in reparent / move / duplicate. Change this one value to retune. */
 #define LAYER_SUBTREE_MAX 2048
 
+/* UI session: id of layer solo-focused in the layers panel (0 = none). */
+static int g_focused_layer_id = 0;
+
 /* History
     the images undo history is stored in a linked list.  Every time we call
     image_history_push, we add the current image snapshot in the list.
@@ -148,10 +151,47 @@ int layer_depth(const image_t *img, const layer_t *layer)
     return depth;
 }
 
+void image_clear_layer_focus(void)
+{
+    g_focused_layer_id = 0;
+}
+
+void image_toggle_layer_focus(layer_t *layer)
+{
+    if (!layer) return;
+    if (g_focused_layer_id == layer->id)
+        g_focused_layer_id = 0;
+    else
+        g_focused_layer_id = layer->id;
+}
+
+void image_set_layer_focus(layer_t *layer)
+{
+    g_focused_layer_id = layer ? layer->id : 0;
+}
+
+layer_t *image_get_focused_layer(const image_t *img)
+{
+    layer_t *layer;
+    if (!g_focused_layer_id || !img) return NULL;
+    layer = layer_find(img, g_focused_layer_id);
+    if (!layer)
+        g_focused_layer_id = 0;
+    return layer;
+}
+
 bool layer_effectively_visible(const image_t *img, const layer_t *layer)
 {
     const layer_t *p;
-    if (!layer || !layer->visible) return false;
+    const layer_t *focused;
+    if (!layer) return false;
+    /* Focus overrides stored visibility: show the focused layer and its
+     * descendants only (ancestors and siblings stay hidden). */
+    if (g_focused_layer_id) {
+        focused = layer_find(img, g_focused_layer_id);
+        return focused && layer_is_ancestor(img, focused, layer);
+    }
+    if (!layer->visible) return false;
     for (p = layer_find(img, layer->parent_id); p;
          p = layer_find(img, p->parent_id)) {
         if (!p->visible) return false;
@@ -782,6 +822,8 @@ void image_delete(image_t *img)
     if (!img) return;
     if (--img->ref > 0) return;
 
+    image_clear_layer_focus();
+
     while ((layer = img->layers)) {
         DL_DELETE(img->layers, layer);
         layer_delete(layer);
@@ -944,6 +986,8 @@ void image_delete_layer(image_t *img, layer_t *layer)
     }
     DL_DELETE(img->layers, layer);
     if (layer == img->active_layer) img->active_layer = NULL;
+    if (g_focused_layer_id == layer->id)
+        g_focused_layer_id = 0;
 
     DL_FOREACH(img->layers, other) {
         if (other->base_id == layer->id)

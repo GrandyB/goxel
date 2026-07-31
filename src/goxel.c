@@ -1720,6 +1720,11 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview)
         k = volume_get_key(goxel.tool_volume);
         hash = XXH32(&k, sizeof(k), hash);
     }
+    {
+        layer_t *focused = image_get_focused_layer(goxel.image);
+        int focus_id = focused ? focused->id : 0;
+        hash = XXH32(&focus_id, sizeof(focus_id), hash);
+    }
 
     if (hash != goxel.render_layers_hash) {
         goxel.render_layers_hash = hash;
@@ -1734,6 +1739,9 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview)
             if (!layer_effectively_visible(goxel.image, l)) continue;
             if (!l->volume) continue;
             layer = layer_copy(l);
+            /* Inclusion already means draw-worthy (incl. focus override of a
+             * hidden layer); force visible so downstream checks agree. */
+            layer->visible = true;
             if (    with_tool_preview && goxel.tool_volume &&
                     goxel.image->active_layer &&
                     l->volume == goxel.image->active_layer->volume)
