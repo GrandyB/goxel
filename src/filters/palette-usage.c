@@ -233,14 +233,13 @@ static void run_analyse(filter_palette_usage_t *filter)
     filter->colors_after_condense = 0;
     filter->status_msg[0] = '\0';
 
-    if (filter->current_layer_only) {
-        add_volume_layer_counts(filter, goxel.image->active_layer, &colors);
-    } else {
-        DL_FOREACH(goxel.image->layers, layer) {
-            if (!layer_is_volume(layer))
-                continue;
-            add_volume_layer_counts(filter, layer, &colors);
-        }
+    DL_FOREACH(goxel.image->layers, layer) {
+        if (filter->current_layer_only &&
+            !layer_in_active_subtree(goxel.image, layer))
+            continue;
+        if (!layer_is_volume(layer))
+            continue;
+        add_volume_layer_counts(filter, layer, &colors);
     }
 
     filter->unique_colors = HASH_COUNT(colors);
@@ -344,8 +343,8 @@ static int gui(filter_t *filter_)
     filter->usage_threshold = ut;
 
     gui_checkbox("Current layer only", &filter->current_layer_only,
-                 "If checked, only the active layer is scanned (must be a "
-                 "plain voxel layer).");
+                 "If checked, only the active layer and its children "
+                 "(recursively) are scanned (plain voxel layers).");
 
     gui_checkbox("Condense similar colours", &filter->condense_similar,
                  "When reporting, merge colours within the degree difference "

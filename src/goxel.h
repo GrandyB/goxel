@@ -786,11 +786,23 @@ void goxel_apply_color_filter(
     void (*fn)(void *args, uint8_t color[4]), void *args);
 
 /*
+ * goxel_get_filter_aabb
+ * Integer AABB for geometric filters (mirror / rotate / wrap).
+ *
+ * Starts from the image box (or active layer box when it has no children),
+ * then expands to cover every voxel in scope: active + descendants when
+ * current_only, otherwise all layers. Content outside the image box is
+ * included so parent-scoped ops still hit every child.
+ */
+bool goxel_get_filter_aabb(bool current_only, int aabb[2][3]);
+
+/*
  * goxel_rotate_90
  * Rotate the voxels 90° around Z inside the current box.
  *
  * direction - Positive for clockwise, negative for anti-clockwise.
- * current_layer_only - Only rotate the active layer instead of all of them.
+ * current_layer_only - Only rotate the active layer and its descendants
+ * instead of all layers.
  */
 void goxel_rotate_90(int direction, bool current_layer_only);
 

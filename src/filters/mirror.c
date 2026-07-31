@@ -24,48 +24,35 @@ typedef struct {
 
 static void volume_mirror(volume_t *volume, int axis, const int aabb[2][3])
 {
-    int pos[3];
-    int buffer_pos[3];
-    int volume_pos[3];
-    int size[3];
-    uint8_t *buffer;
-    int i;
-    size_t buffer_offset;
+    volume_iterator_t iter;
+    volume_t *out;
+    int pos[3], dst[3];
+    int sum;
+    uint8_t color[4];
 
-    if (aabb[1][axis] - aabb[0][axis] == 1) {
+    if (!volume || aabb[1][axis] - aabb[0][axis] <= 1)
         return;
+    if (volume_is_empty(volume))
+        return;
+
+    /* Reflect every voxel around the AABB centre on `axis`.  Unlike the
+     * old AABB-scan approach, content outside the image box is included. */
+    sum = aabb[0][axis] + aabb[1][axis] - 1;
+    out = volume_new();
+    iter = volume_get_iterator(volume,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(volume, &iter, pos, color);
+        if (!color[3])
+            continue;
+        dst[0] = pos[0];
+        dst[1] = pos[1];
+        dst[2] = pos[2];
+        dst[axis] = sum - pos[axis];
+        volume_set_at(out, NULL, dst, color);
     }
-
-    size[0] = aabb[1][0] - aabb[0][0];
-    size[1] = aabb[1][1] - aabb[0][1];
-    size[2] = aabb[1][2] - aabb[0][2];
-
-    buffer = malloc(4 * size[0] * size[1] * size[2]);
-
-    for (pos[0] = 0; pos[0] < size[0]; pos[0]++) {
-        for (pos[1] = 0; pos[1] < size[1]; pos[1]++) {
-            for (pos[2] = 0; pos[2] < size[2]; pos[2]++) {
-                memcpy(buffer_pos, pos, sizeof(pos));
-                memcpy(volume_pos, pos, sizeof(pos));
-
-                for (i = 0; i < 3; i++) {
-                    volume_pos[i] += aabb[0][i];
-                }
-
-                buffer_pos[axis] = size[axis] - buffer_pos[axis] - 1;
-
-                buffer_offset = 4 * (
-                    buffer_pos[2] * size[0] * size[1] +
-                    buffer_pos[1] * size[0] + buffer_pos[0]
-                );
-
-                volume_get_at(volume, NULL, volume_pos, &buffer[buffer_offset]);
-            }
-        }
-    }
-
-    volume_write_aabb_from_buffer(volume, buffer, aabb);
-    free(buffer);
+    volume_set(volume, out);
+    volume_delete(out);
 }
 
 /*
@@ -173,31 +160,23 @@ static bool half_selection_box(int *out_axis, int *out_side)
 static void mirror_apply(filter_mirror_t *mirror_props, int axis, int side,
                          bool half)
 {
-    float box[4][4] = {};
     int aabb[2][3];
     layer_t *layer;
+    bool current_only = mirror_props->filter.current_only;
 
-    memcpy(box, goxel.image->active_layer->box, sizeof(box));
-
-    if (box_is_null(box))
-        memcpy(box, goxel.image->active_layer->box, sizeof(box));
-
-    if (box_is_null(box))
-        memcpy(box, goxel.image->box, sizeof(box));
-
-    if (box_is_null(box))
+    if (current_only && !goxel.image->active_layer->visible)
         return;
 
-    if (mirror_props->filter.current_only &&
-        !goxel.image->active_layer->visible)
+    if (!goxel_get_filter_aabb(current_only, aabb))
         return;
 
-    bbox_to_aabb(box, aabb);
     image_history_push(goxel.image);
 
     DL_FOREACH(goxel.image->layers, layer) {
-        if (mirror_props->filter.current_only &&
-            layer != goxel.image->active_layer)
+        if (current_only &&
+            !layer_in_active_subtree(goxel.image, layer))
+            continue;
+        if (!layer->volume)
             continue;
 
         if (half)
@@ -218,7 +197,8 @@ static int gui(filter_t *filter)
     gui_checkbox(
         "Current layer only",
         &mirror_props->filter.current_only,
-        "If checked, only voxels on the current layer will be mirrored.\n"
+        "If checked, only the current layer and its children "
+        "(recursively) are mirrored.\n"
         "If unchecked, voxels on all layers will be mirrored."
     );
 

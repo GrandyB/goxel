@@ -41,8 +41,8 @@ struct filter {
     const char *action_id;
     const char *default_shortcut;
     const float panel_width;
-    /* Restrict the filter to the active layer. Set when the filter is opened
-     * from a menu: false from Image, true from Layers. */
+    /* Restrict the filter to the active layer and its descendants.
+     * Set when opened from a menu: false from Image, true from Layers. */
     bool current_only;
     bool is_open;
 };

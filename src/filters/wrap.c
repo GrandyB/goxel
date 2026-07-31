@@ -32,63 +32,38 @@ typedef struct
 static void volume_wrap(volume_t *volume, int axis, int sign,
                         const int aabb[2][3], int filter_distance)
 {
-    int pos[3];
-    int buffer_pos[3];
-    int volume_pos[3];
-    int size[3];
-    uint8_t *buffer;
-    int i;
-    size_t buffer_offset;
+    volume_iterator_t iter;
+    volume_t *out;
+    int pos[3], dst[3], local, size;
     int distance;
+    uint8_t color[4];
 
-    if (aabb[1][axis] - aabb[0][axis] == 1)
-    {
-        return; // No space to move
+    size = aabb[1][axis] - aabb[0][axis];
+    if (!volume || size <= 1)
+        return;
+    if (volume_is_empty(volume))
+        return;
+
+    distance = (filter_distance % size) * sign;
+    out = volume_new();
+    iter = volume_get_iterator(volume,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(volume, &iter, pos, color);
+        if (!color[3])
+            continue;
+        dst[0] = pos[0];
+        dst[1] = pos[1];
+        dst[2] = pos[2];
+        local = pos[axis] - aabb[0][axis] + distance;
+        local %= size;
+        if (local < 0)
+            local += size;
+        dst[axis] = aabb[0][axis] + local;
+        volume_set_at(out, NULL, dst, color);
     }
-
-    size[0] = aabb[1][0] - aabb[0][0];
-    size[1] = aabb[1][1] - aabb[0][1];
-    size[2] = aabb[1][2] - aabb[0][2];
-
-    buffer = malloc(4 * size[0] * size[1] * size[2]);
-
-    distance = (filter_distance % size[axis]) * sign; // Ensure wrapping works correctly
-
-    // Step 1: Copy voxels into buffer with adjusted positions
-    for (pos[0] = 0; pos[0] < size[0]; pos[0]++)
-    {
-        for (pos[1] = 0; pos[1] < size[1]; pos[1]++)
-        {
-            for (pos[2] = 0; pos[2] < size[2]; pos[2]++)
-            {
-                memcpy(buffer_pos, pos, sizeof(pos));
-                memcpy(volume_pos, pos, sizeof(pos));
-
-                for (i = 0; i < 3; i++)
-                {
-                    volume_pos[i] += aabb[0][i]; // Convert local position to volume position
-                }
-
-                buffer_pos[axis] += distance;
-
-                // Wrap around when exceeding boundaries
-                if (buffer_pos[axis] < 0)
-                {
-                    buffer_pos[axis] += size[axis];
-                }
-
-                buffer_pos[axis] %= size[axis];
-
-                buffer_offset = 4 * (buffer_pos[2] * size[0] * size[1] +
-                                     buffer_pos[1] * size[0] + buffer_pos[0]);
-
-                volume_get_at(volume, NULL, volume_pos, &buffer[buffer_offset]);
-            }
-        }
-    }
-
-    volume_write_aabb_from_buffer(volume, buffer, aabb);
-    free(buffer);
+    volume_set(volume, out);
+    volume_delete(out);
 }
 
 static bool wrap_box(int *out_axis, int *sign)
@@ -131,23 +106,16 @@ static int gui(filter_t *filter)
 {
     filter_wrap_t *wrap = (void *)filter;
     int axis, sign;
-    float box[4][4] = {};
     int aabb[2][3];
     bool should_wrap;
     layer_t *layer;
-
-    memcpy(box, goxel.image->active_layer->box, sizeof(box));
-
-    if (box_is_null(box))
-        memcpy(box, goxel.image->active_layer->box, sizeof(box));
-
-    if (box_is_null(box))
-        memcpy(box, goxel.image->box, sizeof(box));
+    bool current_only = wrap->filter.current_only;
 
     gui_checkbox(
         "Current layer only",
         &wrap->filter.current_only,
-        "If checked, only voxels on the current layer will be wrapped.\n"
+        "If checked, only the current layer and its children "
+        "(recursively) are wrapped.\n"
         "If unchecked, voxels on all layers will be wrapped.");
 
     gui_input_int("Distance", &wrap->distance, 0, 9999);
@@ -158,23 +126,23 @@ static int gui(filter_t *filter)
 
     if (should_wrap)
     {
-        if (box_is_null(box))
+        if (current_only && !goxel.image->active_layer->visible)
             return 0;
 
-        if (wrap->filter.current_only && !goxel.image->active_layer->visible)
+        if (!goxel_get_filter_aabb(current_only, aabb))
             return 0;
 
-        bbox_to_aabb(box, aabb);
-
+        image_history_push(goxel.image);
         DL_FOREACH(goxel.image->layers, layer)
         {
-            if (wrap->filter.current_only &&
-                layer != goxel.image->active_layer)
+            if (current_only &&
+                !layer_in_active_subtree(goxel.image, layer))
+                continue;
+            if (!layer->volume)
                 continue;
 
             volume_wrap(layer->volume, axis, sign, aabb, wrap->distance);
         }
-        image_history_push(goxel.image);
     }
 
     return 0;

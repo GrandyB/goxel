@@ -1952,40 +1952,98 @@ void goxel_add_recent_file(const char *path)
     fclose(file);
 }
 
+static void aabb_expand(int aabb[2][3], const int other[2][3])
+{
+    int i;
+    for (i = 0; i < 3; i++) {
+        if (other[0][i] < aabb[0][i]) aabb[0][i] = other[0][i];
+        if (other[1][i] > aabb[1][i]) aabb[1][i] = other[1][i];
+    }
+}
+
+bool goxel_get_filter_aabb(bool current_only, int aabb[2][3])
+{
+    image_t *img = goxel.image;
+    layer_t *active;
+    layer_t *layer;
+    int b[2][3];
+    bool any = false;
+    bool skip_layer_box;
+
+    if (!img) return false;
+    active = img->active_layer;
+    skip_layer_box = active && layer_has_children(img, active);
+
+    if (!skip_layer_box && active && !box_is_null(active->box)) {
+        bbox_to_aabb(active->box, aabb);
+        any = true;
+    } else if (!box_is_null(img->box)) {
+        bbox_to_aabb(img->box, aabb);
+        any = true;
+    }
+
+    /* Expand so every in-scope voxel is inside the AABB. Painting can
+     * place content outside the image box; children often sit outside a
+     * parent's layer box. */
+    DL_FOREACH(img->layers, layer) {
+        if (current_only && !layer_in_active_subtree(img, layer))
+            continue;
+        if (!layer->volume)
+            continue;
+        if (!volume_get_bbox(layer->volume, b, true))
+            continue;
+        if (b[0][0] > b[1][0])
+            continue;
+        if (!any) {
+            memcpy(aabb, b, sizeof(b));
+            any = true;
+        } else {
+            aabb_expand(aabb, b);
+        }
+    }
+    return any;
+}
+
 void goxel_apply_color_filter(
     void (*fn)(void *args, uint8_t color[4]), void *args)
 {
-    layer_t *layer = goxel.image->active_layer;
+    layer_t *layer;
     volume_t *volume;
     volume_iterator_t iter;
     int p[3];
     uint8_t color[4];
     painter_t painter;
 
-    /* Compute the volume where we want to apply the filter.  Mask, rect
-     * selection, or the whole layer.  */
-    volume = volume_copy(layer->volume);
-    if (!box_is_null(layer->box))
-    {
-        painter = (painter_t){
-            .shape = &shape_cube,
-            .mode = MODE_INTERSECT,
-            .color = {255, 255, 255, 255},
-        };
-        volume_op(volume, &painter, layer->box);
-    }
-    iter = volume_get_iterator(volume,
-                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
-    while (volume_iter(&iter, p))
-    {
-        volume_get_at(volume, &iter, p, color);
-        fn(args, color);
-        volume_set_at(volume, &iter, p, color);
-    }
+    /* Active layer and descendants (so a selected parent includes children).
+     * Within each layer: mask / layer box / whole volume. */
+    DL_FOREACH(goxel.image->layers, layer) {
+        if (!layer_in_active_subtree(goxel.image, layer))
+            continue;
+        if (!layer->volume)
+            continue;
 
-    // Merge back into the original layer.
-    volume_merge(layer->volume, volume, MODE_OVER, NULL);
-    volume_delete(volume);
+        volume = volume_copy(layer->volume);
+        if (!box_is_null(layer->box))
+        {
+            painter = (painter_t){
+                .shape = &shape_cube,
+                .mode = MODE_INTERSECT,
+                .color = {255, 255, 255, 255},
+            };
+            volume_op(volume, &painter, layer->box);
+        }
+        iter = volume_get_iterator(volume,
+                                   VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+        while (volume_iter(&iter, p))
+        {
+            volume_get_at(volume, &iter, p, color);
+            fn(args, color);
+            volume_set_at(volume, &iter, p, color);
+        }
+
+        volume_merge(layer->volume, volume, MODE_OVER, NULL);
+        volume_delete(volume);
+    }
 }
 
 static void a_cut_as_new_layer(void)

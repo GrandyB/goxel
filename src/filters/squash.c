@@ -35,7 +35,9 @@ static void squash_layer(filter_squash_t *filter, layer_t *layer)
     uint8_t cur_block_color[4];
     volume_t *copy;
 
-    if (!layer_is_volume(layer))
+    if (!layer || !layer->volume || volume_is_empty(layer->volume))
+        return;
+    if (layer->shape || layer->image)
         return;
 
     volume_get_box(layer->volume, true, box);
@@ -69,6 +71,7 @@ static void squash_layer(filter_squash_t *filter, layer_t *layer)
         }
     }
     volume_set(layer->volume, copy);
+    volume_delete(copy);
 }
 
 static int gui(filter_t *filter_)
@@ -87,7 +90,8 @@ static int gui(filter_t *filter_)
     gui_checkbox(
         "Current layer only",
         &filter->filter.current_only,
-        "If checked, only voxels on the current layer will be squashed.\n"
+        "If checked, only the current layer and its children "
+        "(recursively) are squashed.\n"
         "If unchecked, voxels on all layers will be squashed.");
 
     gui_group_begin(NULL);
@@ -97,12 +101,11 @@ static int gui(filter_t *filter_)
     if (gui_button("Apply", -1, 0))
     {
         image_history_push(goxel.image);
-        if (filter->filter.current_only) {
-            squash_layer(filter, goxel.image->active_layer);
-        } else {
-            DL_FOREACH(goxel.image->layers, layer) {
-                squash_layer(filter, layer);
-            }
+        DL_FOREACH(goxel.image->layers, layer) {
+            if (filter->filter.current_only &&
+                !layer_in_active_subtree(goxel.image, layer))
+                continue;
+            squash_layer(filter, layer);
         }
     }
     return 0;

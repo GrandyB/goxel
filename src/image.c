@@ -161,9 +161,15 @@ bool layer_is_ancestor(const image_t *img, const layer_t *ancestor,
     const layer_t *p;
     if (!img || !ancestor || !layer) return false;
     for (p = layer; p; p = layer_find(img, p->parent_id)) {
-        if (p == ancestor) return true;
+        if (p->id == ancestor->id) return true;
     }
     return false;
+}
+
+bool layer_in_active_subtree(const image_t *img, const layer_t *layer)
+{
+    if (!img || !layer || !img->active_layer) return false;
+    return layer_is_ancestor(img, img->active_layer, layer);
 }
 
 bool layer_has_children(const image_t *img, const layer_t *layer)

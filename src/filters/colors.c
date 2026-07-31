@@ -85,7 +85,9 @@ static int gui(filter_t *filter_)
     float contrast = filter->contrast;
     //bool changed;
 
-    const char* help_text = "Color adjustment filter acts on the current layer as it was when the filter panel was opened, until you hit 're-acquire'. 'Reset' will reset to the state the volume had when this panel was opened. Both will reset the four values to 0.";
+    const char* help_text =
+        "Color adjustment acts on the current layer and its children "
+        "(recursively).";
     goxel_set_help_text(help_text);
     
     slider_float("Hue", &hue, -180., +180., "%.1f");

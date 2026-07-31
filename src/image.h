@@ -95,6 +95,9 @@ int layer_depth(const image_t *img, const layer_t *layer);
 bool layer_effectively_visible(const image_t *img, const layer_t *layer);
 bool layer_is_ancestor(const image_t *img, const layer_t *ancestor,
                        const layer_t *layer);
+/* True if layer is the active layer or a descendant of it. Used by
+ * "current layer only" filters so a selected parent includes children. */
+bool layer_in_active_subtree(const image_t *img, const layer_t *layer);
 bool layer_has_children(const image_t *img, const layer_t *layer);
 /* Nesting list order: children sit *before* the parent in the forward
  * utlist so DL_FOREACH_REVERSE shows parent above its children. */
