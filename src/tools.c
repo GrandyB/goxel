@@ -160,7 +160,7 @@ int tool_gui_shape(const shape_t **shape)
     gui_icon_info_t grid[64] = {};
     shape = shape ?: &goxel.painter.shape;
     int i, ret = 0;
-    int current;
+    int current = 0;
     const int nb = ARRAY_SIZE(shapes);
 
     if (gui_section_begin("Shape", true)) {

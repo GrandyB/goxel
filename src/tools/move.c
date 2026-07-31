@@ -43,9 +43,9 @@ static void update_view(void)
     float origin_box[4][4] = MAT4_IDENTITY;
     bool first;
     uint8_t color[4] = {255, 0, 0, 255};
+    layer_t *layer = goxel.image ? goxel.image->active_layer : NULL;
 
-
-    layer_t *layer = goxel.image->active_layer;
+    if (!layer) return;
 
     if (layer_is_volume(layer) || layer_has_children(goxel.image, layer)) {
         goxel.tool_drag_mode = DRAG_MOVE;
@@ -100,7 +100,11 @@ static int gui(tool_t *tool)
 
     update_view();
 
-    layer = goxel.image->active_layer;
+    layer = goxel.image ? goxel.image->active_layer : NULL;
+    if (!layer) {
+        gui_text("No layer selected.");
+        return 0;
+    }
     if (layer->shape) {
         tool_gui_drag_mode(&goxel.tool_drag_mode);
     } else {

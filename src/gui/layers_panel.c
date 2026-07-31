@@ -283,14 +283,17 @@ static void render_layers_list(void)
             }
             if (current && img->active_layer != layer) {
                 img->active_layer = layer;
+                tool_cursor_clear_edit();
             }
 
             /* Bind DnD to the layer name row, before the trailing controls so
              * source/target are not stuck on lock / add-child. */
             if (gui_dnd_source(LAYER_DND_TYPE, &layer, (int)sizeof(layer),
                                layer->name)) {
-                if (img->active_layer != layer)
+                if (img->active_layer != layer) {
                     img->active_layer = layer;
+                    tool_cursor_clear_edit();
+                }
             }
             drop_kind = gui_dnd_target(LAYER_DND_TYPE, &drop_payload,
                                        (int)sizeof(drop_payload));
@@ -371,6 +374,7 @@ static void render_layers_list(void)
         gui_remaining_space_clicked()) {
         image_t *img = goxel.image;
         img->active_layer = NULL;
+        tool_cursor_clear_edit();
         if (gui_is_key_down(KEY_LEFT_SHIFT) ||
             gui_is_key_down(KEY_RIGHT_SHIFT)) {
             image_clear_layer_focus();

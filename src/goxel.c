@@ -597,8 +597,11 @@ int goxel_unproject(const float viewport[4],
                                        goxel.selection, false,
                                        p, n, NULL);
         if ((1 << i) == SNAP_LAYER_OUT) {
-            volume_get_box(goxel_get_layer_move_volume(
-                                   goxel.image->active_layer), true, box);
+            const volume_t *mv;
+            if (!goxel.image->active_layer) continue;
+            mv = goxel_get_layer_move_volume(goxel.image->active_layer);
+            if (!mv) continue;
+            volume_get_box(mv, true, box);
             r = goxel_unproject_on_box(viewport, pos, box, false,
                                        p, n, NULL);
         }
@@ -940,6 +943,10 @@ int goxel_iter(const inputs_t *inputs)
                 inputs->window_size[1] - inputs->touches[i].pos[1];
         }
         goxel_mouse_in_view(goxel.gui.viewport, &inputs2, true);
+    } else if (!inputs->touches[0].down[0]) {
+        /* Release over UI skips gesture END; clear stuck press so Cursor
+         * drag / other tools do not keep thinking the button is held. */
+        goxel.cursor.flags &= ~CURSOR_PRESSED;
     }
 
     if (DEFINED(SOUND) && time - goxel.last_click_time > 0.1) {

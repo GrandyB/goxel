@@ -161,12 +161,16 @@ int box_edit(int snap, int mode, float transf[4][4], bool *first)
     int ret;
 
     if (snap == SNAP_LAYER_OUT) {
+        layer_t *layer = goxel.image ? goxel.image->active_layer : NULL;
+        const volume_t *vol;
+        if (!layer) return 0;
         curs->snap_mask = SNAP_LAYER_OUT;
-        volume_get_box(goxel_get_layer_move_volume(goxel.image->active_layer),
-                       true, box);
+        vol = goxel_get_layer_move_volume(layer);
+        if (!vol) return 0;
+        volume_get_box(vol, true, box);
         // Fix problem with shape layer box.
-        if (goxel.image->active_layer->shape) {
-            normalize_box(goxel.image->active_layer->mat, box);
+        if (layer->shape) {
+            normalize_box(layer->mat, box);
         }
     }
     if (snap == SNAP_SELECTION_OUT) {

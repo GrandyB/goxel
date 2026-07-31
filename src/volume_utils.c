@@ -1118,6 +1118,7 @@ uint32_t volume_crc32(const volume_t *volume)
 
 bool layer_is_volume(const layer_t *layer)
 {
+    if (!layer) return false;
     return !layer->base_id && !layer->image && !layer->shape;
 }
 

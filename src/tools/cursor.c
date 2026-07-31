@@ -363,6 +363,7 @@ static int iter(tool_t *tool, const painter_t *painter,
             img->active_layer = NULL;
             g_edit.state = 0;
             g_edit.layer = NULL;
+            g_edit.history_pushed = false;
         }
         return 0;
     }
@@ -418,11 +419,29 @@ static int gui(tool_t *tool)
 void tool_cursor_on_gui_frame(void)
 {
     g_panel_hover = NULL;
+    /* Release over UI skips tool_iter, so end a drag that is no longer pressed. */
+    if (g_edit.state == 2 && !(goxel.cursor.flags & CURSOR_PRESSED)) {
+        g_edit.state = 0;
+        g_edit.layer = NULL;
+        g_edit.history_pushed = false;
+    }
+}
+
+void tool_cursor_clear_edit(void)
+{
+    g_edit.state = 0;
+    g_edit.layer = NULL;
+    g_edit.history_pushed = false;
+    g_viewport_hover = NULL;
 }
 
 void tool_cursor_set_panel_hover(layer_t *layer)
 {
-    g_panel_hover = layer;
+    /* Ignore pointers that are no longer in the live layer list. */
+    if (layer && goxel.image && layer_find(goxel.image, layer->id) == layer)
+        g_panel_hover = layer;
+    else
+        g_panel_hover = NULL;
 }
 
 void tool_cursor_render(void)
