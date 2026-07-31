@@ -2584,6 +2584,7 @@ static void select_layer_under_cursor(void)
         volume_get_at(layer->volume, it, int_pos, out);
         if (out[3] != 0) { // not a completely transparent block
             goxel.image->active_layer = layer;
+            image_expand_to_show_layer(goxel.image, layer);
             LOG_D("Found: %s", layer->name);
             found = true;
             break;

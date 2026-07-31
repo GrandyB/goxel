@@ -176,6 +176,16 @@ bool layer_in_active_subtree(const image_t *img, const layer_t *layer)
     return layer_is_ancestor(img, img->active_layer, layer);
 }
 
+void image_expand_to_show_layer(image_t *img, const layer_t *layer)
+{
+    layer_t *p;
+    if (!img || !layer) return;
+    for (p = layer_find(img, layer->parent_id); p;
+         p = layer_find(img, p->parent_id)) {
+        p->collapsed = false;
+    }
+}
+
 bool layer_has_children(const image_t *img, const layer_t *layer)
 {
     layer_t *other;

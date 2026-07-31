@@ -373,6 +373,7 @@ static int iter(tool_t *tool, const painter_t *painter,
         goxel_set_help_text("Click to select layer");
         if (just_pressed) {
             img->active_layer = best;
+            image_expand_to_show_layer(img, best);
             g_edit.state = 0;
             g_edit.layer = NULL;
         }
@@ -390,6 +391,7 @@ static int iter(tool_t *tool, const painter_t *painter,
         float face_plane[4][4], v[3];
 
         img->active_layer = best;
+        image_expand_to_show_layer(img, best);
         g_edit.state = 2;
         g_edit.history_pushed = false;
         vec3_set(g_edit.applied_ofs, 0, 0, 0);
