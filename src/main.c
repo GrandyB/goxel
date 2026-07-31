@@ -353,6 +353,38 @@ static void set_clipboard_text(void *user, const char *text)
     glfwSetClipboardString(g_window, text);
 }
 
+/* ImGuiMouseCursor_* order; index 0 unused for None (-1). */
+static GLFWcursor *g_mouse_cursors[9];
+static int g_last_mouse_cursor = -2;
+
+static void init_mouse_cursors(void)
+{
+    g_mouse_cursors[0] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    g_mouse_cursors[1] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
+    g_mouse_cursors[2] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); /* All */
+    g_mouse_cursors[3] = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
+    g_mouse_cursors[4] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
+    g_mouse_cursors[5] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); /* NESW */
+    g_mouse_cursors[6] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); /* NWSE */
+    g_mouse_cursors[7] = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
+    g_mouse_cursors[8] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR); /* NotAllowed */
+}
+
+static void set_mouse_cursor(void *user, int cursor)
+{
+    if (cursor == g_last_mouse_cursor) return;
+    g_last_mouse_cursor = cursor;
+    if (cursor < 0) {
+        glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+        return;
+    }
+    glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    if (cursor >= (int)ARRAY_SIZE(g_mouse_cursors))
+        cursor = 0;
+    glfwSetCursor(g_window, g_mouse_cursors[cursor] ?
+                  g_mouse_cursors[cursor] : g_mouse_cursors[0]);
+}
+
 int main(int argc, char **argv)
 {
     args_t args = {.scale = 1};
@@ -365,6 +397,7 @@ int main(int argc, char **argv)
     sys_callbacks.set_window_title = set_window_title;
     sys_callbacks.get_clipboard_text = get_clipboard_text;
     sys_callbacks.set_clipboard_text = set_clipboard_text;
+    sys_callbacks.set_mouse_cursor = set_mouse_cursor;
     parse_options(argc, argv, &args);
 
     g_scale = args.scale;
@@ -378,6 +411,7 @@ int main(int argc, char **argv)
     g_window = window;
     glfwMakeContextCurrent(window);
     glfwMaximizeWindow(window);
+    init_mouse_cursors();
     if (!DEFINED(EMSCRIPTEN))
         glfwSetScrollCallback(window, on_scroll);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);

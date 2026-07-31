@@ -406,6 +406,8 @@ static void init_ImGui(void)
     io.KeyMap[ImGuiKey_Y]           = 'Y';
     io.KeyMap[ImGuiKey_Z]           = 'Z';
 
+    io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;
+
     if (DEFINED(__linux__)) {
         io.SetClipboardTextFn = sys_set_clipboard_text;
         io.GetClipboardTextFn = sys_get_clipboard_text;
@@ -419,6 +421,7 @@ static void gui_init(void)
         gui = (gui_t*)calloc(1, sizeof(*gui));
         init_ImGui();
         goxel.gui.panel_width = GUI_PANEL_WIDTH_NORMAL;
+        goxel.gui.layers_panel_width = GUI_PANEL_WIDTH_NORMAL;
         goxel.gui.layers_panel_open = true;
         goxel.gui.view_cube_open = true;
         goxel.gui.camera_presets_open = true;
@@ -701,8 +704,12 @@ static void render_view_cube(void)
     const float icons_h = icon_size * 4 + icon_spacing * 3;
     const float win_w = w;
     const float icon_x = max(2.0f, (win_w - icon_size) * 0.5f) + 30.0f;
-    const float right_panel_w =
-            goxel.gui.layers_panel_open ? goxel.gui.panel_width + 5.0f : 0.0f;
+    float right_panel_w = 0.0f;
+    if (goxel.gui.layers_panel_open) {
+        ImGuiWindow *layers_win = ImGui::FindWindowByName("Right Bar");
+        right_panel_w = (layers_win ? layers_win->Size.x
+                                    : goxel.gui.layers_panel_width) + 5.0f;
+    }
     const float cube_x = goxel.gui.viewport[0] + goxel.gui.viewport[2] -
                          right_panel_w - win_w;
     /* Start below the menu bar: the overlay draws behind it, so any overlap
@@ -885,6 +892,7 @@ static void gui_iter(const inputs_t *inputs)
         render_fps((int)round(goxel.fps));
     ImGui::EndFrame();
 
+    sys_set_mouse_cursor(ImGui::GetMouseCursor());
     sys_show_keyboard(io.WantTextInput);
 }
 
@@ -1166,6 +1174,46 @@ gui_window_ret_t gui_window_end(void)
     ImGui::PopID();
 
     return ret;
+}
+
+void gui_window_resize_left_edge(float *width, float min_w, float max_w)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow *window;
+    ImGuiID id;
+    const float pad = 6.0f;
+    ImRect bb;
+    bool hovered, held;
+    float w;
+
+    if (!width) return;
+    window = ImGui::GetCurrentWindow();
+    id = window->GetID("##resize_left");
+    bb = ImRect(ImVec2(window->Pos.x - pad, window->Pos.y),
+                ImVec2(window->Pos.x + pad, window->Pos.y + window->Size.y));
+
+    /* Hit-test the edge directly so hover works even when later panel widgets
+     * cover the strip, and slightly outside the window (NoResize windows get
+     * no ImGui hover padding). */
+    hovered = bb.Contains(g.IO.MousePos);
+    held = false;
+    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        ImGui::SetActiveID(id, window);
+    if (g.ActiveId == id) {
+        held = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        if (!held)
+            ImGui::ClearActiveID();
+        else
+            ImGui::KeepAliveID(id);
+    }
+    if (hovered || held)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    if (held) {
+        w = *width - g.IO.MouseDelta.x;
+        if (w < min_w) w = min_w;
+        if (w > max_w) w = max_w;
+        *width = w;
+    }
 }
 
 void gui_floating_panel_begin(const char *title, float init_w, float init_h)

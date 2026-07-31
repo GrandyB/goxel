@@ -631,6 +631,8 @@ typedef struct goxel
     struct {
         int current_panel; // Index of the current visible control panel.
         float panel_width;
+        /* Right-docked Layers panel width; user-resizable from the left edge. */
+        float layers_panel_width;
         float viewport[4];
         filter_t *current_filter;
         /* Floating palette window (ImGui); left-bar tab toggles open/expand/close. */

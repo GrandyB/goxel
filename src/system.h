@@ -42,6 +42,8 @@ typedef struct {
     void (*show_keyboard)(void *user, bool has_text);
     void (*save_to_photos)(void *user, const uint8_t *data, int size,
                            void (*on_finished)(int r));
+    /* Matches ImGuiMouseCursor_* (Arrow=0 … NotAllowed). -1 = none/hide. */
+    void (*set_mouse_cursor)(void *user, int cursor);
 } sys_callbacks_t;
 extern sys_callbacks_t sys_callbacks;
 
@@ -114,6 +116,12 @@ void sys_set_window_title(const char *title);
  * Show a virtual keyboard if needed.
  */
 void sys_show_keyboard(bool has_text);
+
+/*
+ * Function: sys_set_mouse_cursor
+ * Apply an OS mouse cursor. Values match ImGuiMouseCursor_*; -1 hides.
+ */
+void sys_set_mouse_cursor(int cursor);
 
 /*
  * Function: sys_save_to_photo

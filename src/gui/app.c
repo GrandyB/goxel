@@ -231,14 +231,25 @@ void gui_app(void)
     }
     
     if (goxel.gui.layers_panel_open) {
+        float layers_w = goxel.gui.layers_panel_width;
+        float layers_max_w = goxel.screen_size[0] * 0.5f;
+
+        if (layers_w < GUI_PANEL_WIDTH_NORMAL)
+            layers_w = goxel.gui.layers_panel_width = GUI_PANEL_WIDTH_NORMAL;
+        if (layers_max_w < GUI_PANEL_WIDTH_NORMAL)
+            layers_max_w = GUI_PANEL_WIDTH_NORMAL;
+
         gui_window_begin("Right Bar",
-                (goxel.screen_size[0] - goxel.gui.panel_width - 5),
-                ICON_HEIGHT, goxel.gui.panel_width,
+                (goxel.screen_size[0] - layers_w - 5),
+                ICON_HEIGHT, layers_w,
                 (goxel.screen_size[1] - ICON_HEIGHT), 0);
         if (gui_panel_header("Layers"))
             goxel.gui.layers_panel_open = false;
         else
             gui_layers_panel_with_scroll();
+        /* After content so the resize cursor wins over panel widgets. */
+        gui_window_resize_left_edge(&goxel.gui.layers_panel_width,
+                                    GUI_PANEL_WIDTH_NORMAL, layers_max_w);
         gui_window_end();
     }
 

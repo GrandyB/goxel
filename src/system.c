@@ -202,6 +202,12 @@ void sys_show_keyboard(bool has_text)
     sys_callbacks.show_keyboard(sys_callbacks.user, has_text);
 }
 
+void sys_set_mouse_cursor(int cursor)
+{
+    if (!sys_callbacks.set_mouse_cursor) return;
+    sys_callbacks.set_mouse_cursor(sys_callbacks.user, cursor);
+}
+
 /*
  * Function: sys_save_to_photos
  * Save a png file to the system photo album.

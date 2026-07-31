@@ -59,6 +59,10 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
 
 gui_window_ret_t gui_window_end(void);
 
+/* Drag the current window's left edge to change *width (right edge stays fixed
+ * when the caller repositions next frame from *width). Call after begin. */
+void gui_window_resize_left_edge(float *width, float min_w, float max_w);
+
 /* Standard ImGui window: title bar (collapsible), move, resize. Position and
  * size use FirstUseEver so they persist in imgui.ini after the first open. */
 void gui_floating_panel_begin(const char *title, float init_w, float init_h);
