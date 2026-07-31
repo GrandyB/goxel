@@ -30,13 +30,16 @@ typedef struct {
     int face;
     bool history_pushed;
     float box[4][4];
-    float start_box[4][4];
+    float start_box[4][4]; /* Ungrown volume AABB at drag start. */
+    float applied_ofs[3];  /* Translation already applied this drag. */
     float drag_plane[4][4];
 } cursor_edit_t;
 
 static cursor_edit_t g_edit = {};
 /* Set during the GUI frame when the mouse is over a layers-panel row. */
 static layer_t *g_panel_hover = NULL;
+/* Viewport hover while nothing is selected (solid yellow box). */
+static layer_t *g_viewport_hover = NULL;
 
 static bool layer_gets_gizmo(const image_t *img, const layer_t *layer)
 {
@@ -62,7 +65,9 @@ static void normalize_box(const float box[4][4], float out[4][4])
     bbox_from_npoints(out, 8, vertices);
 }
 
-static bool layer_gizmo_box(const layer_t *layer, float box[4][4])
+/* Exact move AABB (no group padding). Used for drag math so translations
+ * stay on integer voxels; volume_move resampling is destructive otherwise. */
+static bool layer_move_box(const layer_t *layer, float box[4][4])
 {
     const volume_t *vol;
 
@@ -72,8 +77,14 @@ static bool layer_gizmo_box(const layer_t *layer, float box[4][4])
     volume_get_box(vol, true, box);
     if (layer->shape)
         normalize_box(layer->mat, box);
-    if (box_is_null(box)) return false;
-    /* Groups: pad so the parent wireframe sits outside child boxes. */
+    return !box_is_null(box);
+}
+
+static bool layer_gizmo_box(const layer_t *layer, float box[4][4])
+{
+    if (!layer_move_box(layer, box)) return false;
+    /* Groups: pad so the parent wireframe sits outside child boxes.
+     * Visual/hit-test only — never use the grown box for move deltas. */
     if (layer_has_children(goxel.image, layer))
         bbox_grow(box, 0.5f, 0.5f, 0.5f, box);
     return true;
@@ -118,6 +129,7 @@ static void draw_gizmo_boxes(const image_t *img)
 {
     layer_t *layer;
     float box[4][4];
+    const uint8_t yellow[4] = {255, 255, 0, 255};
 
     /* Panel hover solos a single layer/group box. */
     if (g_panel_hover) {
@@ -130,7 +142,10 @@ static void draw_gizmo_boxes(const image_t *img)
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;
         if (!layer_gizmo_box(layer, box)) continue;
-        render_box(&goxel.rend, box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
+        if (!img->active_layer && layer == g_viewport_hover)
+            render_box(&goxel.rend, box, yellow, EFFECT_WIREFRAME);
+        else
+            render_box(&goxel.rend, box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
     }
 }
 
@@ -139,7 +154,7 @@ static void apply_drag(cursor_edit_t *edit, cursor_t *curs,
 {
     camera_t *cam;
     float opos[3], onorm[3], wpos[3], pos[3], local[3];
-    float face_plane[4][4], nrm[3], d[3], ofs[3];
+    float face_plane[4][4], nrm[3], d[3], ofs[3], delta[3];
     float transf[4][4] = MAT4_IDENTITY;
     float box[4][4];
 
@@ -160,20 +175,32 @@ static void apply_drag(cursor_edit_t *edit, cursor_t *curs,
     pos[1] = roundf(pos[1]);
     pos[2] = roundf(pos[2]);
 
-    if (!layer_gizmo_box(edit->layer, box)) return;
-    mat4_mul(box, FACES_MATS[edit->face], face_plane);
+    /* Offset from drag-start face (ungrown), not the live gizmo. Group
+     * gizmos are padded 0.5; using that for deltas caused half-voxel
+     * volume_move steps that ate voxels (looked like cropping at the
+     * image-box floor when dragging groups downward). */
+    mat4_mul(edit->start_box, FACES_MATS[edit->face], face_plane);
     vec3_normalize(face_plane[2], nrm);
-    vec3_add(box[3], face_plane[2], d);
+    vec3_add(edit->start_box[3], face_plane[2], d);
     vec3_sub(pos, d, ofs);
     vec3_project(ofs, nrm, ofs);
-    if (ofs[0] == 0 && ofs[1] == 0 && ofs[2] == 0) return;
+    ofs[0] = roundf(ofs[0]);
+    ofs[1] = roundf(ofs[1]);
+    ofs[2] = roundf(ofs[2]);
+    vec3_sub(ofs, edit->applied_ofs, delta);
+    if (delta[0] == 0 && delta[1] == 0 && delta[2] == 0) {
+        if (layer_gizmo_box(edit->layer, box))
+            render_face_gizmo(box, edit->face);
+        return;
+    }
 
     if (!edit->history_pushed) {
         image_history_push(goxel.image);
         edit->history_pushed = true;
     }
-    mat4_itranslate(transf, ofs[0], ofs[1], ofs[2]);
+    mat4_itranslate(transf, delta[0], delta[1], delta[2]);
     apply_move(edit->layer, transf);
+    vec3_copy(ofs, edit->applied_ofs);
     if (layer_gizmo_box(edit->layer, box))
         render_face_gizmo(box, edit->face);
 }
@@ -189,15 +216,22 @@ static int iter(tool_t *tool, const painter_t *painter,
     float best_vol = INFINITY;
     int face = -1, best_face = -1;
     bool pressed = curs->flags & CURSOR_PRESSED;
+    bool has_selection;
+    static bool prev_pressed = false;
+    bool just_pressed = pressed && !prev_pressed;
 
     (void)tool;
     (void)painter;
 
+    prev_pressed = pressed;
     curs->snap_mask = 0;
     if (!img) return 0;
 
     cam = img->active_camera;
     if (!cam) return 0;
+
+    has_selection = img->active_layer != NULL;
+    g_viewport_hover = NULL;
 
     /* Continue an in-progress drag. */
     if (g_edit.state == 2 && g_edit.layer) {
@@ -230,7 +264,7 @@ static int iter(tool_t *tool, const painter_t *painter,
 
     if (!best) {
         /* Click empty space: clear selection so all leaf gizmos return. */
-        if (pressed) {
+        if (just_pressed) {
             img->active_layer = NULL;
             g_edit.state = 0;
             g_edit.layer = NULL;
@@ -238,20 +272,35 @@ static int iter(tool_t *tool, const painter_t *painter,
         return 0;
     }
 
+    /* No selection: whole box selects the layer; no move arrows. */
+    if (!has_selection) {
+        g_viewport_hover = best;
+        goxel_set_help_text("Click to select layer");
+        if (just_pressed) {
+            img->active_layer = best;
+            g_edit.state = 0;
+            g_edit.layer = NULL;
+        }
+        return 0;
+    }
+
+    /* Selection active: face arrows + drag to move. */
     g_edit.layer = best;
     g_edit.face = best_face;
     g_edit.state = 1;
     render_face_gizmo(g_edit.box, best_face);
-    goxel_set_help_text("Click to select, drag to move");
+    goxel_set_help_text("Drag to move layer");
 
-    if (pressed) {
+    if (just_pressed) {
         float face_plane[4][4], v[3];
 
         img->active_layer = best;
-        /* Stay on Cursor: selection scopes gizmos to this layer + descendants. */
         g_edit.state = 2;
         g_edit.history_pushed = false;
-        mat4_copy(g_edit.box, g_edit.start_box);
+        vec3_set(g_edit.applied_ofs, 0, 0, 0);
+        /* Ungrown AABB for lossless integer volume_move deltas. */
+        if (!layer_move_box(best, g_edit.start_box))
+            mat4_copy(g_edit.box, g_edit.start_box);
         mat4_mul(g_edit.box, FACES_MATS[best_face], face_plane);
         vec3_normalize(face_plane[0], v);
         plane_from_vectors(g_edit.drag_plane, curs->pos, curs->normal, v);
@@ -263,7 +312,8 @@ static int iter(tool_t *tool, const painter_t *painter,
 static int gui(tool_t *tool)
 {
     (void)tool;
-    gui_text("Select and move layers.");
+    gui_text("Click a box to select a layer.");
+    gui_text("With a layer selected, drag the arrows to move.");
     gui_text("Hold Alt to show layer names.");
     return 0;
 }
