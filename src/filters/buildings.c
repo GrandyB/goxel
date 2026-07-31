@@ -38,7 +38,8 @@
  * Threshold / Max submerge, then hanging cells get wall-coloured stem fills.
  *
  * Split layers (Generate on one layer off): a Buildings parent sibling of the
- * plan, one child per building, and under each building Floor 1..N plus Roofs.
+ * plan, one child per building (collapsed by default), and under each building
+ * Floor 1..N plus Roofs.
  */
 
 #define BUILDING_DEFAULT_FLOOR_COLORS 4
@@ -1707,6 +1708,7 @@ static bool prepare_building_layers(layer_t *buildings_root, int building_idx,
     building = add_named_child_layer(buildings_root, name);
     if (!building)
         return false;
+    building->collapsed = true;
 
     for (f = 0; f < nfloors; f++) {
         snprintf(name, sizeof(name), "Floor %d", f + 1);
