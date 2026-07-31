@@ -530,6 +530,8 @@ image_t *image_new(void)
     image_add_material(img, NULL);
     image_add_camera(img, NULL);
     image_add_layer(img, NULL);
+    /* Start with no layer selected (Cursor shows all leaf gizmos). */
+    img->active_layer = NULL;
     DL_APPEND2(img->history, img, history_prev, history_next);
     // Prevent saving an empty image.
     img->saved_key = image_get_key(img);
@@ -635,7 +637,7 @@ static image_t *image_snap(image_t *other)
         if (other_layer == other->active_layer)
             img->active_layer = layer;
     }
-    assert(img->active_layer);
+    /* active_layer may be NULL (e.g. Cursor tool with nothing selected). */
 
     img->cameras = NULL;
     img->active_camera = NULL;
@@ -1349,6 +1351,7 @@ void image_set(image_t *img, image_t *other)
         DL_DELETE(img->layers, layer);
         layer_delete(layer);
     }
+    img->active_layer = NULL;
     DL_FOREACH(other->layers, other_layer) {
         layer = layer_copy(other_layer);
         DL_APPEND(img->layers, layer);
@@ -1501,6 +1504,7 @@ static void image_clear_layer(void)
 
 bool image_layer_can_edit(const image_t *img, const layer_t *layer)
 {
+    if (!layer) return false;
     return !layer->base_id && !layer->image && !layer->shape;
 }
 
@@ -1614,6 +1618,7 @@ ACTION_REGISTER(ACTION_img_new_layer,
 
 static void a_image_delete_layer(void)
 {
+    if (!goxel.image->active_layer) return;
     image_delete_layer(goxel.image, goxel.image->active_layer);
 }
 
@@ -1626,11 +1631,13 @@ ACTION_REGISTER(ACTION_img_del_layer,
 
 static void a_image_move_layer_up(void)
 {
+    if (!goxel.image->active_layer) return;
     image_move_layer(goxel.image, goxel.image->active_layer, -1);
 }
 
 static void a_image_move_layer_down(void)
 {
+    if (!goxel.image->active_layer) return;
     image_move_layer(goxel.image, goxel.image->active_layer, +1);
 }
 
@@ -1651,6 +1658,7 @@ ACTION_REGISTER(ACTION_img_move_layer_down,
 
 static void a_image_duplicate_layer(void)
 {
+    if (!goxel.image->active_layer) return;
     image_duplicate_layer(goxel.image, goxel.image->active_layer);
 }
 
@@ -1662,6 +1670,7 @@ ACTION_REGISTER(ACTION_img_duplicate_layer,
 
 static void a_image_clone_layer(void)
 {
+    if (!goxel.image->active_layer) return;
     image_clone_layer(goxel.image, goxel.image->active_layer);
 }
 
@@ -1684,6 +1693,7 @@ ACTION_REGISTER(ACTION_img_clone_layer,
 
 static void a_image_unclone_layer(void)
 {
+    if (!goxel.image->active_layer) return;
     image_unclone_layer(goxel.image, goxel.image->active_layer);
 }
 
@@ -1696,6 +1706,7 @@ ACTION_REGISTER(ACTION_img_unclone_layer,
 static void a_img_select_parent_layer(void)
 {
     image_t *image = goxel.image;
+    if (!image->active_layer || !image->active_layer->base_id) return;
     image->active_layer = img_get_layer(image, image->active_layer->base_id);
 }
 

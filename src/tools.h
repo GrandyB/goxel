@@ -39,6 +39,7 @@ enum {
     TOOL_PLACER,
     TOOL_FILL,
     TOOL_CLONE_STAMP,
+    TOOL_CURSOR,
 
     TOOL_COUNT
 };
@@ -84,6 +85,9 @@ const tool_t *tool_get(int id);
 
 int tool_iter(tool_t *tool, const painter_t *painter, const float viewport[4]);
 int tool_gui(tool_t *tool);
+
+/* Alt name labels for the Cursor tool; call during the gui frame. */
+void tool_cursor_render_labels(void);
 
 /* Brush / shape / laser / fill / etc. — show "recent map colors" in snap bar. */
 bool tool_uses_map_recent_colors(const tool_t *tool);

@@ -63,7 +63,7 @@ static void wrap_view_build(void)
     {
         const layer_t *rl = goxel_get_render_layers(false);
         if (rl) goxel.wrap_view_material = rl->material;
-        if (!goxel.wrap_view_material)
+        if (!goxel.wrap_view_material && goxel.image->active_layer)
             goxel.wrap_view_material = goxel.image->active_layer->material;
     }
 }
@@ -710,7 +710,7 @@ void goxel_reset(void)
     vec4_set(goxel.grid_color, 255, 255, 255, 32);
     vec4_set(goxel.image_box_color, 204, 204, 255, 255);
 
-    action_exec2(ACTION_tool_set_brush);
+    action_exec2(ACTION_tool_set_cursor);
     goxel.radius_x = 0.5;
     goxel.radius_y = 0.5;
     goxel.radius_z = 0.5;
@@ -1096,7 +1096,8 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     // Need to set the cursor snap mask to default because the tool might
     // change it.
     goxel.cursor.snap_mask = goxel.snap_mask;
-    painter.box = !box_is_null(goxel.image->active_layer->box) ?
+    painter.box = (goxel.image->active_layer &&
+                   !box_is_null(goxel.image->active_layer->box)) ?
                          &goxel.image->active_layer->box :
                          !box_is_null(goxel.image->box) ?
                          &goxel.image->box : NULL;
@@ -1474,7 +1475,8 @@ void goxel_render_view(const float viewport[4], bool render_mode)
         }
     }
 
-    if (!box_is_null(goxel.image->active_layer->box))
+    if (goxel.image->active_layer &&
+            !box_is_null(goxel.image->active_layer->box))
         render_box(rend, goxel.image->active_layer->box,
                    layer_box_color, EFFECT_WIREFRAME);
 
@@ -1606,7 +1608,8 @@ const volume_t *goxel_get_render_volume(const image_t *img)
         DL_FOREACH(goxel.image->layers, layer) {
             if (!layer_effectively_visible(img, layer)) continue;
             volume = layer->volume;
-            if (volume == goxel.image->active_layer->volume)
+            if (goxel.image->active_layer &&
+                    volume == goxel.image->active_layer->volume)
                 volume = goxel.tool_volume;
             volume_merge(goxel.render_volume_, volume, MODE_OVER, NULL);
         }
@@ -1676,6 +1679,7 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview)
             if (!l->volume) continue;
             layer = layer_copy(l);
             if (    with_tool_preview && goxel.tool_volume &&
+                    goxel.image->active_layer &&
                     l->volume == goxel.image->active_layer->volume)
             {
                 volume_set(layer->volume, goxel.tool_volume);

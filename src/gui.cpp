@@ -871,6 +871,7 @@ static void gui_iter(const inputs_t *inputs)
 
     gui_app();
     custom_objects_render_labels(goxel.image);
+    tool_cursor_render_labels();
     if (goxel.gui.ui_visible &&
         (goxel.gui.view_cube_open || goxel.gui.camera_presets_open))
         render_view_cube();

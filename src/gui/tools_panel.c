@@ -26,6 +26,7 @@ void gui_tools_panel(void)
         int         action;
         int         icon;
     } values[] = {
+        {TOOL_CURSOR,       ACTION_tool_set_cursor,       ICON_TOOL_CURSOR},
         {TOOL_BRUSH,        ACTION_tool_set_brush,        ICON_TOOL_BRUSH},
         {TOOL_SHAPE,        ACTION_tool_set_shape,        ICON_TOOL_SHAPE},
         {TOOL_LASER,        ACTION_tool_set_laser,        ICON_TOOL_LASER},

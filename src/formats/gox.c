@@ -660,6 +660,7 @@ static void image_clear_gox_content(image_t *img)
     img->layers = NULL;
     img->materials = NULL;
     img->active_material = NULL;
+    img->active_layer = NULL;
     img->cameras = NULL;
     img->active_camera = NULL;
 
@@ -948,6 +949,9 @@ int load_from_file(const char *path, bool replace)
                        VEC(1, 0, 0), VEC(0, 1, 0));
 
     image_sanitize_layer_parents(goxel.image);
+
+    /* Do not leave the last loaded layer selected. */
+    goxel.image->active_layer = NULL;
 
     return 0;
 

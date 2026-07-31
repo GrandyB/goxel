@@ -112,6 +112,7 @@ enum
     ACTION_delete_hidden_layers,
     ACTION_tool_set_fill,
     ACTION_tool_set_clone_stamp,
+    ACTION_tool_set_cursor,
 
     ACTION_COUNT
 };

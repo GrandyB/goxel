@@ -242,21 +242,14 @@ static void render_layers_list(void)
             }
             if (current && img->active_layer != layer) {
                 img->active_layer = layer;
-                /* Parents: switch to move so the combined subtree gizmo shows.
-                 * Leaves keep the current tool for painting. */
-                if (layer_has_children(img, layer))
-                    action_exec2(ACTION_tool_set_move);
             }
 
             /* Bind DnD to the layer name row, before the trailing [+] so
              * source/target are not stuck on the add-child control. */
             if (gui_dnd_source(LAYER_DND_TYPE, &layer, (int)sizeof(layer),
                                layer->name)) {
-                if (img->active_layer != layer) {
+                if (img->active_layer != layer)
                     img->active_layer = layer;
-                    if (layer_has_children(img, layer))
-                        action_exec2(ACTION_tool_set_move);
-                }
             }
             drop_kind = gui_dnd_target(LAYER_DND_TYPE, &drop_payload,
                                        (int)sizeof(drop_payload));
@@ -339,6 +332,14 @@ void gui_layers_panel_impl(bool inner_scroll)
     gui_action_button(ACTION_img_merge_visible_layers, "Merge visible", 1);
 
     layer = goxel.image->active_layer;
+    if (!layer) {
+        if (gui_action_button(ACTION_img_new_shape_layer, "New Shape Layer", 1)) {
+            action_exec2(ACTION_tool_set_move);
+        }
+        gui_action_button(ACTION_delete_hidden_layers, "Delete hidden layers", 1);
+        gui_group_end();
+        return;
+    }
     bounded = !box_is_null(layer->box);
     if (bounded) {
         gui_action_button(ACTION_layer_crop_to_box, "Crop to box", 1);
@@ -371,10 +372,8 @@ void gui_layers_panel_impl(bool inner_scroll)
     if (layer->parent_id) {
         if (gui_button("Select nest parent", 1, 0)) {
             layer_t *p = layer_find(goxel.image, layer->parent_id);
-            if (p) {
+            if (p)
                 goxel.image->active_layer = p;
-                action_exec2(ACTION_tool_set_move);
-            }
         }
     }
     if (layer->image) {

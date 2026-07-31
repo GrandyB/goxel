@@ -100,9 +100,9 @@
      borderopacity="1.0"
      inkscape:pageopacity="0"
      inkscape:pageshadow="2"
-     inkscape:zoom="4.0000002"
-     inkscape:cx="48.874998"
-     inkscape:cy="100.625"
+     inkscape:zoom="2.8284273"
+     inkscape:cx="69.826791"
+     inkscape:cy="95.282634"
      inkscape:document-units="px"
      inkscape:current-layer="layer2"
      showgrid="false"
@@ -1401,4 +1401,11 @@
      x="10.735514"
      y="44.007034"
      rx="0.37620434"
-     ry="0.068213016" /></g></g></svg>
+     ry="0.068213016" /></g><path
+   style="display:inline;fill:#99c1f1;fill-opacity:1;stroke:#000000;stroke-width:0.112928;stroke-linecap:round;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+   d="m 26.003698,41.862756 -0.01351,-4.645875 3.44775,2.613596 -1.567203,0.253785 0.866504,1.553469 -0.775374,0.465031 -0.819661,-1.596363 z"
+   id="path48653-3"
+   inkscape:connector-curvature="0"
+   sodipodi:nodetypes="cccccccc"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96" /></g></svg>
