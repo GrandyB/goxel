@@ -914,6 +914,18 @@ int goxel_iter(const inputs_t *inputs)
     goxel.gui.viewport[2] = goxel.screen_size[0];
     goxel.gui.viewport[3] = goxel.screen_size[1] - menu_w;
 
+    /* When the right-docked layers panel is open, treat the 3D view as the
+     * remaining width so projection / picking centres on that region. */
+    if (goxel.gui.ui_visible && goxel.gui.layers_panel_open) {
+        float layers_w = goxel.gui.layers_panel_width;
+        if (layers_w < GUI_PANEL_WIDTH_NORMAL)
+            layers_w = GUI_PANEL_WIDTH_NORMAL;
+        if (layers_w > goxel.gui.viewport[2] - 1.f)
+            layers_w = goxel.gui.viewport[2] - 1.f;
+        goxel.gui.viewport[2] -= layers_w;
+    }
+
+    camera->aspect = goxel.gui.viewport[2] / goxel.gui.viewport[3];
     camera_update(camera);
     mat4_copy(camera->view_mat, goxel.rend.view_mat);
     mat4_copy(camera->proj_mat, goxel.rend.proj_mat);

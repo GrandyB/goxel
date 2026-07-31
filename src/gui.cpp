@@ -704,14 +704,8 @@ static void render_view_cube(void)
     const float icons_h = icon_size * 4 + icon_spacing * 3;
     const float win_w = w;
     const float icon_x = max(2.0f, (win_w - icon_size) * 0.5f) + 30.0f;
-    float right_panel_w = 0.0f;
-    if (goxel.gui.layers_panel_open) {
-        ImGuiWindow *layers_win = ImGui::FindWindowByName("Right Bar");
-        right_panel_w = (layers_win ? layers_win->Size.x
-                                    : goxel.gui.layers_panel_width);
-    }
-    const float cube_x = goxel.gui.viewport[0] + goxel.gui.viewport[2] -
-                         right_panel_w - win_w;
+    /* Viewport already excludes the layers panel width when it is open. */
+    const float cube_x = goxel.gui.viewport[0] + goxel.gui.viewport[2] - win_w;
     /* Start below the menu bar: the overlay draws behind it, so any overlap
      * would clip the cube. */
     const float cube_y = ImMax(goxel.gui.viewport[1],
