@@ -421,7 +421,7 @@ static void gui_init(void)
         gui = (gui_t*)calloc(1, sizeof(*gui));
         init_ImGui();
         goxel.gui.panel_width = GUI_PANEL_WIDTH_NORMAL;
-        goxel.gui.layers_panel_width = GUI_PANEL_WIDTH_NORMAL;
+        goxel.gui.layers_panel_width = GUI_PANEL_WIDTH_NORMAL + 60;
         goxel.gui.layers_panel_open = true;
         goxel.gui.view_cube_open = true;
         goxel.gui.camera_presets_open = true;
@@ -708,7 +708,7 @@ static void render_view_cube(void)
     if (goxel.gui.layers_panel_open) {
         ImGuiWindow *layers_win = ImGui::FindWindowByName("Right Bar");
         right_panel_w = (layers_win ? layers_win->Size.x
-                                    : goxel.gui.layers_panel_width) + 5.0f;
+                                    : goxel.gui.layers_panel_width);
     }
     const float cube_x = goxel.gui.viewport[0] + goxel.gui.viewport[2] -
                          right_panel_w - win_w;

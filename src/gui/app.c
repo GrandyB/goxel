@@ -240,7 +240,7 @@ void gui_app(void)
             layers_max_w = GUI_PANEL_WIDTH_NORMAL;
 
         gui_window_begin("Right Bar",
-                (goxel.screen_size[0] - layers_w - 5),
+                (goxel.screen_size[0] - layers_w),
                 ICON_HEIGHT, layers_w,
                 (goxel.screen_size[1] - ICON_HEIGHT), 0);
         if (gui_panel_header("Layers"))
