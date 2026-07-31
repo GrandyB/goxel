@@ -137,7 +137,9 @@ void camera_fit_box(camera_t *camera, const float box[4][4]);
 
 /*
  * Function: camera_frame_box
- * Keep orientation; orbit the box centre at a FOV-fitting distance.
+ * Keep orientation; orbit at a frustum-fitting distance (projected AABB
+ * corners). Perspective also recentres on the projected AABB mid so the
+ * subject does not sit low from foreshortening.
  */
 void camera_frame_box(camera_t *camera, const float box[4][4]);
 

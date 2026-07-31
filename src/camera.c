@@ -252,37 +252,102 @@ void camera_fit_box(camera_t *cam, const float box[4][4])
     cam->dist = dist;
 }
 
+/* Corner offset from lookat into camera local axes (look = -Z). */
+static void camera_frame_local_offset(const camera_t *cam,
+                                      const float lookat[3],
+                                      const float world[3],
+                                      float out[3])
+{
+    float d[3];
+    vec3_sub(world, lookat, d);
+    out[0] = d[0] * cam->mat[0][0] + d[1] * cam->mat[0][1] +
+             d[2] * cam->mat[0][2];
+    out[1] = d[0] * cam->mat[1][0] + d[1] * cam->mat[1][1] +
+             d[2] * cam->mat[1][2];
+    out[2] = d[0] * cam->mat[2][0] + d[1] * cam->mat[2][1] +
+             d[2] * cam->mat[2][2];
+}
+
 /*
  * Function: camera_frame_box
- * Orbit around a box centre at a distance that fits its bounding sphere
- * in the current FOV (keeps orientation). No-op if box is null.
+ * Orbit around a box at a distance that fits all 8 corners in the current
+ * frustum (keeps orientation). Uses per-axis projected extents so flat /
+ * elongated boxes are not over-pulled like a bounding sphere. Under
+ * perspective, recentres on the projected AABB so foreshortening does not
+ * leave the subject sitting low in the view. No-op if box is null.
  */
 void camera_frame_box(camera_t *cam, const float box[4][4])
 {
-    float center[3], verts[8][3], radius = 0.f, dist;
-    float half_fovy, half_fovx, half_fov;
-    int i;
+    float center[3], lookat[3], verts[8][3], dist = 1.f;
+    float half_fovy, tan_x, tan_y, aspect;
+    int i, pass;
 
     if (!cam || box_is_null(box)) return;
 
     mat4_mul_vec3(box, VEC(0, 0, 0), center);
+    vec3_copy(center, lookat);
     box_get_vertices(box, verts);
-    for (i = 0; i < 8; i++) {
-        float d = vec3_dist(center, verts[i]);
-        if (d > radius) radius = d;
-    }
-    if (radius < 0.5f) radius = 0.5f;
 
+    aspect = max(cam->aspect, 0.01f);
     half_fovy = cam->fovy * 0.5f * (float)(M_PI / 180.0);
-    half_fovx = atanf(tanf(half_fovy) * max(cam->aspect, 0.01f));
-    half_fov = min(half_fovy, half_fovx);
-    if (half_fov < 1e-3f) half_fov = 1e-3f;
+    if (half_fovy < 1e-3f) half_fovy = 1e-3f;
+    tan_y = tanf(half_fovy);
+    tan_x = tan_y * aspect;
 
-    /* Bounding sphere in FOV, plus a little margin. */
-    dist = (radius / tanf(half_fov)) * 1.15f;
+    /* Pass 0: fit about the geometric centre, then pan lookat so the
+     * projected AABB mid sits at the view centre. Pass 1: refit dist. */
+    for (pass = 0; pass < 2; pass++) {
+        dist = 1.f;
+        for (i = 0; i < 8; i++) {
+            float o[3], need;
+            camera_frame_local_offset(cam, lookat, verts[i], o);
+            if (cam->ortho) {
+                need = max(fabsf(o[0]), fabsf(o[1]) * aspect);
+            } else {
+                need = max(o[2] + fabsf(o[0]) / tan_x,
+                           o[2] + fabsf(o[1]) / tan_y);
+            }
+            if (need > dist) dist = need;
+        }
+
+        if (cam->ortho || pass == 1) break;
+
+        {
+            float min_nx = 1e9f, max_nx = -1e9f;
+            float min_ny = 1e9f, max_ny = -1e9f;
+            float mid_x, mid_y, shift_x, shift_y;
+
+            for (i = 0; i < 8; i++) {
+                float o[3], depth, nx, ny;
+                camera_frame_local_offset(cam, lookat, verts[i], o);
+                depth = dist - o[2];
+                if (depth < 1e-3f) depth = 1e-3f;
+                nx = o[0] / (depth * tan_x);
+                ny = o[1] / (depth * tan_y);
+                if (nx < min_nx) min_nx = nx;
+                if (nx > max_nx) max_nx = nx;
+                if (ny < min_ny) min_ny = ny;
+                if (ny > max_ny) max_ny = ny;
+            }
+            mid_x = 0.5f * (min_nx + max_nx);
+            mid_y = 0.5f * (min_ny + max_ny);
+            shift_x = mid_x * dist * tan_x;
+            shift_y = mid_y * dist * tan_y;
+            lookat[0] = center[0] + shift_x * cam->mat[0][0] +
+                        shift_y * cam->mat[1][0];
+            lookat[1] = center[1] + shift_x * cam->mat[0][1] +
+                        shift_y * cam->mat[1][1];
+            lookat[2] = center[2] + shift_x * cam->mat[0][2] +
+                        shift_y * cam->mat[1][2];
+        }
+    }
+
+    /* Relative pad + a few voxels so small props keep breathing room
+     * without pushing map-scale frames far out. */
+    dist = dist * 1.12f + 2.5f;
     if (dist < 1.f) dist = 1.f;
 
-    mat4_mul_vec3(box, VEC(0, 0, 0), cam->mat[3]);
+    vec3_copy(lookat, cam->mat[3]);
     mat4_itranslate(cam->mat, 0, 0, dist);
     cam->dist = dist;
 }
