@@ -36,6 +36,9 @@
  * When Position using layer heights is on, each footprint is sat onto a chosen
  * terrain layer: a shared surface height is picked from per-cell tops using
  * Threshold / Max submerge, then hanging cells get wall-coloured stem fills.
+ *
+ * Split layers (Generate on one layer off): a Buildings parent sibling of the
+ * plan, one child per building, and under each building Floor 1..N plus Roofs.
  */
 
 #define BUILDING_DEFAULT_FLOOR_COLORS 4
@@ -1619,43 +1622,119 @@ static void name_target_layer(layer_t *target, const layer_t *plan_layer,
              max_base, plan_layer->name, suffix);
 }
 
-static bool prepare_target_layers(layer_t *plan_layer, bool all_one_layer,
-                                  int max_floors, layer_t *targets[])
+/* Delete root and every descendant (leaves first so parents are empty). */
+static void delete_layer_and_descendants(layer_t *root)
 {
-    int i, count = all_one_layer ? 1 : max_floors + 1;
+    image_t *img = goxel.image;
+    layer_t *layer;
+    layer_t *leaf;
 
-    for (i = 0; i < count; i++) {
-        char suffix[40];
-
-        targets[i] = image_add_layer(goxel.image, NULL);
-        if (!targets[i])
+    if (!img || !root)
+        return;
+    for (;;) {
+        leaf = NULL;
+        DL_FOREACH(img->layers, layer) {
+            if (layer == root)
+                continue;
+            if (!layer_is_ancestor(img, root, layer))
+                continue;
+            if (layer_has_children(img, layer))
+                continue;
+            leaf = layer;
             break;
-        targets[i]->visible = true;
-        if (all_one_layer) {
-            snprintf(suffix, sizeof(suffix), " Buildings");
-        } else if (i < max_floors) {
-            snprintf(suffix, sizeof(suffix), " Buildings - floor %d", i + 1);
-        } else {
-            snprintf(suffix, sizeof(suffix), " Buildings - roofs");
         }
-        name_target_layer(targets[i], plan_layer, suffix);
+        if (!leaf)
+            break;
+        image_delete_layer(img, leaf);
     }
-    if (i != count) {
-        while (i-- > 0)
-            image_delete_layer(goxel.image, targets[i]);
-        goxel.image->active_layer = plan_layer;
-        return false;
-    }
+    image_delete_layer(img, root);
+}
+
+static layer_t *add_named_child_layer(layer_t *parent, const char *name)
+{
+    layer_t *child;
+
+    child = image_add_child_layer(goxel.image, parent);
+    if (!child)
+        return NULL;
+    snprintf(child->name, sizeof(child->name), "%s", name);
+    child->visible = true;
+    return child;
+}
+
+/* Single sibling layer for "Generate on one layer". */
+static layer_t *prepare_single_target_layer(layer_t *plan_layer)
+{
+    layer_t *target;
+
+    target = image_add_layer(goxel.image, NULL);
+    if (!target)
+        return NULL;
+    target->visible = true;
+    name_target_layer(target, plan_layer, " Buildings");
     plan_layer->visible = false;
+    return target;
+}
+
+/*
+ * Split mode: sibling parent "{plan} Buildings", then one child per building,
+ * each with Floor 1..N and Roofs children (same storey split as before).
+ * New buildings are moved to last child so Building 1 stays topmost in the UI.
+ */
+static layer_t *prepare_buildings_root(layer_t *plan_layer)
+{
+    layer_t *root;
+
+    root = image_add_layer(goxel.image, NULL);
+    if (!root)
+        return NULL;
+    root->visible = true;
+    name_target_layer(root, plan_layer, " Buildings");
+    plan_layer->visible = false;
+    return root;
+}
+
+static bool prepare_building_layers(layer_t *buildings_root, int building_idx,
+                                    int nfloors, volume_t *floor_volumes[],
+                                    volume_t **roof_volume)
+{
+    layer_t *building;
+    layer_t *floor_layer;
+    char name[64];
+    int f;
+
+    snprintf(name, sizeof(name), "Building %d", building_idx);
+    building = add_named_child_layer(buildings_root, name);
+    if (!building)
+        return false;
+
+    for (f = 0; f < nfloors; f++) {
+        snprintf(name, sizeof(name), "Floor %d", f + 1);
+        floor_layer = add_named_child_layer(building, name);
+        if (!floor_layer)
+            return false;
+        floor_volumes[f] = floor_layer->volume;
+    }
+
+    floor_layer = add_named_child_layer(building, "Roofs");
+    if (!floor_layer)
+        return false;
+    *roof_volume = floor_layer->volume;
+
+    /* image_add_child_layer inserts as topmost; keep earlier buildings above. */
+    if (building_idx > 1)
+        image_reparent_layer_as_last_child(goxel.image, building,
+                                           buildings_root);
     return true;
 }
 
 static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
 {
     volume_t *src = NULL;
-    layer_t *target_layers[BUILDING_MAX_FLOOR_COLORS + 1] = {0};
     volume_t *floor_volumes[BUILDING_MAX_FLOOR_COLORS];
-    volume_t *roof_volume;
+    volume_t *roof_volume = NULL;
+    layer_t *buildings_root = NULL;
+    layer_t *single_target = NULL;
     building_group_t *groups = NULL;
     int ngroups = 0;
     int i, max_floors = 0;
@@ -1665,6 +1744,7 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     int **terrain_tops = NULL;
     int skipped = 0;
     int placed = 0;
+    int building_idx = 0;
 
     if (!layer || !layer->volume || volume_is_empty(layer->volume)) {
         gui_alert("Plan - Buildings", "Active layer has no voxels.");
@@ -1798,27 +1878,23 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
     }
 
     image_history_push(goxel.image);
-    if (!prepare_target_layers(layer, filter->all_one_layer, max_floors,
-                               target_layers)) {
-        gui_alert("Plan - Buildings", "Could not create the buildings layers.");
-        if (terrain_tops) {
-            for (i = 0; i < ngroups; i++)
-                free(terrain_tops[i]);
-            free(terrain_tops);
-        }
-        free_groups(groups, ngroups);
-        volume_delete(src);
-        return;
-    }
-
     if (filter->all_one_layer) {
+        single_target = prepare_single_target_layer(layer);
+        if (!single_target) {
+            gui_alert("Plan - Buildings",
+                      "Could not create the buildings layer.");
+            goto fail_after_history;
+        }
         for (i = 0; i < max_floors; i++)
-            floor_volumes[i] = target_layers[0]->volume;
-        roof_volume = target_layers[0]->volume;
+            floor_volumes[i] = single_target->volume;
+        roof_volume = single_target->volume;
     } else {
-        for (i = 0; i < max_floors; i++)
-            floor_volumes[i] = target_layers[i]->volume;
-        roof_volume = target_layers[max_floors]->volume;
+        buildings_root = prepare_buildings_root(layer);
+        if (!buildings_root) {
+            gui_alert("Plan - Buildings",
+                      "Could not create the buildings layers.");
+            goto fail_after_history;
+        }
     }
 
     for (i = 0; i < ngroups; i++) {
@@ -1828,6 +1904,19 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
 
         if (terrain_tops && !terrain_tops[i])
             continue;
+
+        if (!filter->all_one_layer) {
+            building_idx++;
+            if (!prepare_building_layers(buildings_root, building_idx,
+                                         groups[i].floors, floor_volumes,
+                                         &roof_volume)) {
+                gui_alert("Plan - Buildings",
+                          "Could not create the buildings layers.");
+                delete_layer_and_descendants(buildings_root);
+                goxel.image->active_layer = layer;
+                goto fail_after_history;
+            }
+        }
 
         hash = building_hash(&groups[i], filter->seed);
         roof_pair = (int)(hash % (unsigned)filter->roof_pair_count);
@@ -1843,6 +1932,9 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
                        terrain_tops ? terrain_tops[i] : NULL);
     }
 
+    if (buildings_root)
+        goxel.image->active_layer = buildings_root;
+
     if (skipped > 0) {
         char msg[128];
         snprintf(msg, sizeof(msg),
@@ -1852,6 +1944,16 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
         gui_alert("Plan - Buildings", msg);
     }
 
+    if (terrain_tops) {
+        for (i = 0; i < ngroups; i++)
+            free(terrain_tops[i]);
+        free(terrain_tops);
+    }
+    free_groups(groups, ngroups);
+    volume_delete(src);
+    return;
+
+fail_after_history:
     if (terrain_tops) {
         for (i = 0; i < ngroups; i++)
             free(terrain_tops[i]);
@@ -1878,7 +1980,9 @@ static int gui(filter_t *filter_)
         "Paint 1-block-high filled shapes on the active layer using the floor "
         "colours below.  Generate builds walls along the inward edges, slabs "
         "at the base and between storeys, and shaped roofs on new Buildings "
-        "layers.  With Position using layer heights, each building sits on the "
+        "layers.  With split layers, a Buildings parent (sibling of the plan) "
+        "holds one child per building, each with Floor and Roofs layers.  "
+        "With Position using layer heights, each building sits on the "
         "chosen terrain layer (Threshold / Max submerge), filling under hanging "
         "cells.  The plan layer is preserved and hidden.";
     goxel_set_help_text(help_text);
@@ -1927,8 +2031,9 @@ static int gui(filter_t *filter_)
         /* Skip the label column so these checkboxes sit on the left. */
         gui_label_size_push(0);
         gui_checkbox("Generate on one layer", &filter->all_one_layer,
-                     "When off, each used floor gets a layer and final slabs "
-                     "and roofs share a roofs layer.");
+                     "When off, creates a Buildings parent next to the plan, "
+                     "one child layer per building, and Floor / Roofs layers "
+                     "under each building.");
         gui_checkbox("Generate windows", &filter->generate_windows,
                      "Punch window openings into exterior walls on every "
                      "storey.");
