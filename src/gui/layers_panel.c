@@ -341,8 +341,7 @@ static void render_layers_list(void)
             }
         }
         gui_item_group_end();
-        if (goxel.tool && goxel.tool->id == TOOL_CURSOR &&
-            gui_is_item_hovered())
+        if (gui_is_item_hovered())
             tool_cursor_set_panel_hover(layer);
 
         gui_pop_id();

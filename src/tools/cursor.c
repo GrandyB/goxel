@@ -447,9 +447,21 @@ void tool_cursor_set_panel_hover(layer_t *layer)
 void tool_cursor_render(void)
 {
     image_t *img = goxel.image;
+    float box[4][4];
+    const uint8_t white[4] = {255, 255, 255, 255};
 
-    if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) return;
     if (!img) return;
+
+    /* Layers-panel hover bbox is shown for every tool. Full cursor gizmos
+     * only run while the Cursor tool is active. */
+    if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) {
+        if (g_panel_hover &&
+            layer_effectively_visible(img, g_panel_hover) &&
+            layer_gizmo_box(g_panel_hover, box))
+            render_box(&goxel.rend, box, white,
+                       EFFECT_WIREFRAME | EFFECT_NO_DEPTH_TEST);
+        return;
+    }
     draw_gizmo_boxes(img);
 }
 
