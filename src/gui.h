@@ -233,6 +233,8 @@ void gui_combo_end(void);
 void gui_enabled_begin(bool enabled);
 void gui_enabled_end(void);
 void gui_dummy(int w, int h);
+/* Invisible hit target filling remaining content; true on left click. */
+bool gui_remaining_space_clicked(void);
 /* GL texture2D: logical size img_w x img_h within pow2 tex; uses UV sub-rect. */
 void gui_image_gl_subrect(
         uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,

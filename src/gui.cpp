@@ -1881,6 +1881,15 @@ void gui_dummy(int w, int h)
     ImGui::Dummy(ImVec2(w, h));
 }
 
+bool gui_remaining_space_clicked(void)
+{
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (avail.x < 1.f) avail.x = 1.f;
+    if (avail.y < 1.f) avail.y = 1.f;
+    ImGui::InvisibleButton("##remaining_space", avail);
+    return ImGui::IsItemClicked(ImGuiMouseButton_Left);
+}
+
 void gui_image_gl_subrect(
         uint32_t gl_tex, int tex_w, int tex_h, int img_w, int img_h,
         float display_w, float display_h)

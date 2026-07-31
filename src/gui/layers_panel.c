@@ -63,6 +63,18 @@ static void frame_layer_in_orbit(const layer_t *layer)
         camera_frame_box(cam, box);
 }
 
+/* Orbit: frame the image box (shift+empty click in the layers list). */
+static void frame_image_box_in_orbit(void)
+{
+    camera_t *cam;
+
+    if (!goxel.image) return;
+    cam = goxel.image->active_camera;
+    if (!cam || cam->mode != CAMERA_MODE_ORBIT) return;
+    if (!box_is_null(goxel.image->box))
+        camera_frame_box(cam, goxel.image->box);
+}
+
 static bool ancestor_collapsed(const image_t *img, const layer_t *layer)
 {
     const layer_t *p;
@@ -352,6 +364,20 @@ static void render_layers_list(void)
         }
         gui_pop_id();
     }
+
+    /* Cursor tool: click empty list space to deselect; shift+click also
+     * clears focus and frames the image box. */
+    if (goxel.tool && goxel.tool->id == TOOL_CURSOR &&
+        gui_remaining_space_clicked()) {
+        image_t *img = goxel.image;
+        img->active_layer = NULL;
+        if (gui_is_key_down(KEY_LEFT_SHIFT) ||
+            gui_is_key_down(KEY_RIGHT_SHIFT)) {
+            image_clear_layer_focus();
+            frame_image_box_in_orbit();
+        }
+    }
+
     gui_group_end();
 
     if (pending_kind && pending_drag)
