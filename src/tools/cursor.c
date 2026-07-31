@@ -184,6 +184,8 @@ static void draw_gizmo_boxes(const image_t *img)
 {
     layer_t *layer;
     float box[4][4];
+    float hover_box[4][4];
+    bool have_hover = false;
     const uint8_t yellow[4] = {255, 255, 0, 255};
 
     /* Panel hover solos a single layer/group box. */
@@ -194,14 +196,22 @@ static void draw_gizmo_boxes(const image_t *img)
         return;
     }
 
+    /* Draw strip gizmos first; yellow hover last so it wins over other
+     * bboxes (same-bucket sort + depth). NO_DEPTH_TEST keeps it above
+     * overlapping wireframes that would otherwise occlude it. */
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;
         if (!layer_gizmo_box(layer, box)) continue;
-        if (!img->active_layer && layer == g_viewport_hover)
-            render_box(&goxel.rend, box, yellow, EFFECT_WIREFRAME);
-        else
-            render_box(&goxel.rend, box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
+        if (!img->active_layer && layer == g_viewport_hover) {
+            mat4_copy(box, hover_box);
+            have_hover = true;
+            continue;
+        }
+        render_box(&goxel.rend, box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
     }
+    if (have_hover)
+        render_box(&goxel.rend, hover_box, yellow,
+                   EFFECT_WIREFRAME | EFFECT_NO_DEPTH_TEST);
 }
 
 static void apply_drag(cursor_edit_t *edit, cursor_t *curs,
