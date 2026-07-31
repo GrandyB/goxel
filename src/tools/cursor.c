@@ -95,6 +95,61 @@ static float box_volume_approx(const float box[4][4])
     return fabsf(box[0][0] * box[1][1] * box[2][2]) * 8.f;
 }
 
+/* Depth epsilon: larger than group gizmo pad (0.5) so nested parent/child
+ * faces tie and smaller volume wins; smaller than typical layer separation
+ * so a large sparse AABB does not lose to stuff behind it along the ray. */
+#define CURSOR_HIT_DEPTH_EPS 1.0f
+
+/*
+ * Raycast all six faces; pick the nearest hit in front of the camera.
+ * Unlike box_unproject, this works from inside large empty AABBs (roofs)
+ * and does not skip the face you are looking at.
+ */
+static bool cursor_box_hit(const camera_t *cam, const float viewport[4],
+                           const float pos[2], const float box[4][4],
+                           float out[3], float normal[3], int *face,
+                           float *t_out)
+{
+    int f;
+    float wpos[3] = {pos[0], pos[1], 0};
+    float opos[3], onorm[3];
+    float plane[4][4], local[3], world[3], delta[3];
+    float best_t = INFINITY;
+    float best_world[3], best_n[3];
+    int best_face = -1;
+
+    if (!cam || box_is_null(box)) return false;
+    camera_get_ray(cam, wpos, viewport, opos, onorm);
+    for (f = 0; f < 6; f++) {
+        float t;
+        mat4_copy(box, plane);
+        mat4_imul(plane, FACES_MATS[f]);
+        if (!plane_line_intersection(plane, opos, onorm, local))
+            continue;
+        if (!(local[0] >= -1 && local[0] <= 1 &&
+              local[1] >= -1 && local[1] <= 1))
+            continue;
+        mat4_mul_vec3(plane, local, world);
+        vec3_sub(world, opos, delta);
+        t = vec3_dot(delta, onorm);
+        if (t < 0.f || t >= best_t)
+            continue;
+        best_t = t;
+        best_face = f;
+        vec3_copy(world, best_world);
+        vec3_normalize(plane[2], best_n);
+        /* Facing away from camera (e.g. view from inside): flip. */
+        if (vec3_dot(best_n, onorm) > 0.f)
+            vec3_imul(best_n, -1.f);
+    }
+    if (best_face < 0) return false;
+    vec3_copy(best_world, out);
+    vec3_copy(best_n, normal);
+    if (face) *face = best_face;
+    if (t_out) *t_out = best_t;
+    return true;
+}
+
 static void apply_move(layer_t *layer, const float transf[4][4])
 {
     image_t *img = goxel.image;
@@ -214,6 +269,7 @@ static int iter(tool_t *tool, const painter_t *painter,
     layer_t *layer, *best = NULL;
     float box[4][4], hit[3], n[3];
     float best_vol = INFINITY;
+    float best_t = INFINITY;
     int face = -1, best_face = -1;
     bool pressed = curs->flags & CURSOR_PRESSED;
     bool has_selection;
@@ -244,15 +300,20 @@ static int iter(tool_t *tool, const painter_t *painter,
         return 0;
     }
 
-    /* Hit-test only (boxes are drawn from tool_cursor_render). */
+    /* Hit-test only (boxes are drawn from tool_cursor_render).
+     * Prefer nearer faces so large sparse AABBs (roofs) stay selectable
+     * over smaller layers behind them; at similar depth, smaller volume
+     * wins so nested children beat padded group boxes. */
     DL_FOREACH_REVERSE(img->layers, layer) {
-        float vol;
+        float vol, t;
         if (!layer_gets_gizmo(img, layer)) continue;
         if (!layer_gizmo_box(layer, box)) continue;
-        if (!box_unproject(cam, viewport, curs->xy, box, false, hit, n, &face))
+        if (!cursor_box_hit(cam, viewport, curs->xy, box, hit, n, &face, &t))
             continue;
         vol = box_volume_approx(box);
-        if (vol < best_vol) {
+        if (t < best_t - CURSOR_HIT_DEPTH_EPS ||
+            (t <= best_t + CURSOR_HIT_DEPTH_EPS && vol < best_vol)) {
+            best_t = t;
             best_vol = vol;
             best = layer;
             best_face = face;
