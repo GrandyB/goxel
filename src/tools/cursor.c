@@ -38,7 +38,7 @@ typedef struct {
 static cursor_edit_t g_edit = {};
 /* Set during the GUI frame when the mouse is over a layers-panel row. */
 static layer_t *g_panel_hover = NULL;
-/* Viewport hover while nothing is selected (solid yellow box). */
+/* Viewport hover while nothing is selected (solid white box). */
 static layer_t *g_viewport_hover = NULL;
 
 static bool layer_gets_gizmo(const image_t *img, const layer_t *layer)
@@ -50,7 +50,12 @@ static bool layer_gets_gizmo(const image_t *img, const layer_t *layer)
 
     active = img->active_layer;
     if (!active) {
-        /* Nothing selected: all leaf layers. */
+        if (goxel.cursor.flags & CURSOR_CTRL) {
+            /* Ctrl: top-level only — ungrouped leaves and group overall
+             * boxes; hide everything nested under a parent. */
+            return layer->parent_id == 0;
+        }
+        /* Default: leaf layers only. */
         return !layer_has_children(img, layer);
     }
     /* Selected: that layer and every descendant. */
@@ -180,37 +185,62 @@ static void box_center(const float box[4][4], float out[3])
     vec3_copy(box[3], out);
 }
 
+/* Parent/group wireframes: muted gray, longer strip dashes. Leaf gizmos
+ * stay default white with the normal strip period. */
+static void render_gizmo_box(const layer_t *layer, const float box[4][4])
+{
+    const uint8_t parent_gray[4] = {0x99, 0x99, 0x99, 255};
+    int effects = EFFECT_STRIP | EFFECT_WIREFRAME;
+
+    if (layer_has_children(goxel.image, layer)) {
+        effects |= EFFECT_STRIP_LONG;
+        render_box(&goxel.rend, box, parent_gray, effects);
+    } else {
+        render_box(&goxel.rend, box, NULL, effects);
+    }
+}
+
 static void draw_gizmo_boxes(const image_t *img)
 {
     layer_t *layer;
     float box[4][4];
-    float hover_box[4][4];
-    bool have_hover = false;
+    float accent_box[4][4];
+    bool have_accent = false;
     const uint8_t yellow[4] = {255, 255, 0, 255};
+    const uint8_t white[4] = {255, 255, 255, 255};
+    const uint8_t *accent_color = white;
 
-    /* Panel hover solos a single layer/group box. */
+    /* Panel hover solos a single layer/group box (solid white). */
     if (g_panel_hover) {
         if (layer_effectively_visible(img, g_panel_hover) &&
             layer_gizmo_box(g_panel_hover, box))
-            render_box(&goxel.rend, box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
+            render_box(&goxel.rend, box, white,
+                       EFFECT_WIREFRAME | EFFECT_NO_DEPTH_TEST);
         return;
     }
 
-    /* Draw strip gizmos first; yellow hover last so it wins over other
-     * bboxes (same-bucket sort + depth). NO_DEPTH_TEST keeps it above
+    /* Draw strip gizmos first; accent (hover white / selection yellow)
+     * last so it wins over other bboxes. NO_DEPTH_TEST keeps it above
      * overlapping wireframes that would otherwise occlude it. */
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;
         if (!layer_gizmo_box(layer, box)) continue;
         if (!img->active_layer && layer == g_viewport_hover) {
-            mat4_copy(box, hover_box);
-            have_hover = true;
+            mat4_copy(box, accent_box);
+            have_accent = true;
+            accent_color = white;
             continue;
         }
-        render_box(&goxel.rend, box, NULL, EFFECT_STRIP | EFFECT_WIREFRAME);
+        if (layer == img->active_layer) {
+            mat4_copy(box, accent_box);
+            have_accent = true;
+            accent_color = yellow;
+            continue;
+        }
+        render_gizmo_box(layer, box);
     }
-    if (have_hover)
-        render_box(&goxel.rend, hover_box, yellow,
+    if (have_accent)
+        render_box(&goxel.rend, accent_box, accent_color,
                    EFFECT_WIREFRAME | EFFECT_NO_DEPTH_TEST);
 }
 
@@ -385,6 +415,7 @@ static int gui(tool_t *tool)
     (void)tool;
     gui_text("Click a box to select a layer.");
     gui_text("With a layer selected, drag the arrows to move.");
+    gui_text("Hold Ctrl to show group boxes (hides children).");
     gui_text("Hold Alt to show layer names.");
     return 0;
 }

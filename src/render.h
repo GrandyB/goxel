@@ -34,6 +34,7 @@ enum {
     // For render box.
     EFFECT_NO_SHADING       = 1 << 10,
     EFFECT_STRIP            = 1 << 11,
+    EFFECT_STRIP_LONG       = 1 << 21, // With EFFECT_STRIP: longer dash period.
     EFFECT_WIREFRAME        = 1 << 12,
     EFFECT_GRID             = 1 << 13,
     EFFECT_EDGES            = 1 << 14,

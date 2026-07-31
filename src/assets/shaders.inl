@@ -48,7 +48,7 @@
     "#endif\n"
     ""
 },
-{.path = "data/shaders/model3d.glsl", .size = 2766, .data =
+{.path = "data/shaders/model3d.glsl", .size = 2823, .data =
     "#if defined(GL_ES) && defined(FRAGMENT_SHADER)\n"
     "#extension GL_OES_standard_derivatives : enable\n"
     "#endif\n"
@@ -107,8 +107,9 @@
     "{\n"
     "    gl_FragColor = v_color * texture2D(u_tex, v_uv);\n"
     "    if (u_strip > 0.0) {\n"
+    "       mediump float period = 8.0 * u_strip;\n"
     "       mediump float p = gl_FragCoord.x + gl_FragCoord.y + u_time * 4.0;\n"
-    "       if (mod(p, 8.0) < 4.0) gl_FragColor.rgb *= 0.5;\n"
+    "       if (mod(p, period) < period * 0.5) gl_FragColor.rgb *= 0.5;\n"
     "    }\n"
     "    if (u_clip[3][3] > 0.0) {\n"
     "        if (    v_clip_pos[0] < -v_clip_pos[3] ||\n"

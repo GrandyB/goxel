@@ -332,7 +332,9 @@ void model3d_render(model3d_t *model3d,
 
     vec4_set(cf, c[0] / 255.0, c[1] / 255.0, c[2] / 255.0, c[3] / 255.0);
     gl_update_uniform(g_shader, "u_color", cf);
-    gl_update_uniform(g_shader, "u_strip", effects & EFFECT_STRIP ? 1.0 : 0.0);
+    gl_update_uniform(g_shader, "u_strip",
+            !(effects & EFFECT_STRIP) ? 0.0 :
+            (effects & EFFECT_STRIP_LONG) ? 2.0 : 1.0);
     gl_update_uniform(g_shader, "u_time", 0.0); // No moving strip effects.
 
     tex = tex ?: g_white_tex;

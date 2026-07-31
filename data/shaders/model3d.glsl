@@ -56,8 +56,9 @@ void main()
 {
     gl_FragColor = v_color * texture2D(u_tex, v_uv);
     if (u_strip > 0.0) {
+       mediump float period = 8.0 * u_strip;
        mediump float p = gl_FragCoord.x + gl_FragCoord.y + u_time * 4.0;
-       if (mod(p, 8.0) < 4.0) gl_FragColor.rgb *= 0.5;
+       if (mod(p, period) < period * 0.5) gl_FragColor.rgb *= 0.5;
     }
     if (u_clip[3][3] > 0.0) {
         if (    v_clip_pos[0] < -v_clip_pos[3] ||
