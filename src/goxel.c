@@ -713,6 +713,7 @@ void goxel_reset(void)
     goxel.radius_z = 0.5;
     goxel.brush_origin_at_base = false;
     goxel.brush_block_face_alignment = false;
+    goxel.brush_auto_plane = false;
     goxel.brush_surface_paint = false;
     goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
     if (goxel.brush_texture_index >= goxel.brush_textures_count)

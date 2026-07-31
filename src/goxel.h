@@ -554,6 +554,8 @@ typedef struct goxel
     bool       brush_origin_at_base;
     /* Brush: align local Z axis to snapped block face normal. */
     bool       brush_block_face_alignment;
+    /* Brush: snap to plane of hovered block face on stroke start. */
+    bool       brush_auto_plane;
     /* Brush paint mode: project onto exposed surface shell from +Z. */
     bool       brush_surface_paint;
     /* Brush source: solid color or tiled texture sampling. */

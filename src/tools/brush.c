@@ -227,6 +227,11 @@ static int on_drag(gesture3d_t *gest, void *user)
         if (!brush->delta) brush->delta = volume_new();
         if (!goxel.tool_volume) goxel.tool_volume = volume_new();
         volume_set(goxel.tool_volume, brush->volume_orig);
+        if (goxel.brush_auto_plane) {
+            float plane_pos[3];
+            vec3_addk(curs->pos, curs->normal, -curs->snap_offset, plane_pos);
+            plane_from_normal(goxel.tool_plane, plane_pos, curs->normal);
+        }
     }
 
     painter = *(painter_t*)USER_GET(user, 1);
@@ -299,19 +304,17 @@ static int on_drag(gesture3d_t *gest, void *user)
     }
 
     // Stamp along the segment so fast motion does not leave gaps.
-    nb = ceil(vec3_dist(curs->pos, brush->last_pos) / spacing);
+    nb = ceil(vec3_dist(target, brush->last_pos) / spacing);
     nb = max(nb, 1);
-    if (!alt) {
-        for (i = 0; i < nb; i++) {
-            vec3_mix(brush->last_pos, curs->pos, (i + 1.0) / nb, pos);
-            if (surface_paint_mode) {
-                volume_brush_surface_stamp(brush->delta, brush->volume_orig,
-                                           &painter, pos, r_x, r_y, MODE_MAX);
-            } else {
-                get_box3(pos, NULL, brush->stroke_normal,
-                         r_x, r_y, r_z, NULL, box);
-                volume_op(brush->delta, &painter, box);
-            }
+    for (i = 0; i < nb; i++) {
+        vec3_mix(brush->last_pos, target, (i + 1.0) / nb, pos);
+        if (surface_paint_mode) {
+            volume_brush_surface_stamp(brush->delta, brush->volume_orig,
+                                       &painter, pos, r_x, r_y, MODE_MAX);
+        } else {
+            get_box3(pos, NULL, brush->stroke_normal,
+                     r_x, r_y, r_z, NULL, box);
+            volume_op(brush->delta, &painter, box);
         }
     }
 
@@ -354,6 +357,7 @@ static int on_drag(gesture3d_t *gest, void *user)
         volume_set(brush->volume_orig, goxel.tool_volume);
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
+        mat4_copy(plane_null, goxel.tool_plane);
     }
     vec3_copy(target, brush->last_pos);
     return 0;
@@ -450,6 +454,18 @@ static int iter(tool_t *tool, const painter_t *painter,
     gesture3d(&brush->gestures.drag, curs, USER_PASS(brush, painter));
     gesture3d(&brush->gestures.hover, curs, USER_PASS(brush, painter));
 
+    if (goxel.brush_auto_plane) {
+        if (!plane_is_null(goxel.tool_plane)) {
+            render_grid(&goxel.rend, goxel.tool_plane, goxel.grid_color,
+                        goxel.image->box);
+        } else if ((curs->flags & CURSOR_SHIFT) && curs->snaped) {
+            float plane[4][4], plane_pos[3];
+            vec3_addk(curs->pos, curs->normal, -curs->snap_offset, plane_pos);
+            plane_from_normal(plane, plane_pos, curs->normal);
+            render_grid(&goxel.rend, plane, goxel.grid_color, goxel.image->box);
+        }
+    }
+
     return tool->state;
 }
 
@@ -487,6 +503,8 @@ static int gui(tool_t *tool)
                  "Lowest Z of the shape is at the cursor (Z-up), not the center");
     gui_checkbox("Block face align", &goxel.brush_block_face_alignment,
                  "Diameter Z follows the block face normal (paint walls side-on)");
+    gui_checkbox("Auto-plane", &goxel.brush_auto_plane,
+                 "Lock to the hovered block face plane on brush start");
     gui_enabled_end();
     tool_gui_smoothness();
 
