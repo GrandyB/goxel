@@ -32,9 +32,6 @@ static void a_tool_set(void *data)
     tool_t *tool = (tool_t *)data;
     tool_clear_preview();
     goxel.tool = tool;
-    /* Cursor starts with no layer selected so all child gizmos show. */
-    if (tool && tool->id == TOOL_CURSOR && goxel.image)
-        goxel.image->active_layer = NULL;
 }
 
 void tool_register_(tool_t *tool)

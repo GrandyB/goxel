@@ -85,6 +85,22 @@ static void frame_image_box_in_orbit(void)
         camera_frame_box(cam, goxel.image->box);
 }
 
+static void clear_layer_selection(image_t *img)
+{
+    if (!img) return;
+    img->active_layer = NULL;
+    tool_cursor_clear_edit();
+    tool_clear_preview();
+}
+
+/* Same as shift+click empty list space: unfocus and frame the image box. */
+static void unfocus_and_frame_image(void)
+{
+    image_clear_layer_focus();
+    tool_clear_preview();
+    frame_image_box_in_orbit();
+}
+
 static bool ancestor_collapsed(const image_t *img, const layer_t *layer)
 {
     const layer_t *p;
@@ -315,11 +331,17 @@ static void render_layers_list(void)
                         &focus_press, ICON_FOCUS)) {
                 if (gui_is_key_down(KEY_LEFT_SHIFT) ||
                     gui_is_key_down(KEY_RIGHT_SHIFT)) {
-                    /* Shift: force focus and frame the layer in orbit. */
-                    image_set_layer_focus(layer);
-                    select_layer(img, layer);
-                    tool_clear_preview();
-                    frame_layer_in_orbit(layer);
+                    if (focus_active) {
+                        /* Already focused: same as shift+empty list space. */
+                        unfocus_and_frame_image();
+                        clear_layer_selection(img);
+                    } else {
+                        /* Shift: force focus and frame the layer in orbit. */
+                        image_set_layer_focus(layer);
+                        select_layer(img, layer);
+                        tool_clear_preview();
+                        frame_layer_in_orbit(layer);
+                    }
                 } else {
                     image_toggle_layer_focus(layer);
                     if (image_get_focused_layer(img) == layer)
@@ -374,22 +396,15 @@ static void render_layers_list(void)
         gui_pop_id();
     }
 
-    /* Empty list space: shift+click clears focus and frames the image box
-     * (any tool). Plain click deselects only in Cursor (other tools need an
-     * active layer). */
+    /* Empty list space: plain click deselects (any tool). Shift+click also
+     * clears focus and frames the image box. */
     if (gui_remaining_space_clicked()) {
         image_t *img = goxel.image;
         bool shift = gui_is_key_down(KEY_LEFT_SHIFT) ||
                      gui_is_key_down(KEY_RIGHT_SHIFT);
-        if (shift) {
-            image_clear_layer_focus();
-            tool_clear_preview();
-            frame_image_box_in_orbit();
-        }
-        if (goxel.tool && goxel.tool->id == TOOL_CURSOR) {
-            img->active_layer = NULL;
-            tool_cursor_clear_edit();
-        }
+        if (shift)
+            unfocus_and_frame_image();
+        clear_layer_selection(img);
     }
 
     gui_group_end();
