@@ -21,7 +21,7 @@
 #include <math.h>
 
 enum {
-    CURSOR_NAMES_ON_ALT = 0,
+    CURSOR_NAMES_ON_HOVER = 0,
     CURSOR_NAMES_ALWAYS = 1,
 };
 
@@ -29,8 +29,8 @@ typedef struct {
     tool_t tool;
 } tool_cursor_t;
 
-/* Layer name labels: default to Alt-hold (matches prior behaviour). */
-static int g_names_mode = CURSOR_NAMES_ON_ALT;
+/* Layer name labels. Holding Alt always shows all names as an override. */
+static int g_names_mode = CURSOR_NAMES_ON_HOVER;
 
 typedef struct {
     int state; /* 0 idle, 1 hover, 2 drag */
@@ -467,11 +467,14 @@ static int gui(tool_t *tool)
     gui_text("Click a box to select a layer.");
     gui_text("With a layer selected, drag the arrows to move.");
 
-    gui_group_begin(NULL);
-    gui_selectable_toggle("Show names on alt", &g_names_mode,
-                          CURSOR_NAMES_ON_ALT, NULL, -1);
-    gui_selectable_toggle("Always show names", &g_names_mode,
+    gui_separator();
+    gui_group_begin("Show names:");
+    gui_row_begin(2);
+    gui_selectable_toggle("On Hover", &g_names_mode,
+                          CURSOR_NAMES_ON_HOVER, NULL, -1);
+    gui_selectable_toggle("Always", &g_names_mode,
                           CURSOR_NAMES_ALWAYS, NULL, -1);
+    gui_row_end();
     gui_group_end();
     return 0;
 }
@@ -610,9 +613,19 @@ void tool_cursor_render_labels(void)
     }
 
     if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) return;
-    if (g_names_mode == CURSOR_NAMES_ON_ALT &&
-        !(goxel.cursor.flags & CURSOR_LEFT_ALT))
+
+    /* Holding Alt overrides to show all gizmo names. */
+    if (g_names_mode == CURSOR_NAMES_ON_HOVER &&
+        !(goxel.cursor.flags & CURSOR_LEFT_ALT)) {
+        layer = g_viewport_hover;
+        if (!layer && (g_edit.state == 1 || g_edit.state == 2))
+            layer = g_edit.layer;
+        if (layer && layer->name[0] && layer_gizmo_box(layer, box)) {
+            box_center(box, pos);
+            gui_world_label(pos, layer->name, color);
+        }
         return;
+    }
 
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;
