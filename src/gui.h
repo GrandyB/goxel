@@ -152,9 +152,9 @@ void gui_group_end(void);
 
 void gui_scrollable_begin(float max_height);
 void gui_scrollable_end();
-/* If the last item is clipped by the current scroll region, scroll so it
- * is centred. Call after the item/group is submitted. */
-void gui_scroll_item_into_view(void);
+/* Scroll so the last item is fully inside the current scroll clip (with
+ * padding). Returns true once it is fully visible. Call after the item. */
+bool gui_scroll_item_into_view(void);
 
 // Section have a frame.
 

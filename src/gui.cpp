@@ -1011,10 +1011,39 @@ void gui_scrollable_end() {
     ImGui::EndChild();
 }
 
-void gui_scroll_item_into_view(void)
+bool gui_scroll_item_into_view(void)
 {
-    if (!ImGui::IsItemVisible())
-        ImGui::SetScrollHereY(0.5f);
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    const ImVec2 a = ImGui::GetItemRectMin();
+    const ImVec2 b = ImGui::GetItemRectMax();
+    const ImRect &clip = window->InnerClipRect;
+    /* Extra margin so the row is not flush against the clip edge (and so a
+     * scrollbar appearing next frame does not leave it one pixel short). */
+    float pad = ImMax(ImGui::GetStyle().ItemSpacing.y, 6.0f);
+    float view_h = clip.Max.y - clip.Min.y;
+    float item_h = b.y - a.y;
+    if (item_h + 2.0f * pad > view_h)
+        pad = 0.0f;
+
+    if (a.y >= clip.Min.y + pad && b.y <= clip.Max.y - pad)
+        return true;
+
+    float scroll = window->Scroll.y;
+    /* Far off-screen: jump so the row is centred. Near the edge: nudge. */
+    if (b.y < clip.Min.y || a.y > clip.Max.y) {
+        float item_mid = (a.y + b.y) * 0.5f;
+        float view_mid = (clip.Min.y + clip.Max.y) * 0.5f;
+        scroll += item_mid - view_mid;
+    } else {
+        if (a.y < clip.Min.y + pad)
+            scroll -= (clip.Min.y + pad) - a.y;
+        if (b.y > clip.Max.y - pad)
+            scroll += b.y - (clip.Max.y - pad);
+    }
+    /* ScrollTarget is applied on the next Begin(); caller should keep
+     * requesting until this returns true (content size / clamp lag). */
+    ImGui::SetScrollY(window, ImMax(0.0f, scroll));
+    return false;
 }
 
 bool gui_section_begin(const char *label, int flags)

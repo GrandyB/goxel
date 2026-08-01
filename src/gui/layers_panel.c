@@ -25,10 +25,12 @@
 
 /* Set by gui_layers_request_scroll_to_active(); consumed while drawing. */
 static bool g_scroll_to_active = false;
+static int g_scroll_to_active_frames = 0;
 
 void gui_layers_request_scroll_to_active(void)
 {
     g_scroll_to_active = true;
+    g_scroll_to_active_frames = 0;
 }
 
 static void toggle_layer_only_visible(layer_t *layer)
@@ -219,6 +221,7 @@ static void render_layers_list(void)
     layer_t *pending_drag = NULL;
     layer_t *pending_target = NULL;
     int pending_kind = 0;
+    bool found_scroll_target = false;
 
     gui_group_begin(NULL);
     DL_FOREACH_REVERSE(img->layers, layer) {
@@ -329,8 +332,12 @@ static void render_layers_list(void)
         }
         gui_item_group_end();
         if (g_scroll_to_active && current) {
-            gui_scroll_item_into_view();
-            g_scroll_to_active = false;
+            found_scroll_target = true;
+            /* Keep requesting across frames: ImGui applies ScrollTarget on
+             * the next Begin and may clamp to last frame's ContentSize. */
+            g_scroll_to_active_frames++;
+            if (gui_scroll_item_into_view() || g_scroll_to_active_frames > 8)
+                g_scroll_to_active = false;
         }
         if (gui_is_item_hovered())
             tool_cursor_set_panel_hover(layer);
@@ -340,8 +347,8 @@ static void render_layers_list(void)
         prev_depth = depth;
         idx++;
     }
-    /* Active row missing this frame (collapsed nest, deselected, etc.). */
-    g_scroll_to_active = false;
+    if (g_scroll_to_active && !found_scroll_target)
+        g_scroll_to_active = false;
 
     /* End of list: last-child exits when nested, then always a line beneath
      * the last visible layer. */
