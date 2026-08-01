@@ -87,6 +87,8 @@ static float placer_scale_custom_pct_x = 100.f;
 static float placer_scale_custom_pct_y = 100.f;
 static float placer_scale_custom_pct_z = 100.f;
 static float placer_rotation_angle_deg = 22.5f;
+/* Each placement creates a child of the active layer (default on). */
+static bool placer_place_in_child_layer = true;
 /* Cached euler readback so editing one axis does not jump from mat→eul ambiguity. */
 static struct {
     float rot[4][4];
@@ -110,6 +112,8 @@ typedef struct {
     float rot[4][4]; // current rotation applied to the doodad; modified by the GUI, applied to a copy of imported_volume_orig, which is then set back to imported_volume
     float scale[3]; // destructive scale relative to imported_volume_orig (1 = original size)
     float preview_scale; // extra uniform scale for hover/place preview only (imported_volume unchanged)
+    /* Basename of the loaded import (empty if from selection / unnamed). */
+    char source_name[256];
 
     // Gesture start and last pos (should we put it in the 3d gesture?)
     float start_pos[3];
@@ -480,6 +484,54 @@ static void post_import(tool_placer_t *placer)
     placer_reset_scale(placer);
 }
 
+/* Stamp ready to place: imported volume + colour replace + preview scale. */
+static volume_t *placer_make_stamp(tool_placer_t *placer)
+{
+    volume_t *stamp;
+
+    if (!placer || !placer->imported_volume)
+        return NULL;
+    stamp = volume_copy(placer->imported_volume);
+    if (!stamp)
+        return NULL;
+    if (placer->color_replace_mode != PLACER_CR_NONE)
+        placer_stamp_apply_color_replace(placer, stamp);
+    placer_stamp_preview_scale(placer, stamp);
+    return stamp;
+}
+
+static void placer_set_source_name(tool_placer_t *placer, const char *name)
+{
+    if (!placer)
+        return;
+    if (!name || !name[0]) {
+        placer->source_name[0] = '\0';
+        return;
+    }
+    snprintf(placer->source_name, sizeof(placer->source_name), "%s", name);
+}
+
+static layer_t *placer_new_child_layer_for_placement(tool_placer_t *placer)
+{
+    layer_t *parent = goxel.image->active_layer;
+    layer_t *target;
+
+    if (!parent)
+        return NULL;
+    target = image_add_child_layer(goxel.image, parent);
+    if (!target)
+        return NULL;
+    target->visible = true;
+    parent->collapsed = false;
+    if (placer->source_name[0]) {
+        make_uniq_name(target->name, sizeof(target->name), placer->source_name,
+                       goxel.image, layer_name_exists);
+    }
+    /* Keep the parent selected so further placements stay siblings under it. */
+    goxel.image->active_layer = parent;
+    return target;
+}
+
 static int on_drag(gesture3d_t *gest, void *user)
 {
     if (gest->state == GESTURE_END) {
@@ -488,10 +540,27 @@ static int on_drag(gesture3d_t *gest, void *user)
                          goxel.image->active_layer->volume && goxel.tool_volume;
 
         image_history_push(goxel.image);
-        if (did_place && !image_ensure_layer_for_adding(goxel.image))
-            did_place = false;
-        if (did_place) {
-            volume_set(goxel.image->active_layer->volume, goxel.tool_volume);
+        if (did_place && placer_place_in_child_layer) {
+            layer_t *target = placer_new_child_layer_for_placement(placer);
+            volume_t *stamp = NULL;
+
+            if (!target)
+                did_place = false;
+            else {
+                stamp = placer_make_stamp(placer);
+                if (!stamp)
+                    did_place = false;
+                else {
+                    volume_set(target->volume, stamp);
+                    volume_delete(stamp);
+                }
+            }
+        } else if (did_place) {
+            if (!image_ensure_layer_for_adding(goxel.image))
+                did_place = false;
+            if (did_place) {
+                volume_set(goxel.image->active_layer->volume, goxel.tool_volume);
+            }
         }
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
@@ -528,12 +597,11 @@ static int on_hover(gesture3d_t *gest, void *user)
 
         move_to(placer, curs->pos);
 
-        stamp = volume_copy(placer->imported_volume);
-        if (placer->color_replace_mode != PLACER_CR_NONE)
-            placer_stamp_apply_color_replace(placer, stamp);
-        placer_stamp_preview_scale(placer, stamp);
-        volume_merge(volume, stamp, MODE_OVER, NULL);
-        volume_delete(stamp);
+        stamp = placer_make_stamp(placer);
+        if (stamp) {
+            volume_merge(volume, stamp, MODE_OVER, NULL);
+            volume_delete(stamp);
+        }
 
         if (!goxel.tool_volume) goxel.tool_volume = volume_new();
         volume_set(goxel.tool_volume, volume);
@@ -642,6 +710,7 @@ static void reset(tool_placer_t* placer) {
     vec3_set(placer->last_curs_pos, 0, 0, 0);
     mat4_copy(mat4_identity, placer->rot);
     placer_reset_scale(placer);
+    placer_set_source_name(placer, NULL);
 }
 typedef struct past_import past_import_t;
 struct past_import {
@@ -915,6 +984,7 @@ static void placer_import_selected_paths(tool_placer_t *placer, char *paths_mut)
             continue;
         file_name = get_file_name_from_path(token);
         on_file_import(token, file_name, f);
+        placer_set_source_name(placer, file_name);
         free((void *)file_name);
         post_import(placer);
     }
@@ -1094,6 +1164,7 @@ static void placer_gui_history_body(tool_placer_t *placer)
                 reset(placer);
                 i->format->import_volume_func(i->format, placer->imported_volume,
                                               i->path);
+                placer_set_source_name(placer, i->file_name);
                 post_import(placer);
             }
             if (do_remove)
@@ -1143,6 +1214,7 @@ static void placer_gui_history_body(tool_placer_t *placer)
             reset(placer);
             i->format->import_volume_func(i->format, placer->imported_volume,
                                           i->path);
+            placer_set_source_name(placer, i->file_name);
             post_import(placer);
         }
         if (do_remove)
@@ -1241,6 +1313,12 @@ static int gui(tool_t *tool)
         }
         gui_section_end();
     }
+
+    gui_label_size_push(0);
+    gui_checkbox("Place in child layer", &placer_place_in_child_layer,
+            "If checked, each placement creates a child of the active layer.\n"
+            "If unchecked, placements merge into the current layer.");
+    gui_label_size_pop();
 
     prev_cr_mode = placer->color_replace_mode;
     if (gui_section_begin("Colour replace", true)) {

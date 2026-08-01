@@ -72,6 +72,7 @@ Designed for **voxel map making for games**. Highlights relative to upstream:
     - Non-destructive rotate; offset from an origin; scaling before place
     - Flip options; randomised flip/rotate per placement
     - Colour replacement (fixed or random) for variation on repeated objects
+    - Optional place into a child layer per placement (default on)
     - Copy / cut / acquire selection into the placer; export placer content to a file
     - History pane with model previews (persisted in the `.gox` file)
 - **Fill tool** — flood-fill with current colour settings (works well with plane snap)
