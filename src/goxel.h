@@ -701,8 +701,12 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
                          bool capture_keys);
 
 /* Hold/release for ACTION_select_layer_under_cursor shortcut (preview while
- * held, select on release). Call from goxel_iter after cursor updates. */
+ * held, select on release). Also auto-enters the same mid-hold picker when
+ * no layer is selected and the tool is not Cursor (click to select). Call
+ * from goxel_iter after cursor updates. */
 void goxel_layer_pick_key_iter(const inputs_t *inputs);
+/* True while the auto-pick click's drag is still held; tools must ignore it. */
+bool goxel_layer_pick_swallowing_press(void);
 /* Arrow keys: up/down select among layers-panel-visible rows; left/right
  * collapse/expand. Skipped while fly/FPV arrows move the camera. */
 void goxel_layer_nav_key_iter(const inputs_t *inputs);

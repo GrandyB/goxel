@@ -2841,54 +2841,102 @@ static bool action_shortcut_held(const action_t *action, const inputs_t *inputs)
     return inputs->keys[(unsigned char)s[0]];
 }
 
+/* Not Cursor, nothing selected: same preview as holding the pick shortcut. */
+static bool layer_pick_auto_mode(void)
+{
+    return goxel.image && !goxel.image->active_layer &&
+           goxel.tool && goxel.tool->id != TOOL_CURSOR;
+}
+
+static void layer_pick_commit(image_t *img, layer_t *layer)
+{
+    if (!img || !layer || layer_find(img, layer->id) != layer) return;
+    img->active_layer = layer;
+    image_expand_to_show_layer(img, layer);
+    tool_cursor_clear_edit();
+    tool_clear_preview();
+}
+
+/* After auto-pick click-select, ignore the rest of that press so the tool
+ * does not treat the pick drag as a stroke. Cleared on button up. */
+static bool g_layer_pick_swallow_press = false;
+
+bool goxel_layer_pick_swallowing_press(void)
+{
+    return g_layer_pick_swallow_press;
+}
+
 /*
  * Hold the select-layer shortcut: preview bbox + name at the cursor.
- * Release: commit the selection. Called from goxel_layer_pick_key_iter
- * (not action_exec on key-down).
+ * Release: commit the selection. auto_pick (no selection, not Cursor) is
+ * the same mid-hold preview; click commits (key release still works).
+ * Called from goxel_layer_pick_key_iter (not action_exec on key-down).
  */
-static void goxel_layer_pick_key_update(bool held)
+static void goxel_layer_pick_key_update(bool key_held, bool auto_pick)
 {
     static bool was_held = false;
+    static bool was_key_held = false;
+    static bool was_pressed = false;
     static layer_t *preview = NULL;
     image_t *img = goxel.image;
     layer_t *layer;
     float label_pos[3];
+    bool held = key_held || auto_pick;
+    bool pressed = (goxel.cursor.flags & CURSOR_PRESSED) != 0;
+    bool just_pressed = pressed && !was_pressed;
 
     if (held && img) {
+        /* Refresh pick FBO on enter (key edge or first auto-pick frame). */
         layer = find_layer_under_cursor(label_pos, !was_held);
         /* Stale pointer if layers were edited mid-hold. */
         if (layer && layer_find(img, layer->id) != layer)
             layer = NULL;
         preview = layer;
         tool_cursor_set_pick_preview(layer, layer ? label_pos : NULL);
-        if (layer)
-            goxel_set_help_text("Release to select layer");
-        else
+        if (layer) {
+            if (key_held)
+                goxel_set_help_text("Release to select layer");
+            else
+                goxel_set_help_text("Click to select layer");
+        } else {
             goxel_set_help_text("No layer under cursor");
-    } else {
-        if (was_held && preview && img &&
-            layer_find(img, preview->id) == preview) {
-            img->active_layer = preview;
-            image_expand_to_show_layer(img, preview);
         }
+        /* Key release while auto-pick keeps held: still commit. */
+        if (was_key_held && !key_held)
+            layer_pick_commit(img, preview);
+        else if (auto_pick && just_pressed && !gui_want_capture_mouse()) {
+            layer_pick_commit(img, preview);
+            /* Consume this press: on_drag only sets PRESSED on BEGIN. */
+            goxel.cursor.flags &= ~CURSOR_PRESSED;
+            g_layer_pick_swallow_press = true;
+        }
+    } else {
+        /* Only key-release commits; leaving auto-pick (e.g. panel select)
+         * must not overwrite the new active layer. */
+        if (was_key_held && preview)
+            layer_pick_commit(img, preview);
         preview = NULL;
         tool_cursor_set_pick_preview(NULL, NULL);
     }
     was_held = held;
+    was_key_held = key_held;
+    was_pressed = pressed;
 }
 
 void goxel_layer_pick_key_iter(const inputs_t *inputs)
 {
     action_t *action;
-    bool held;
+    bool key_held = false;
+    bool auto_pick = layer_pick_auto_mode();
 
-    if (!inputs || gui_want_capture_keyboard()) {
-        goxel_layer_pick_key_update(false);
-        return;
+    if (inputs && !gui_want_capture_keyboard()) {
+        action = action_get(ACTION_select_layer_under_cursor, false);
+        key_held = action_shortcut_held(action, inputs);
     }
-    action = action_get(ACTION_select_layer_under_cursor, false);
-    held = action_shortcut_held(action, inputs);
-    goxel_layer_pick_key_update(held);
+    goxel_layer_pick_key_update(key_held, auto_pick);
+    if (g_layer_pick_swallow_press && inputs &&
+            !inputs->touches[0].down[0])
+        g_layer_pick_swallow_press = false;
 }
 
 /* Walk up to the panel-visible ancestor when the active layer is nested

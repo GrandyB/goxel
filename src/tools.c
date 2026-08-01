@@ -104,6 +104,15 @@ static gesture3d_t g_pick_color_gesture = {
 int tool_iter(tool_t *tool, const painter_t *painter, const float viewport[4])
 {
     assert(tool);
+    /* No selection outside Cursor: layer picker mode (apostrophe-hold
+     * equivalent) is driven from goxel_layer_pick_key_iter. */
+    if (tool->id != TOOL_CURSOR &&
+            (!goxel.image || !goxel.image->active_layer)) {
+        return 0;
+    }
+    /* Auto-pick click-select: do not let the same press become a stroke. */
+    if (tool->id != TOOL_CURSOR && goxel_layer_pick_swallowing_press())
+        return 0;
     if (    (tool->flags & TOOL_REQUIRE_CAN_EDIT) &&
             !image_layer_can_edit(goxel.image, goxel.image->active_layer)) {
         goxel_set_help_text("Cannot edit this layer");
