@@ -145,6 +145,8 @@ bool gui_collapsing_header(const char *label, bool default_opened);
 void gui_text(const char *label, ...);
 void gui_text_wrapped(const char *label, ...);
 bool gui_button(const char *label, float w, int icon);
+/* Like gui_button, but styled with the theme accent (selected) color. */
+bool gui_button_primary(const char *label, float w, int icon);
 bool gui_button_right(const char *label, int icon);
 bool gui_open_in_shell(const char *path);
 

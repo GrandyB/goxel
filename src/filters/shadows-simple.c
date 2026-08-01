@@ -146,8 +146,12 @@ static int gui(filter_t *filter_)
     gui_label_size_pop();
     gui_group_end();
 
-    if (gui_button("Apply", -1, 0))
     {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        gui_enabled_begin(has_layer);
+        if (gui_button_primary("Apply to current layer", -1, 0))
+        {
         shadows_simple_debug_log_layers("Apply pressed");
         LOG_I("[shadows-simple] settings: strength=%.3f multi_block=%.3f cap=%.3f smoothing=%d",
               filter->strength, filter->multi_block_multiplier,
@@ -155,17 +159,17 @@ static int gui(filter_t *filter_)
 
         if (!goxel.image) {
             LOG_E("[shadows-simple] abort: no image");
-            return 0;
+            goto apply_end;
         }
         layer_t *layer = goxel.image->active_layer;
         if (!layer) {
             LOG_E("[shadows-simple] abort: no active layer");
-            return 0;
+            goto apply_end;
         }
         if (!layer->volume) {
             LOG_E("[shadows-simple] abort: active layer \"%s\" has no volume",
                   layer->name);
-            return 0;
+            goto apply_end;
         }
         image_history_push(goxel.image);
         if (box_is_null(goxel.image->box)) {
@@ -198,7 +202,7 @@ static int gui(filter_t *filter_)
 
         if (dims[0] <= 0 || dims[1] <= 0 || dims[2] <= 0) {
             LOG_E("[shadows-simple] abort: invalid dimensions");
-            return 0;
+            goto apply_end;
         }
 
         volume_iterator_t iter;
@@ -208,7 +212,7 @@ static int gui(filter_t *filter_)
         shadow_map = malloc(sizeof(float) * dims[0] * dims[1]);
         if (!shadow_map) {
             LOG_E("[shadows-simple] abort: shadow_map malloc failed");
-            return 0;
+            goto apply_end;
         }
 
         int *heights;
@@ -365,6 +369,9 @@ static int gui(filter_t *filter_)
         }
         free(shadow_map);
         free(heights);
+        }
+apply_end:
+        gui_enabled_end();
     }
     return 0;
 }

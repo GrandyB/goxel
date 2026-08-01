@@ -2546,7 +2546,7 @@ bool gui_checkbox_flag(const char *label, int *v, int flag, const char *hint)
 }
 
 
-bool gui_button(const char *label, float size, int icon)
+static bool gui_button_ex(const char *label, float size, int icon, bool primary)
 {
     bool ret;
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -2554,7 +2554,10 @@ bool gui_button(const char *label, float size, int icon)
     ImVec2 button_size;
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec2 center;
+    ImVec4 bg;
     int w, isize;
+    int ncolors = 0;
+    bool is_text = label && label[0] != '#';
 
     button_size = ImVec2(size * ImGui::GetContentRegionAvail().x, ITEM_HEIGHT);
     if (size == -1) button_size.x = ImGui::GetContentRegionAvail().x;
@@ -2570,12 +2573,21 @@ bool gui_button(const char *label, float size, int icon)
 
     if (gui->item_size) button_size.x = gui->item_size;
 
-    isize = (label && label[0] != '#') ? 12 : 16;
-    ImGui::PushStyleColor(ImGuiCol_Button,
-            (label && (label[0] != '#')) ?
-            COLOR(BUTTON, INNER, false) : COLOR(ICON, INNER, false));
+    isize = is_text ? 12 : 16;
+    if (primary && is_text) {
+        bg = COLOR(BUTTON, INNER, true);
+        ImGui::PushStyleColor(ImGuiCol_Button, bg);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color_lighten(bg));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, color_lighten2(bg));
+        ImGui::PushStyleColor(ImGuiCol_Text, COLOR(BUTTON, TEXT, true));
+        ncolors = 4;
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                is_text ? COLOR(BUTTON, INNER, false) : COLOR(ICON, INNER, false));
+        ncolors = 1;
+    }
     ret = ImGui::Button(label ?: "", button_size);
-    ImGui::PopStyleColor();
+    ImGui::PopStyleColor(ncolors);
     if (icon) {
         center = ImGui::GetItemRectMin() +
             ImVec2(ImGui::GetItemRectSize().y / 2,
@@ -2590,6 +2602,16 @@ bool gui_button(const char *label, float size, int icon)
     if (ret) on_click();
     if (gui->is_row) ImGui::SameLine();
     return ret;
+}
+
+bool gui_button(const char *label, float size, int icon)
+{
+    return gui_button_ex(label, size, icon, false);
+}
+
+bool gui_button_primary(const char *label, float size, int icon)
+{
+    return gui_button_ex(label, size, icon, true);
 }
 
 bool gui_button_right(const char *label, int icon)

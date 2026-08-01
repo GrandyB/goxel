@@ -2175,7 +2175,7 @@ static int gui(filter_t *filter_)
         filter->seed = rand();
     }
 
-    if (gui_button("Generate", -1, 0))
+    if (gui_button_primary("Generate", -1, 0))
         apply_buildings(filter, layer);
 
     return 0;

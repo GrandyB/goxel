@@ -191,7 +191,7 @@ static int gui(filter_t *filter_)
         reset_to_default(filter);
     }
 
-    if (gui_button("Generate", -1, 0))
+    if (gui_button_primary("Generate", -1, 0))
     {
         image_history_push(goxel.image);
         layer = image_ensure_layer_for_generation(

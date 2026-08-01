@@ -554,7 +554,7 @@ static int gui(filter_t *filter_)
     gui_row_end();
     filter->replace_current_layer = (target_mode == 1);
 
-    if (gui_button("Apply", -1, 0))
+    if (gui_button_primary("Place doodads", -1, 0))
     {
         layer_t *layer;
         image_history_push(goxel.image);

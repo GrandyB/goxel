@@ -800,7 +800,9 @@ static int gui(filter_t *filter_)
 
     gui_separator();
 
-    if (gui_button("Generate", -1, 0)) {
+    if (gui_button("Reset to defaults", -1, 0))
+        reset_to_defaults(filter);
+    if (gui_button_primary("Generate", -1, 0)) {
         layer_t *layer;
         if (!goxel.image)
             return 0;
@@ -816,8 +818,6 @@ static int gui(filter_t *filter_)
                              filter->bleed_lightness, filter->bleed_blur,
                              filter->bleed_dithering, filter->bleed_noise);
     }
-    if (gui_button("Reset", -1, 0))
-        reset_to_defaults(filter);
     return 0;
 }
 

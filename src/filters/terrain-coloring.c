@@ -845,29 +845,32 @@ static int gui(filter_t *filter_)
     if (gui_button("Reset all settings to defaults", -1, 0))
         terrain_coloring_reset_all_defaults(filter);
 
-    if (gui_button("Apply to layer", -1, 0)) {
-        layer_t *layer;
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
 
-        if (!goxel.image || !goxel.image->active_layer)
-            return 0;
+        gui_enabled_begin(has_layer);
+        if (gui_button_primary("Apply to current layer", -1, 0)) {
+            layer_t *layer;
 
-        image_history_push(goxel.image);
-        DL_FOREACH(goxel.image->layers, layer) {
-            if (!layer_in_active_subtree(goxel.image, layer))
-                continue;
-            if (!layer->volume)
-                continue;
-            apply_terrain_coloring(
-                layer->volume, &filter->settings, filter->step_grass_tones,
-                filter->step_water_tint, filter->step_ambient,
-                filter->step_directional, filter->step_shadow_cast,
-                filter->step_shadow_smooth, filter->normal_half_span,
-                filter->grass_detail_noise, filter->grass_slope_exponent,
-                filter->grass_slope_gain, filter->grass_height_scale,
-                filter->water_bottom_layers, filter->water_noise_strength,
-                filter->shadow_blur_blocks, filter->shadow_sun_height_step,
-                filter->rugged_color_noise);
+            image_history_push(goxel.image);
+            DL_FOREACH(goxel.image->layers, layer) {
+                if (!layer_in_active_subtree(goxel.image, layer))
+                    continue;
+                if (!layer->volume)
+                    continue;
+                apply_terrain_coloring(
+                    layer->volume, &filter->settings, filter->step_grass_tones,
+                    filter->step_water_tint, filter->step_ambient,
+                    filter->step_directional, filter->step_shadow_cast,
+                    filter->step_shadow_smooth, filter->normal_half_span,
+                    filter->grass_detail_noise, filter->grass_slope_exponent,
+                    filter->grass_slope_gain, filter->grass_height_scale,
+                    filter->water_bottom_layers, filter->water_noise_strength,
+                    filter->shadow_blur_blocks, filter->shadow_sun_height_step,
+                    filter->rugged_color_noise);
+            }
         }
+        gui_enabled_end();
     }
     gui_label_size_pop();
     return 0;
