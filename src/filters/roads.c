@@ -33,8 +33,8 @@
  * 3. Copy terrain from another layer around those anchors
  *    (radius = ceil(thickness/2 + anti-alias + dithering)).
  * 4. Paint the road colour onto that surface using thickness / AA / dither /
- *    noise.  Output goes on a new "<plan> Roads" layer; the plan layer is
- *    hidden and left unchanged.
+ *    noise.  Output goes on a new root-level "<plan> Roads" layer; the plan
+ *    layer is hidden and left unchanged.
  */
 
 typedef struct {
@@ -273,12 +273,10 @@ static layer_t *prepare_target_layer(layer_t *plan_layer)
     const char *suffix = " Roads";
     int max_base;
 
-    if (layer_has_children(goxel.image, plan_layer))
-        target = image_add_child_layer(goxel.image, plan_layer);
-    else
-        target = image_add_layer(goxel.image, NULL);
+    target = image_add_layer(goxel.image, NULL);
     if (!target)
         return NULL;
+    target->parent_id = 0;
     target->visible = true;
     max_base = (int)sizeof(target->name) - 1 - (int)strlen(suffix);
     if (max_base < 0) max_base = 0;
@@ -492,16 +490,14 @@ static int gui(filter_t *filter_)
     if (gui_button("Reset to defaults", -1, 0))
         reset_defaults(filter);
 
-    {
-        bool has_layer = goxel.image && goxel.image->active_layer;
+    bool has_layer = goxel.image && goxel.image->active_layer;
 
-        gui_enabled_begin(has_layer);
-        if (gui_button("Apply", -1, 0))
-            apply_roads(filter, layer);
-        gui_enabled_end();
-        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
-                                      "Select a layer first.");
-    }
+    gui_enabled_begin(has_layer);
+    if (gui_button("Generate", -1, 0))
+        apply_roads(filter, layer);
+    gui_enabled_end();
+    gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                    "Select a layer first.");
 
     return 0;
 }

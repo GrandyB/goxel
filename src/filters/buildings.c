@@ -37,8 +37,8 @@
  * terrain layer: a shared surface height is picked from per-cell tops using
  * Threshold / Max submerge, then hanging cells get wall-coloured stem fills.
  *
- * Split layers (Generate on one layer off): a Buildings parent sibling of the
- * plan, one child per building (collapsed by default), and under each building
+ * Split layers (Generate on one layer off): a root-level Buildings parent,
+ * one child per building (collapsed by default), and under each building
  * Floor 1..N plus Roofs.
  */
 
@@ -130,7 +130,7 @@ static void reset_defaults(filter_buildings_t *filter)
     filter->max_roof_height = 8;
     filter->generate_roofs = true;
     filter->generate_windows = true;
-    filter->all_one_layer = true;
+    filter->all_one_layer = false;
     filter->use_layer_heights = true;
     filter->terrain_layer = NULL;
     filter->sit_threshold = 80;
@@ -1635,17 +1635,15 @@ static layer_t *add_named_child_layer(layer_t *parent, const char *name)
     return child;
 }
 
-/* Single sibling layer for "Generate on one layer". */
+/* Single root-level layer for "Generate on one layer". */
 static layer_t *prepare_single_target_layer(layer_t *plan_layer)
 {
     layer_t *target;
 
-    if (layer_has_children(goxel.image, plan_layer))
-        target = image_add_child_layer(goxel.image, plan_layer);
-    else
-        target = image_add_layer(goxel.image, NULL);
+    target = image_add_layer(goxel.image, NULL);
     if (!target)
         return NULL;
+    target->parent_id = 0;
     target->visible = true;
     name_target_layer(target, plan_layer, " Buildings");
     plan_layer->visible = false;
@@ -1654,21 +1652,18 @@ static layer_t *prepare_single_target_layer(layer_t *plan_layer)
 }
 
 /*
- * Split mode: sibling parent "{plan} Buildings", then one child per building,
+ * Split mode: root-level parent "{plan} Buildings", then one child per building,
  * each with Floor 1..N and Roofs children (same storey split as before).
  * New buildings are moved to last child so Building 1 stays topmost in the UI.
- * If the plan is already a group, nest the Buildings root under it.
  */
 static layer_t *prepare_buildings_root(layer_t *plan_layer)
 {
     layer_t *root;
 
-    if (layer_has_children(goxel.image, plan_layer))
-        root = image_add_child_layer(goxel.image, plan_layer);
-    else
-        root = image_add_layer(goxel.image, NULL);
+    root = image_add_layer(goxel.image, NULL);
     if (!root)
         return NULL;
+    root->parent_id = 0;
     root->visible = true;
     name_target_layer(root, plan_layer, " Buildings");
     plan_layer->visible = false;
@@ -1965,7 +1960,7 @@ static int gui(filter_t *filter_)
         "Paint 1-block-high filled shapes on the active layer using the floor "
         "colours below.  Generate builds walls along the inward edges, slabs "
         "at the base and between storeys, and shaped roofs on new Buildings "
-        "layers.  With split layers, a Buildings parent (sibling of the plan) "
+        "layers.  With split layers, a root-level Buildings parent "
         "holds one child per building, each with Floor and Roofs layers.  "
         "With Position using layer heights, each building sits on the "
         "chosen terrain layer (Threshold / Max submerge), filling under hanging "
@@ -2016,7 +2011,7 @@ static int gui(filter_t *filter_)
         /* Skip the label column so these checkboxes sit on the left. */
         gui_label_size_push(0);
         gui_checkbox("Generate on one layer", &filter->all_one_layer,
-                     "When off, creates a Buildings parent next to the plan, "
+                     "When off, creates a root-level Buildings parent, "
                      "one child layer per building, and Floor / Roofs layers "
                      "under each building.");
         gui_checkbox("Generate windows", &filter->generate_windows,

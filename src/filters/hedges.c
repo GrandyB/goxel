@@ -26,7 +26,7 @@
 #include <time.h>
 
 /*
- * Replace the active layer's blocks with choppy hedgerow foliage.
+ * Create a new layer of choppy hedgerow foliage from the active plan layer.
  * Occupied columns are treated as the hedge path; each is expanded to a
  * noisy width and stacked to a noisy height so the silhouette feels like
  * field-edge hedges rather than a solid wall.
@@ -44,7 +44,6 @@ typedef struct {
      * saturation = how colourful that mix is (0 = luminance-only). */
     int noise_intensity;
     int noise_saturation;
-    bool current_layer;
     bool use_layer_heights; /* when true, project plan XY onto surface layer */
     /* Layer id, not a pointer: undo/redo swaps the image for a snapshot whose
      * layers are fresh allocations, so a stored pointer would dangle. */
@@ -62,7 +61,6 @@ static void reset_defaults(filter_hedges_t *filter)
     filter->seed = 0;
     filter->noise_intensity = 10;
     filter->noise_saturation = 10;
-    filter->current_layer = false;
     filter->use_layer_heights = true;
     filter->surface_layer_id = 0;
     memcpy(filter->color, k_default_color, 4);
@@ -393,27 +391,24 @@ static void stamp_seed(volume_t *vol, const hedge_seed_t *seeds, int nseeds,
     }
 }
 
-static layer_t *prepare_target_layer(filter_hedges_t *filter, layer_t *plan_layer)
+static layer_t *prepare_target_layer(layer_t *plan_layer)
 {
     layer_t *target;
     const char *suffix = " Hedges";
-    char name[256];
     int max_base;
 
-    /* Current layer = replace plan volume; otherwise create a child named
-     * "{plan} Hedges". Nothing selected is handled before this is called. */
-    max_base = (int)sizeof(name) - 1 - (int)strlen(suffix);
-    if (max_base < 0) max_base = 0;
-    snprintf(name, sizeof(name), "%.*s%s", max_base, plan_layer->name, suffix);
-
-    target = image_ensure_layer_for_generation(
-        goxel.image, name, filter->current_layer);
+    /* Always create a root-level layer named "{plan} Hedges". */
+    target = image_add_layer(goxel.image, NULL);
     if (!target)
         return NULL;
-    if (!filter->current_layer) {
-        plan_layer->visible = false;
-        plan_layer->collapsed = false;
-    }
+    target->parent_id = 0;
+    target->visible = true;
+    max_base = (int)sizeof(target->name) - 1 - (int)strlen(suffix);
+    if (max_base < 0) max_base = 0;
+    snprintf(target->name, sizeof(target->name), "%.*s%s",
+             max_base, plan_layer->name, suffix);
+    plan_layer->visible = false;
+    plan_layer->collapsed = false;
     return target;
 }
 
@@ -468,7 +463,7 @@ static void apply_hedges(filter_hedges_t *filter, layer_t *layer)
     }
 
     image_history_push(goxel.image);
-    target_layer = prepare_target_layer(filter, layer);
+    target_layer = prepare_target_layer(layer);
     if (!target_layer) {
         free(seeds);
         volume_delete(src);
@@ -530,27 +525,6 @@ static int gui(filter_t *filter_)
     gui_input_int("Saturation", &filter->noise_saturation, 0, 100);
     gui_tooltip_if_hovered(
         "How colourful the variation is. 0 = lightness-only mottling.");
-    {
-        bool has_layer = goxel.image && goxel.image->active_layer;
-        int target_mode;
-
-        if (!has_layer)
-            filter->current_layer = false;
-        target_mode = filter->current_layer ? 1 : 0;
-        gui_row_begin(2);
-        gui_selectable_toggle("In new layer", &target_mode, 0,
-            "Create a child layer named \"{plan} Hedges\" and hide the plan.",
-            -1);
-        gui_enabled_begin(has_layer);
-        gui_selectable_toggle("Replace current layer", &target_mode, 1,
-            "Clear and write hedges into the selected plan layer.",
-            -1);
-        gui_enabled_end();
-        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
-                                      "Select a layer first.");
-        gui_row_end();
-        filter->current_layer = (target_mode == 1);
-    }
     gui_checkbox("Position using layer heights", &filter->use_layer_heights,
                  "When enabled, ignore each plan column's Z and project it "
                  "onto the top of the selected layer (X/Y only). When off, "
@@ -591,7 +565,7 @@ static int gui(filter_t *filter_)
         bool has_layer = goxel.image && goxel.image->active_layer;
 
         gui_enabled_begin(has_layer);
-        if (gui_button("Apply", -1, 0))
+        if (gui_button("Generate", -1, 0))
             apply_hedges(filter, layer);
         gui_enabled_end();
         gui_alert_if_disabled_clicked(has_layer, "No layer selected",
