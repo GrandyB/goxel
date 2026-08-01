@@ -177,6 +177,10 @@ typedef struct gui_t {
     int     can_move_window;
 
     int     win_dir; // Store the current window direction (for scrolling).
+    /* Sticky panel header: body child started after gui_panel_header. */
+    bool    win_body_started;
+    bool    win_autofit_y;
+    float   win_max_h;
 
     int     is_row;
     float   item_size;
@@ -1186,6 +1190,11 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
         win_flags |= ImGuiWindowFlags_NoMouseInputs;
     if (dir == 0)
         win_flags |= ImGuiWindowFlags_HorizontalScrollbar;
+    /* Vertical panels scroll inside a body child (see gui_panel_header) so
+     * the title/close bar stays fixed. */
+    if (dir == 1)
+        win_flags |= ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoScrollWithMouse;
     if (flags & GUI_WINDOW_CENTER) {
         ImGuiViewport *vp = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(
@@ -1204,6 +1213,10 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
     key = ImGui::GetID("last_pos");
     last_pos = storage->GetFloatRef(key, dir == 0 ? x : y);
 
+    gui->win_body_started = false;
+    gui->win_autofit_y = (h == 0 && dir == 1);
+    gui->win_max_h = h;
+
     if ((w == 0) && (dir == 0))
     {
         max_size = ImGui::GetMainViewport()->Size.x - *last_pos;
@@ -1213,6 +1226,7 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
     if ((h == 0) && (dir == 1))
     {
         max_size = ImGui::GetMainViewport()->Size.y - *last_pos;
+        gui->win_max_h = max_size;
         ImGui::SetNextWindowSizeConstraints(
             ImVec2(0, 0), ImVec2(FLT_MAX, max_size));
     }
@@ -1234,6 +1248,11 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
 gui_window_ret_t gui_window_end(void)
 {
     gui_window_ret_t ret = {};
+    if (gui->win_body_started) {
+        ImGui::EndChild();
+        ImGui::PopStyleColor(/* ChildBg */ 1);
+        gui->win_body_started = false;
+    }
     ImGui::EndGroup();
     if (!GUI_HAS_SCROLLBARS && !gui->can_move_window) {
         if (gui_pan_scroll_behavior(gui->win_dir))
@@ -1259,6 +1278,9 @@ void gui_window_resize_left_edge(float *width, float min_w, float max_w)
 
     if (!width) return;
     window = ImGui::GetCurrentWindow();
+    /* Hit-test the panel frame, not an inner scroll body child. */
+    if (window->RootWindow)
+        window = window->RootWindow;
     id = window->GetID("##resize_left");
     bb = ImRect(ImVec2(window->Pos.x - pad, window->Pos.y),
                 ImVec2(window->Pos.x + pad, window->Pos.y + window->Size.y));
@@ -3415,6 +3437,26 @@ bool gui_panel_header(const char *label)
     ImGui::PopID();
     if (ImGui::IsItemHovered())
         gui->can_move_window |= 1;
+
+    /* Everything after the header scrolls inside a child so the title/close
+     * bar (and window drag hit-target) stay fixed. */
+    if (gui->win_dir == 1 && !gui->win_body_started) {
+        float bottom_pad = ImGui::GetStyle().WindowPadding.y;
+        float max_body = gui->win_max_h - ImGui::GetCursorPosY() - bottom_pad;
+        if (max_body < 1.0f)
+            max_body = 1.0f;
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+        if (gui->win_autofit_y) {
+            ImGui::SetNextWindowSizeConstraints(
+                    ImVec2(0, 0), ImVec2(FLT_MAX, max_body));
+            ImGui::BeginChild("##gui_panel_body", ImVec2(0, 0),
+                              ImGuiChildFlags_AutoResizeY);
+        } else {
+            ImGui::BeginChild("##gui_panel_body", ImVec2(0, 0));
+        }
+        gui->win_body_started = true;
+    }
     return ret;
 }
 

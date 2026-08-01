@@ -109,7 +109,7 @@ void gui_render(const inputs_t *inputs);
 
 void gui_request_panel_width(float width);
 
-bool gui_panel_header(const char *label);
+bool gui_panel_header(const char *label); /* Title/close; pins header, scrolls body. */
 
 /* Left-bar / floating control panels (ids used by gui_panel_show_detached). */
 enum {
