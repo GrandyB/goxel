@@ -419,6 +419,7 @@ layer_t *image_extract_layer_content_to_child(image_t *img, layer_t *parent)
     child->opacity = parent->opacity;
     child->volume_snap = parent->volume_snap;
     child->material = parent->material;
+    child->locked = parent->locked;
     child->parent_id = parent->id;
     memcpy(child->marker_color, parent->marker_color, sizeof(child->marker_color));
 
