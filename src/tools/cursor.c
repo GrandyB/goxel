@@ -40,6 +40,10 @@ static cursor_edit_t g_edit = {};
 static layer_t *g_panel_hover = NULL;
 /* Viewport hover while nothing is selected (solid white box). */
 static layer_t *g_viewport_hover = NULL;
+/* Hold-to-preview for select-layer-under-cursor (any tool). */
+static layer_t *g_pick_preview = NULL;
+static float g_pick_preview_label_pos[3];
+static bool g_pick_preview_has_label = false;
 
 static bool layer_gets_gizmo(const image_t *img, const layer_t *layer)
 {
@@ -194,6 +198,17 @@ static void render_gizmo_box(const layer_t *layer, const float box[4][4])
     }
 }
 
+static void render_solo_preview_box(const image_t *img, layer_t *layer)
+{
+    float box[4][4];
+    const uint8_t white[4] = {255, 255, 255, 255};
+
+    if (!layer || !layer_effectively_visible(img, layer)) return;
+    if (!layer_gizmo_box(layer, box)) return;
+    render_box(&goxel.rend, box, white,
+               EFFECT_WIREFRAME | EFFECT_NO_DEPTH_TEST);
+}
+
 static void draw_gizmo_boxes(const image_t *img)
 {
     layer_t *layer;
@@ -204,12 +219,13 @@ static void draw_gizmo_boxes(const image_t *img)
     const uint8_t white[4] = {255, 255, 255, 255};
     const uint8_t *accent_color = white;
 
-    /* Panel hover solos a single layer/group box (solid white). */
+    /* Apostrophe pick preview and panel hover solo a single box. */
+    if (g_pick_preview) {
+        render_solo_preview_box(img, g_pick_preview);
+        return;
+    }
     if (g_panel_hover) {
-        if (layer_effectively_visible(img, g_panel_hover) &&
-            layer_gizmo_box(g_panel_hover, box))
-            render_box(&goxel.rend, box, white,
-                       EFFECT_WIREFRAME | EFFECT_NO_DEPTH_TEST);
+        render_solo_preview_box(img, g_panel_hover);
         return;
     }
 
@@ -444,22 +460,35 @@ void tool_cursor_set_panel_hover(layer_t *layer)
         g_panel_hover = NULL;
 }
 
+void tool_cursor_set_pick_preview(layer_t *layer, const float label_pos[3])
+{
+    if (layer && goxel.image && layer_find(goxel.image, layer->id) == layer) {
+        g_pick_preview = layer;
+        if (label_pos) {
+            vec3_copy(label_pos, g_pick_preview_label_pos);
+            g_pick_preview_has_label = true;
+        } else {
+            g_pick_preview_has_label = false;
+        }
+    } else {
+        g_pick_preview = NULL;
+        g_pick_preview_has_label = false;
+    }
+}
+
 void tool_cursor_render(void)
 {
     image_t *img = goxel.image;
-    float box[4][4];
-    const uint8_t white[4] = {255, 255, 255, 255};
 
     if (!img) return;
 
-    /* Layers-panel hover bbox is shown for every tool. Full cursor gizmos
-     * only run while the Cursor tool is active. */
+    /* Pick-preview / layers-panel hover bbox for every tool. Full cursor
+     * gizmos only run while the Cursor tool is active. */
     if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) {
-        if (g_panel_hover &&
-            layer_effectively_visible(img, g_panel_hover) &&
-            layer_gizmo_box(g_panel_hover, box))
-            render_box(&goxel.rend, box, white,
-                       EFFECT_WIREFRAME | EFFECT_NO_DEPTH_TEST);
+        if (g_pick_preview)
+            render_solo_preview_box(img, g_pick_preview);
+        else if (g_panel_hover)
+            render_solo_preview_box(img, g_panel_hover);
         return;
     }
     draw_gizmo_boxes(img);
@@ -472,9 +501,22 @@ void tool_cursor_render_labels(void)
     float box[4][4], pos[3];
     uint8_t color[4] = {200, 200, 200, 255};
 
+    if (!img) return;
+
+    /* Apostrophe pick: name sits above the cursor hit, any tool. */
+    if (g_pick_preview && g_pick_preview->name[0]) {
+        if (g_pick_preview_has_label)
+            gui_world_label(g_pick_preview_label_pos, g_pick_preview->name,
+                            color);
+        else if (layer_gizmo_box(g_pick_preview, box)) {
+            box_center(box, pos);
+            gui_world_label(pos, g_pick_preview->name, color);
+        }
+        return;
+    }
+
     if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) return;
     if (!(goxel.cursor.flags & CURSOR_LEFT_ALT)) return;
-    if (!img) return;
 
     if (g_panel_hover) {
         if (g_panel_hover->name[0] && layer_gizmo_box(g_panel_hover, box)) {

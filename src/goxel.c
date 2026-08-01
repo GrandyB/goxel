@@ -956,6 +956,9 @@ int goxel_iter(const inputs_t *inputs)
         }
     }
 
+    /* After cursor.xy is current: hold ' shows layer bbox/name, release picks. */
+    goxel_layer_pick_key_iter(inputs);
+
     if (DEFINED(SOUND) && time - goxel.last_click_time > 0.1) {
         volume_key = volume_get_key(goxel_get_render_volume(goxel.image));
         if (goxel.last_volume_key != volume_key) {
@@ -1776,18 +1779,15 @@ void goxel_shift_focus_layer(layer_t *layer)
 
     if (!img || !layer) return;
     if (image_get_focused_layer(img) == layer) {
+        /* Keep selection; only clear solo-focus and reframe. */
         image_clear_layer_focus();
         tool_clear_preview();
         goxel_frame_image_box_in_orbit();
-        img->active_layer = NULL;
-        tool_cursor_clear_edit();
-        tool_clear_preview();
     } else {
         image_set_layer_focus(layer);
         if (img->active_layer != layer) {
             img->active_layer = layer;
             tool_cursor_clear_edit();
-            tool_clear_preview();
         }
         tool_clear_preview();
         goxel_frame_layer_in_orbit(layer);
@@ -2738,29 +2738,37 @@ ACTION_REGISTER(ACTION_toggle_first_person_camera,
     .default_shortcut = "#",
 )
 
-static void select_layer_under_cursor(void)
+/*
+ * Voxel under the cursor → owning visible layer. label_pos (optional) is the
+ * face hit so a name tag can sit above the cursor, not the layer AABB centre.
+ * Returns NULL if nothing is hit.
+ */
+static layer_t *find_layer_under_cursor(float label_pos[3], bool refresh_pick)
 {
     image_t *img = goxel.image;
     layer_t *layer;
     float pos[3], normal[3];
     int int_pos[3];
-    bool found = false;
 
-    /* Brush snap may have filled the pick FBO from layers_for_snap; always
-     * take a fresh pick against the full layers volume. */
-    invalidate_pick_cache();
-    g_unproject_cache.valid = false;
+    if (!img) return NULL;
+
+    /* Brush snap may have filled the pick FBO from layers_for_snap. */
+    if (refresh_pick) {
+        invalidate_pick_cache();
+        g_unproject_cache.valid = false;
+    }
 
     /* Face hit then -0.5 along the normal (same as color picker). Locked
      * layers are included — lock only affects cursor-tool gizmos. */
     if (!goxel_unproject_on_volume(goxel.gui.viewport, goxel.cursor.xy,
-                            goxel_get_layers_volume(goxel.image), pos, normal))
-        return;
+                            goxel_get_layers_volume(img), pos, normal))
+        return NULL;
+    if (label_pos)
+        vec3_copy(pos, label_pos);
     vec3_iaddk(pos, normal, -0.5);
     int_pos[0] = floor(pos[0]);
     int_pos[1] = floor(pos[1]);
     int_pos[2] = floor(pos[2]);
-    LOG_D("Position to analyse: %i / %i / %i", int_pos[0], int_pos[1], int_pos[2]);
 
     DL_FOREACH_REVERSE(img->layers, layer) {
         uint8_t out[4];
@@ -2768,19 +2776,104 @@ static void select_layer_under_cursor(void)
         if (!layer->volume) continue;
 
         volume_get_at(layer->volume, NULL, int_pos, out);
-        if (out[3] != 0) {
-            img->active_layer = layer;
-            image_expand_to_show_layer(img, layer);
-            LOG_D("Found: %s", layer->name);
-            found = true;
-            break;
-        }
+        if (out[3] != 0)
+            return layer;
     }
-    if (!found)
-        LOG_D("Unable to find.");
+    return NULL;
 }
+
+static void select_layer_under_cursor(void)
+{
+    image_t *img = goxel.image;
+    layer_t *layer = find_layer_under_cursor(NULL, true);
+
+    if (!img || !layer) return;
+    img->active_layer = layer;
+    image_expand_to_show_layer(img, layer);
+}
+
+/* Mirror gui check_action_shortcut matching against inputs->keys (held). */
+static bool action_shortcut_held(const action_t *action, const inputs_t *inputs)
+{
+    const char *s;
+    bool shift, ctrl;
+
+    if (!action || !inputs || !action->shortcut[0]) return false;
+    s = action->shortcut;
+    shift = inputs->keys[KEY_LEFT_SHIFT] || inputs->keys[KEY_RIGHT_SHIFT];
+    ctrl = inputs->keys[KEY_CONTROL];
+    if (ctrl) {
+        if (!str_startswith(s, "Ctrl")) return false;
+        s += strlen("Ctrl ");
+    } else if (str_startswith(s, "Ctrl")) {
+        return false;
+    }
+    if (str_startswith(s, "Shift")) {
+        if (!shift) return false;
+        s += strlen("Shift ");
+    } else if (shift) {
+        return false;
+    }
+    if (strlen(s) != 1) {
+        if (strcmp(s, "Delete") == 0) return inputs->keys[KEY_DELETE];
+        if (strcmp(s, "Tab") == 0) return inputs->keys[KEY_TAB];
+        return false;
+    }
+    return inputs->keys[(unsigned char)s[0]];
+}
+
+/*
+ * Hold the select-layer shortcut: preview bbox + name at the cursor.
+ * Release: commit the selection. Called from goxel_layer_pick_key_iter
+ * (not action_exec on key-down).
+ */
+static void goxel_layer_pick_key_update(bool held)
+{
+    static bool was_held = false;
+    static layer_t *preview = NULL;
+    image_t *img = goxel.image;
+    layer_t *layer;
+    float label_pos[3];
+
+    if (held && img) {
+        layer = find_layer_under_cursor(label_pos, !was_held);
+        /* Stale pointer if layers were edited mid-hold. */
+        if (layer && layer_find(img, layer->id) != layer)
+            layer = NULL;
+        preview = layer;
+        tool_cursor_set_pick_preview(layer, layer ? label_pos : NULL);
+        if (layer)
+            goxel_set_help_text("Release to select layer");
+        else
+            goxel_set_help_text("No layer under cursor");
+    } else {
+        if (was_held && preview && img &&
+            layer_find(img, preview->id) == preview) {
+            img->active_layer = preview;
+            image_expand_to_show_layer(img, preview);
+        }
+        preview = NULL;
+        tool_cursor_set_pick_preview(NULL, NULL);
+    }
+    was_held = held;
+}
+
+void goxel_layer_pick_key_iter(const inputs_t *inputs)
+{
+    action_t *action;
+    bool held;
+
+    if (!inputs || gui_want_capture_keyboard()) {
+        goxel_layer_pick_key_update(false);
+        return;
+    }
+    action = action_get(ACTION_select_layer_under_cursor, false);
+    held = action_shortcut_held(action, inputs);
+    goxel_layer_pick_key_update(held);
+}
+
 ACTION_REGISTER(ACTION_select_layer_under_cursor,
-    .help = "Select layer under cursor",
+    .help = "Select layer under cursor (hold to preview, release to pick)",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = select_layer_under_cursor,
     .default_shortcut = "'",

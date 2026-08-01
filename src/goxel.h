@@ -700,6 +700,10 @@ void goxel_render_export_view(const float viewport[4]);
 void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
                          bool capture_keys);
 
+/* Hold/release for ACTION_select_layer_under_cursor shortcut (preview while
+ * held, select on release). Call from goxel_iter after cursor updates. */
+void goxel_layer_pick_key_iter(const inputs_t *inputs);
+
 const volume_t *goxel_get_layers_volume(const image_t *img);
 const volume_t *goxel_get_layers_volume_for_snap(const image_t *img);
 const volume_t *goxel_get_render_volume(const image_t *img);
@@ -709,8 +713,8 @@ const volume_t *goxel_get_layer_move_volume(const layer_t *layer);
 /* Orbit camera: frame a layer (or group) bbox, or the image box. */
 void goxel_frame_layer_in_orbit(const layer_t *layer);
 void goxel_frame_image_box_in_orbit(void);
-/* Same as Shift+focus in the layers panel: solo-focus and frame, or
- * unfocus+frame image box if already focused. */
+/* Toggle solo-focus on a layer and frame: focus+frame layer, or
+ * unfocus+frame image box if already focused. Never clears selection. */
 void goxel_shift_focus_layer(layer_t *layer);
 
 /*

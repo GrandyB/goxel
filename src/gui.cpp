@@ -484,6 +484,9 @@ static int check_action_shortcut(action_t *action, void *user)
     bool check_key = true;
     bool check_char = true;
     if (!*s) return 0;
+    /* Hold/release preview — polled in goxel_iter via goxel_layer_pick_key_update. */
+    if (action->idx == ACTION_select_layer_under_cursor)
+        return 0;
     if (goxel.image && goxel.image->active_camera &&
         goxel.image->active_camera->mode == CAMERA_MODE_PLAYER &&
         !goxel.player_flycam_hold && !io.KeyCtrl) {
@@ -3381,6 +3384,13 @@ bool gui_want_capture_mouse(void)
     gui_init();
     ImGuiIO& io = ImGui::GetIO();
     return io.WantCaptureMouse;
+}
+
+bool gui_want_capture_keyboard(void)
+{
+    gui_init();
+    ImGuiIO& io = ImGui::GetIO();
+    return io.WantCaptureKeyboard;
 }
 
 bool gui_pick_rgb_keep_alpha(void)
