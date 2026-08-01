@@ -1014,43 +1014,81 @@ layer_t *image_add_shape_layer_below_active(image_t *img)
 
 void image_delete_layer(image_t *img, layer_t *layer)
 {
+    layer_t *nodes[LAYER_SUBTREE_MAX];
     layer_t *other;
     layer_t *sel_after_delete = NULL;
-    layer_t *child;
-    int orphan_parent_id;
+    layer_t *first;
+    int n, i;
+    bool active_in_subtree = false;
+
     assert(img);
     assert(layer);
 
-    orphan_parent_id = layer->parent_id;
-    /* Promote direct children to the deleted layer's parent. */
-    DL_FOREACH(img->layers, child) {
-        if (child->parent_id == layer->id)
-            child->parent_id = orphan_parent_id;
+    /* Delete the layer and every descendant. Subtree is contiguous in the
+     * forward list: [first .. layer]. Undo restores the full snapshot. */
+    n = collect_layer_subtree(img, layer, nodes, LAYER_SUBTREE_MAX);
+    if (n < 0) {
+        /* Oversized group (should not happen if LAYER_SUBTREE_MAX is
+         * enforced on nest). Peel leaves until the root fits. */
+        for (;;) {
+            layer_t *leaf = NULL;
+            DL_FOREACH(img->layers, other) {
+                if (other == layer) continue;
+                if (!layer_is_ancestor(img, layer, other)) continue;
+                if (layer_has_children(img, other)) continue;
+                leaf = other;
+                break;
+            }
+            if (!leaf) break;
+            image_delete_layer(img, leaf);
+        }
+        n = collect_layer_subtree(img, layer, nodes, LAYER_SUBTREE_MAX);
+    }
+    if (n <= 0) {
+        nodes[0] = layer;
+        n = 1;
     }
 
+    first = nodes[0];
     /*
      * Layers panel renders tail-to-head with DL_FOREACH_REVERSE.
-     * The row visually below deleted is layer->prev. If deleting the bottom row
-     * (forward head img->layers), pick last row / new forward head layer->next.
+     * Select the row visually below the deleted block: first->prev, or
+     * (when the block is at the forward head / visual bottom) layer->next.
+     * Skip when the subtree is the entire list (circular wrap).
      */
-    if (layer->next != layer && img->layers) {
-        sel_after_delete = (layer == img->layers)
+    if (img->layers && !(first == img->layers && layer->next == first)) {
+        sel_after_delete = (first == img->layers)
                 ? layer->next
-                : layer->prev;
+                : first->prev;
     }
-    DL_DELETE(img->layers, layer);
-    if (layer == img->active_layer) img->active_layer = NULL;
-    if (g_focused_layer_id == layer->id) {
-        g_focused_layer_id = 0;
-        g_focused_via_shift = false;
+
+    for (i = 0; i < n; i++) {
+        if (nodes[i] == img->active_layer)
+            active_in_subtree = true;
+        if (g_focused_layer_id == nodes[i]->id) {
+            g_focused_layer_id = 0;
+            g_focused_via_shift = false;
+        }
     }
+
+    for (i = 0; i < n; i++)
+        DL_DELETE(img->layers, nodes[i]);
+
+    if (active_in_subtree)
+        img->active_layer = NULL;
 
     DL_FOREACH(img->layers, other) {
-        if (other->base_id == layer->id)
-            other->base_id = 0;
+        for (i = 0; i < n; i++) {
+            if (other->base_id == nodes[i]->id) {
+                other->base_id = 0;
+                break;
+            }
+        }
     }
 
-    layer_delete(layer);
+    for (i = 0; i < n; i++)
+        layer_delete(nodes[i]);
+
     if (img->layers == NULL) {
         layer = layer_new("unnamed");
         layer->visible = true;
@@ -1835,13 +1873,19 @@ ACTION_REGISTER(ACTION_img_new_layer,
 static void a_image_delete_layer(void)
 {
     if (!goxel.image->active_layer) return;
+    /*
+     * Snapshot before mutating. ACTION_TOUCH_IMAGE pushes after cfunc and
+     * would only record the post-delete state — nested children added via
+     * the layers panel (push-before, no post snap) would never be
+     * restorable. Same pattern as ACTION_layer_clear.
+     */
+    image_history_push(goxel.image);
     image_delete_layer(goxel.image, goxel.image->active_layer);
 }
 
 ACTION_REGISTER(ACTION_img_del_layer,
-    .help = "Delete the active layer",
+    .help = "Delete the active layer and its children",
     .cfunc = a_image_delete_layer,
-    .flags = ACTION_TOUCH_IMAGE,
     .icon = ICON_REMOVE,
 )
 

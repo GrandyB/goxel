@@ -86,6 +86,8 @@ void image_delete(image_t *img);
 layer_t *image_add_layer(image_t *img, layer_t *layer);
 layer_t *image_add_layer_below_active(image_t *img, layer_t *layer);
 layer_t *image_add_shape_layer_below_active(image_t *img);
+/* Delete layer and all descendants. Callers that need undo must
+ * image_history_push before calling (ACTION_img_del_layer does). */
 void image_delete_layer(image_t *img, layer_t *layer);
 layer_t *image_duplicate_layer(image_t *img, layer_t *layer);
 void image_merge_visible_layers(image_t *img);

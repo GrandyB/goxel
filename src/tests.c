@@ -127,8 +127,50 @@ static void test_load_corrupt(void)
     TEST(err != 0);
 }
 
+static void test_delete_layer_subtree_undo(void)
+{
+    image_t *img;
+    layer_t *parent, *child;
+    int n = 0;
+
+    img = image_new();
+    /* image_new leaves active_layer NULL; pick the default layer. */
+    parent = img->layers;
+    TEST(parent != NULL);
+    img->active_layer = parent;
+    snprintf(parent->name, sizeof(parent->name), "Parent");
+
+    child = image_add_child_layer(img, parent);
+    TEST(child != NULL);
+    snprintf(child->name, sizeof(child->name), "Child");
+    TEST(layer_has_children(img, parent));
+
+    image_history_push(img);
+    image_delete_layer(img, parent);
+
+    DL_FOREACH(img->layers, parent) n++;
+    /* Parent+child gone; image_delete_layer may spawn a replacement layer. */
+    TEST(n == 1);
+    TEST(!layer_name_exists(img, "Parent"));
+    TEST(!layer_name_exists(img, "Child"));
+
+    image_undo(img);
+    TEST(layer_name_exists(img, "Parent"));
+    TEST(layer_name_exists(img, "Child"));
+    parent = NULL;
+    DL_FOREACH(img->layers, child) {
+        if (strcmp(child->name, "Parent") == 0)
+            parent = child;
+    }
+    TEST(parent != NULL);
+    TEST(layer_has_children(img, parent));
+
+    image_delete(img);
+}
+
 void tests_run(void)
 {
+    test_delete_layer_subtree_undo();
     test_load_file_v2();
     test_load_file_v1_with_preview();
     test_load_corrupt();

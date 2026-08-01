@@ -1623,34 +1623,6 @@ static void name_target_layer(layer_t *target, const layer_t *plan_layer,
              max_base, plan_layer->name, suffix);
 }
 
-/* Delete root and every descendant (leaves first so parents are empty). */
-static void delete_layer_and_descendants(layer_t *root)
-{
-    image_t *img = goxel.image;
-    layer_t *layer;
-    layer_t *leaf;
-
-    if (!img || !root)
-        return;
-    for (;;) {
-        leaf = NULL;
-        DL_FOREACH(img->layers, layer) {
-            if (layer == root)
-                continue;
-            if (!layer_is_ancestor(img, root, layer))
-                continue;
-            if (layer_has_children(img, layer))
-                continue;
-            leaf = layer;
-            break;
-        }
-        if (!leaf)
-            break;
-        image_delete_layer(img, leaf);
-    }
-    image_delete_layer(img, root);
-}
-
 static layer_t *add_named_child_layer(layer_t *parent, const char *name)
 {
     layer_t *child;
@@ -1925,7 +1897,7 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
                                          &roof_volume)) {
                 gui_alert("Plan - Buildings",
                           "Could not create the buildings layers.");
-                delete_layer_and_descendants(buildings_root);
+                image_delete_layer(goxel.image, buildings_root);
                 goxel.image->active_layer = layer;
                 goto fail_after_history;
             }
