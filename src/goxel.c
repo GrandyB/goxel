@@ -1736,6 +1736,64 @@ const volume_t *goxel_get_layer_move_volume(const layer_t *layer)
     return goxel.layer_subtree_volume_;
 }
 
+void goxel_frame_layer_in_orbit(const layer_t *layer)
+{
+    camera_t *cam;
+    const volume_t *vol;
+    float box[4][4];
+
+    if (!layer || !goxel.image) return;
+    cam = goxel.image->active_camera;
+    if (!cam || cam->mode != CAMERA_MODE_ORBIT) return;
+
+    vol = goxel_get_layer_move_volume(layer);
+    if (vol) {
+        volume_get_box(vol, true, box);
+        if (!box_is_null(box)) {
+            camera_frame_box(cam, box);
+            return;
+        }
+    }
+    layer_get_bounding_box(layer, box);
+    if (!box_is_null(box))
+        camera_frame_box(cam, box);
+}
+
+void goxel_frame_image_box_in_orbit(void)
+{
+    camera_t *cam;
+
+    if (!goxel.image) return;
+    cam = goxel.image->active_camera;
+    if (!cam || cam->mode != CAMERA_MODE_ORBIT) return;
+    if (!box_is_null(goxel.image->box))
+        camera_frame_box(cam, goxel.image->box);
+}
+
+void goxel_shift_focus_layer(layer_t *layer)
+{
+    image_t *img = goxel.image;
+
+    if (!img || !layer) return;
+    if (image_get_focused_layer(img) == layer) {
+        image_clear_layer_focus();
+        tool_clear_preview();
+        goxel_frame_image_box_in_orbit();
+        img->active_layer = NULL;
+        tool_cursor_clear_edit();
+        tool_clear_preview();
+    } else {
+        image_set_layer_focus(layer);
+        if (img->active_layer != layer) {
+            img->active_layer = layer;
+            tool_cursor_clear_edit();
+            tool_clear_preview();
+        }
+        tool_clear_preview();
+        goxel_frame_layer_in_orbit(layer);
+    }
+}
+
 const layer_t *goxel_get_render_layers(bool with_tool_preview)
 {
     uint32_t hash, k;
@@ -2376,6 +2434,46 @@ ACTION_REGISTER(ACTION_view_front,
     .cfunc_data = a_view_set,
     .data = (float[]){0, 90},
     .default_shortcut = "1",
+)
+
+/* Frame the active layer bbox in orbit, or the image box if none selected. */
+static void a_view_frame_layer(void)
+{
+    layer_t *layer;
+
+    if (!goxel.image) return;
+    layer = goxel.image->active_layer;
+    if (layer)
+        goxel_frame_layer_in_orbit(layer);
+    else
+        goxel_frame_image_box_in_orbit();
+}
+
+ACTION_REGISTER(ACTION_view_frame_layer,
+    .help = "Frame camera on selected layer (or image box)",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = a_view_frame_layer,
+    .default_shortcut = "Tab",
+)
+
+/* Shift+focus on the active layer; if none selected, frame the image box. */
+static void a_view_focus_frame_layer(void)
+{
+    layer_t *layer;
+
+    if (!goxel.image) return;
+    layer = goxel.image->active_layer;
+    if (layer)
+        goxel_shift_focus_layer(layer);
+    else
+        goxel_frame_image_box_in_orbit();
+}
+
+ACTION_REGISTER(ACTION_view_focus_frame_layer,
+    .help = "Focus and frame selected layer (or frame image box)",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = a_view_focus_frame_layer,
+    .default_shortcut = "Shift Tab",
 )
 
 ACTION_REGISTER(ACTION_view_toggle_ortho,

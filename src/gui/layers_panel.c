@@ -49,42 +49,6 @@ static void select_layer(image_t *img, layer_t *layer)
     tool_clear_preview();
 }
 
-/* Orbit: centre on the layer (or group) bbox and pull back to fit FOV. */
-static void frame_layer_in_orbit(const layer_t *layer)
-{
-    camera_t *cam;
-    const volume_t *vol;
-    float box[4][4];
-
-    if (!layer || !goxel.image) return;
-    cam = goxel.image->active_camera;
-    if (!cam || cam->mode != CAMERA_MODE_ORBIT) return;
-
-    vol = goxel_get_layer_move_volume(layer);
-    if (vol) {
-        volume_get_box(vol, true, box);
-        if (!box_is_null(box)) {
-            camera_frame_box(cam, box);
-            return;
-        }
-    }
-    layer_get_bounding_box(layer, box);
-    if (!box_is_null(box))
-        camera_frame_box(cam, box);
-}
-
-/* Orbit: frame the image box (shift+empty click in the layers list). */
-static void frame_image_box_in_orbit(void)
-{
-    camera_t *cam;
-
-    if (!goxel.image) return;
-    cam = goxel.image->active_camera;
-    if (!cam || cam->mode != CAMERA_MODE_ORBIT) return;
-    if (!box_is_null(goxel.image->box))
-        camera_frame_box(cam, goxel.image->box);
-}
-
 static void clear_layer_selection(image_t *img)
 {
     if (!img) return;
@@ -98,7 +62,7 @@ static void unfocus_and_frame_image(void)
 {
     image_clear_layer_focus();
     tool_clear_preview();
-    frame_image_box_in_orbit();
+    goxel_frame_image_box_in_orbit();
 }
 
 static bool ancestor_collapsed(const image_t *img, const layer_t *layer)
@@ -331,17 +295,7 @@ static void render_layers_list(void)
                         &focus_press, ICON_FOCUS)) {
                 if (gui_is_key_down(KEY_LEFT_SHIFT) ||
                     gui_is_key_down(KEY_RIGHT_SHIFT)) {
-                    if (focus_active) {
-                        /* Already focused: same as shift+empty list space. */
-                        unfocus_and_frame_image();
-                        clear_layer_selection(img);
-                    } else {
-                        /* Shift: force focus and frame the layer in orbit. */
-                        image_set_layer_focus(layer);
-                        select_layer(img, layer);
-                        tool_clear_preview();
-                        frame_layer_in_orbit(layer);
-                    }
+                    goxel_shift_focus_layer(layer);
                 } else {
                     image_toggle_layer_focus(layer);
                     if (image_get_focused_layer(img) == layer)

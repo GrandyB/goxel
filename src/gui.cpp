@@ -219,6 +219,7 @@ static int shortcut_named_legacy_key(const char *token)
         int         key;
     } map[] = {
         {"Delete", KEY_DELETE},
+        {"Tab", KEY_TAB},
     };
     if (!token || !token[0]) return -1;
     for (unsigned i = 0; i < sizeof(map) / sizeof(map[0]); i++)
@@ -503,7 +504,13 @@ static int check_action_shortcut(action_t *action, void *user)
     } else {
         if (str_startswith(s, "Ctrl")) return 0;
     }
-    if (io.KeyShift) {
+    if (str_startswith(s, "Shift")) {
+        if (!io.KeyShift) return 0;
+        s += strlen("Shift ");
+        check_char = false;
+    } else if (io.KeyShift) {
+        /* Shift held but shortcut has no Shift prefix: only match via
+         * produced characters (e.g. "#", "{"), not raw key codes. */
         check_key = false;
     }
     if (strlen(s) != 1) {

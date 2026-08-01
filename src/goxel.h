@@ -706,6 +706,13 @@ const volume_t *goxel_get_render_volume(const image_t *img);
 /* Active-layer volume, or merge of layer+descendants for move gizmo. */
 const volume_t *goxel_get_layer_move_volume(const layer_t *layer);
 
+/* Orbit camera: frame a layer (or group) bbox, or the image box. */
+void goxel_frame_layer_in_orbit(const layer_t *layer);
+void goxel_frame_image_box_in_orbit(void);
+/* Same as Shift+focus in the layers panel: solo-focus and frame, or
+ * unfocus+frame image box if already focused. */
+void goxel_shift_focus_layer(layer_t *layer);
+
 /*
  * Function: goxel_get_render_layers
  * Compute merged current image layer list

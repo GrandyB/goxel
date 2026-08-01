@@ -66,6 +66,8 @@ enum
     ACTION_view_toggle_ortho,
     ACTION_view_default,
     ACTION_view_front,
+    ACTION_view_frame_layer,
+    ACTION_view_focus_frame_layer,
     ACTION_view_toggle_ui,
     ACTION_quit,
     ACTION_undo,
