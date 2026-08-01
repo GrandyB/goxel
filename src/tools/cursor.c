@@ -589,6 +589,7 @@ void tool_cursor_render_labels(void)
 
     /* Layers-panel hover: name at bbox centre (any tool; bbox already drawn). */
     if (g_panel_hover && g_panel_hover->name[0] &&
+        layer_effectively_visible(img, g_panel_hover) &&
         layer_gizmo_box(g_panel_hover, box)) {
         box_center(box, pos);
         gui_world_label(pos, g_panel_hover->name, color);
