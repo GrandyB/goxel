@@ -484,9 +484,12 @@ static int on_drag(gesture3d_t *gest, void *user)
 {
     if (gest->state == GESTURE_END) {
         tool_placer_t *placer = USER_GET(user, 0);
-        const bool did_place = goxel.image->active_layer->volume && goxel.tool_volume;
+        bool did_place = goxel.image->active_layer &&
+                         goxel.image->active_layer->volume && goxel.tool_volume;
 
         image_history_push(goxel.image);
+        if (did_place && !image_ensure_layer_for_adding(goxel.image))
+            did_place = false;
         if (did_place) {
             volume_set(goxel.image->active_layer->volume, goxel.tool_volume);
         }

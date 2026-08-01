@@ -789,6 +789,8 @@ static int gui(filter_t *filter_)
             !goxel.image->active_layer->volume)
             return 0;
         image_history_push(goxel.image);
+        if (!image_ensure_layer_for_adding(goxel.image))
+            return 0;
         generate_water_layer(goxel.image->active_layer->volume, s,
                              filter->bleed_distance, filter->bleed_strength,
                              filter->bleed_lightness, filter->bleed_blur,

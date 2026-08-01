@@ -2318,12 +2318,21 @@ static void copy_action(void)
 
 static void past_action(void)
 {
-    volume_t *volume = goxel.image->active_layer->volume;
+    volume_t *volume;
     volume_t *tmp;
     float p1[3], p2[3], mat[4][4];
 
     mat4_set_identity(mat);
     if (!goxel.clipboard.volume) return;
+    if (!goxel.image->active_layer) return;
+
+    /* Group parent: paste into a new child (TOUCH_IMAGE still pushes after). */
+    if (layer_has_children(goxel.image, goxel.image->active_layer)) {
+        image_history_push(goxel.image);
+        if (!image_ensure_layer_for_adding(goxel.image))
+            return;
+    }
+    volume = goxel.image->active_layer->volume;
 
     tmp = volume_copy(goxel.clipboard.volume);
     if (    !box_is_null(goxel.selection) &&

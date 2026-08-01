@@ -353,12 +353,16 @@ static int on_drag(gesture3d_t *gest, void *user)
     volume_t *paint_volume = goxel.image->active_layer->volume;
 
     if (gest->state == GESTURE_BEGIN) {
-        image_history_push(goxel.image);
-
         const painter_t *painter = USER_GET(user, 1);
-
         cursor_t *curs = gest->cursor;
-        const volume_t *sample_volume = filler->current_layer_only
+        const volume_t *sample_volume;
+
+        image_history_push(goxel.image);
+        if (painter->mode == MODE_OVER &&
+                !image_ensure_layer_for_adding(goxel.image))
+            return 0;
+        paint_volume = goxel.image->active_layer->volume;
+        sample_volume = filler->current_layer_only
             ? paint_volume
             : goxel_get_layers_volume(goxel.image);
         flood_fill_volume(paint_volume, sample_volume, curs->pos,

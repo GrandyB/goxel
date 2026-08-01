@@ -458,6 +458,8 @@ static int gui(filter_t *filter_)
                    sizeof(goxel.painter.color));
         if (gui_button("Apply fill upwards", -1, 0)) {
             image_history_push(goxel.image);
+            if (!image_ensure_layer_for_adding(goxel.image))
+                return 0;
             apply_fill_upwards(goxel.image->active_layer, filter->fill_color);
         }
     }

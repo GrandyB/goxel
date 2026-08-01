@@ -424,13 +424,6 @@ void gui_layers_panel_impl(bool inner_scroll)
         gui_action_button(ACTION_img_select_parent_layer, "Select parent", 1);
         gui_group_end();
     }
-    if (layer->parent_id) {
-        if (gui_button("Select nest parent", 1, 0)) {
-            layer_t *p = layer_find(goxel.image, layer->parent_id);
-            if (p)
-                goxel.image->active_layer = p;
-        }
-    }
     if (layer->image) {
         gui_action_button(ACTION_img_image_layer_to_volume, "To Volume", 1);
     }

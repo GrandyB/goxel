@@ -399,10 +399,17 @@ static layer_t *prepare_target_layer(filter_hedges_t *filter, layer_t *plan_laye
     const char *suffix = " Hedges";
     int max_base;
 
-    if (filter->current_layer)
+    if (filter->current_layer) {
+        /* Group parent: write hedges onto a new child, not the parent. */
+        if (layer_has_children(goxel.image, plan_layer))
+            return image_ensure_layer_for_adding(goxel.image);
         return target;
+    }
 
-    target = image_add_layer(goxel.image, NULL);
+    if (layer_has_children(goxel.image, plan_layer))
+        target = image_add_child_layer(goxel.image, plan_layer);
+    else
+        target = image_add_layer(goxel.image, NULL);
     if (!target)
         return NULL;
     target->visible = true;
@@ -411,6 +418,7 @@ static layer_t *prepare_target_layer(filter_hedges_t *filter, layer_t *plan_laye
     snprintf(target->name, sizeof(target->name), "%.*s%s",
              max_base, plan_layer->name, suffix);
     plan_layer->visible = false;
+    plan_layer->collapsed = false;
     return target;
 }
 

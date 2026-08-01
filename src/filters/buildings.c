@@ -1668,12 +1668,16 @@ static layer_t *prepare_single_target_layer(layer_t *plan_layer)
 {
     layer_t *target;
 
-    target = image_add_layer(goxel.image, NULL);
+    if (layer_has_children(goxel.image, plan_layer))
+        target = image_add_child_layer(goxel.image, plan_layer);
+    else
+        target = image_add_layer(goxel.image, NULL);
     if (!target)
         return NULL;
     target->visible = true;
     name_target_layer(target, plan_layer, " Buildings");
     plan_layer->visible = false;
+    plan_layer->collapsed = false;
     return target;
 }
 
@@ -1681,17 +1685,22 @@ static layer_t *prepare_single_target_layer(layer_t *plan_layer)
  * Split mode: sibling parent "{plan} Buildings", then one child per building,
  * each with Floor 1..N and Roofs children (same storey split as before).
  * New buildings are moved to last child so Building 1 stays topmost in the UI.
+ * If the plan is already a group, nest the Buildings root under it.
  */
 static layer_t *prepare_buildings_root(layer_t *plan_layer)
 {
     layer_t *root;
 
-    root = image_add_layer(goxel.image, NULL);
+    if (layer_has_children(goxel.image, plan_layer))
+        root = image_add_child_layer(goxel.image, plan_layer);
+    else
+        root = image_add_layer(goxel.image, NULL);
     if (!root)
         return NULL;
     root->visible = true;
     name_target_layer(root, plan_layer, " Buildings");
     plan_layer->visible = false;
+    plan_layer->collapsed = false;
     return root;
 }
 

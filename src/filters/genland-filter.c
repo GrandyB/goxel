@@ -178,6 +178,9 @@ static int gui(filter_t *filter_)
     if (gui_button("Generate", -1, 0))
     {
         image_history_push(goxel.image);
+        if (!image_ensure_layer_for_adding(goxel.image))
+            return 0;
+        layer = goxel.image->active_layer;
         generate_tomland_terrain(layer->volume, filter->settings);
 
         if (filter->settings->resize_image) {

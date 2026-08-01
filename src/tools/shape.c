@@ -71,10 +71,14 @@ static int on_drag(gesture3d_t *gest, void *user)
     cursor_t *curs = gest->cursor;
 
     if (gest->state == GESTURE_BEGIN) {
+        image_history_push(goxel.image);
+        if (painter->mode == MODE_OVER &&
+                !image_ensure_layer_for_adding(goxel.image))
+            return 0;
+        layer_volume = goxel.image->active_layer->volume;
         shape->layer_key_at_stroke_start = volume_get_key(layer_volume);
         volume_set(shape->volume_orig, layer_volume);
         vec3_copy(curs->pos, shape->start_pos);
-        image_history_push(goxel.image);
         if (shape->planar) {
             vec3_addk(curs->pos, curs->normal, -curs->snap_offset, pos);
             plane_from_normal(goxel.tool_plane, pos, curs->normal);

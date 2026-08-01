@@ -463,10 +463,12 @@ static int on_drag(gesture3d_t *gest, void *user)
         if (cs->wall_mode)
             vec3_copy(curs->normal, cs->stroke_normal);
 
+        image_history_push(goxel.image);
+        if (!image_ensure_layer_for_adding(goxel.image))
+            return GESTURE_FAILED;
         if (!cs->volume_orig)
             cs->volume_orig = volume_new();
         volume_set(cs->volume_orig, goxel.image->active_layer->volume);
-        image_history_push(goxel.image);
 
         if (!cs->stroke) cs->stroke = volume_new();
         volume_set(cs->stroke, cs->volume_orig);

@@ -458,6 +458,25 @@ layer_t *image_add_child_layer(image_t *img, layer_t *parent)
     return child;
 }
 
+layer_t *image_ensure_layer_for_adding(image_t *img)
+{
+    layer_t *layer;
+    layer_t *parent;
+
+    if (!img) return NULL;
+    layer = img->active_layer;
+    if (!layer) return NULL;
+    if (!layer_has_children(img, layer))
+        return layer;
+    parent = layer;
+    layer = image_add_child_layer(img, parent);
+    if (layer) {
+        parent->collapsed = false;
+        tool_clear_preview();
+    }
+    return layer;
+}
+
 void image_sanitize_layer_parents(image_t *img)
 {
     layer_t *layer;

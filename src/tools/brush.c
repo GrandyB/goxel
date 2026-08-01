@@ -216,13 +216,17 @@ static int on_drag(gesture3d_t *gest, void *user)
     }
 
     if (gest->state == GESTURE_BEGIN) {
+        image_history_push(goxel.image);
+        /* Add mode on a group parent: new child instead of parent volume. */
+        if (painter.mode == MODE_OVER &&
+                !image_ensure_layer_for_adding(goxel.image))
+            return 0;
         brush->layer_key_at_stroke_start =
             volume_get_key(goxel.image->active_layer->volume);
         volume_set(brush->volume_orig, goxel.image->active_layer->volume);
         brush->last_op.mode = 0; // Discard last op.
         vec3_copy(target, brush->last_pos);
         vec3_copy(curs->normal, brush->stroke_normal);
-        image_history_push(goxel.image);
         volume_clear(brush->volume);
         if (!brush->delta) brush->delta = volume_new();
         if (!goxel.tool_volume) goxel.tool_volume = volume_new();

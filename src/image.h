@@ -120,6 +120,11 @@ void image_sanitize_layer_parents(image_t *img);
 layer_t *image_extract_layer_content_to_child(image_t *img, layer_t *parent);
 /* Add an empty child under parent (extracts parent content on first child). */
 layer_t *image_add_child_layer(image_t *img, layer_t *parent);
+/* If the active layer is a group (has children), add a new empty child and
+ * select it so voxel adds do not land on the parent. Call after
+ * image_history_push so undo removes the child with the edit. Returns the
+ * layer that should receive the edit, or NULL if creation failed. */
+layer_t *image_ensure_layer_for_adding(image_t *img);
 /* Reparent layer (+subtree) under new_parent (NULL = top-level). Place after
  * after_sibling in the forward list (NULL = as topmost child under parent,
  * i.e. immediately before the parent node). */

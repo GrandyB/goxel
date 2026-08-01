@@ -537,6 +537,8 @@ static int gui(filter_t *filter_)
     if (gui_button("Apply", -1, 0))
     {
         image_history_push(goxel.image);
+        if (!image_ensure_layer_for_adding(goxel.image))
+            return 0;
         place_doodads(filter);
     }
     return 0;

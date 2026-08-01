@@ -273,7 +273,10 @@ static layer_t *prepare_target_layer(layer_t *plan_layer)
     const char *suffix = " Roads";
     int max_base;
 
-    target = image_add_layer(goxel.image, NULL);
+    if (layer_has_children(goxel.image, plan_layer))
+        target = image_add_child_layer(goxel.image, plan_layer);
+    else
+        target = image_add_layer(goxel.image, NULL);
     if (!target)
         return NULL;
     target->visible = true;
@@ -282,6 +285,7 @@ static layer_t *prepare_target_layer(layer_t *plan_layer)
     snprintf(target->name, sizeof(target->name), "%.*s%s",
              max_base, plan_layer->name, suffix);
     plan_layer->visible = false;
+    plan_layer->collapsed = false;
     return target;
 }
 
