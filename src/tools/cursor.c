@@ -564,8 +564,12 @@ static int iter(tool_t *tool, const painter_t *painter,
 static int gui(tool_t *tool)
 {
     (void)tool;
+    gui_text_wrapped(
+        "Select and move any layer or group that is unlocked "
+        "in the Layers panel.\n");
     gui_text("Click a box to select a layer.");
-    gui_text("With a layer selected, drag the arrows to move.");
+    gui_text("With a layer selected, drag its\narrows to move.\n\n");
+    gui_text("Hold and release the ' key to \nlayer pick to the hovered over layer.\n\n");
 
     gui_separator();
     gui_group_begin("Show names:");
