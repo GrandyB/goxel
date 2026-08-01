@@ -410,9 +410,11 @@ int tool_fill_iter(tool_t *tool, const painter_t *painter,
 static int gui(tool_t *tool)
 {
     tool_fill_t *filler = (void *)tool;
+    gui_label_size_push(0);
     gui_checkbox(
             "Current layer only", &filler->current_layer_only,
             "Restrict floodfill to be within blocks only on the current layer");
+    gui_label_size_pop();
 
     if (goxel.painter.mode == MODE_PAINT) {
         gui_input_int("Threshold", &filler->color_threshold, 0, 255);
