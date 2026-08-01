@@ -1700,7 +1700,7 @@ static bool prepare_building_layers(layer_t *buildings_root, int building_idx,
         floor_volumes[f] = floor_layer->volume;
     }
 
-    floor_layer = add_named_child_layer(building, "Roofs");
+    floor_layer = add_named_child_layer(building, "Roof");
     if (!floor_layer)
         return false;
     floor_layer->locked = true;
