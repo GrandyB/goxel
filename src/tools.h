@@ -90,7 +90,8 @@ int tool_gui(tool_t *tool);
  * tool. Call from the 3D view render path so they stay visible over UI. */
 void tool_cursor_render(void);
 /* Cursor-tool layer name labels (always or Alt, per tool panel), plus
- * apostrophe pick-preview label; call during the gui frame. */
+ * layers-panel hover / apostrophe pick / arrow-key flash labels; call
+ * during the gui frame. */
 void tool_cursor_render_labels(void);
 /* Clear panel-hover solo at the start of each GUI frame. */
 void tool_cursor_on_gui_frame(void);

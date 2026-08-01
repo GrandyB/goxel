@@ -21,14 +21,16 @@
 #include <math.h>
 
 enum {
-    CURSOR_NAMES_ON_ALT = 0, /* default (zero-init) */
+    CURSOR_NAMES_ON_ALT = 0,
     CURSOR_NAMES_ALWAYS = 1,
 };
 
 typedef struct {
     tool_t tool;
-    int names_mode; /* CURSOR_NAMES_ON_ALT or CURSOR_NAMES_ALWAYS */
 } tool_cursor_t;
+
+/* Layer name labels: default to Alt-hold (matches prior behaviour). */
+static int g_names_mode = CURSOR_NAMES_ON_ALT;
 
 typedef struct {
     int state; /* 0 idle, 1 hover, 2 drag */
@@ -456,16 +458,15 @@ static int iter(tool_t *tool, const painter_t *painter,
 
 static int gui(tool_t *tool)
 {
-    tool_cursor_t *cursor = (tool_cursor_t *)tool;
-
+    (void)tool;
     gui_text("Click a box to select a layer.");
     gui_text("With a layer selected, drag the arrows to move.");
 
     gui_group_begin(NULL);
-    gui_selectable_toggle("Always show names", &cursor->names_mode,
-                          CURSOR_NAMES_ALWAYS, NULL, -1);
-    gui_selectable_toggle("Show names on alt", &cursor->names_mode,
+    gui_selectable_toggle("Show names on alt", &g_names_mode,
                           CURSOR_NAMES_ON_ALT, NULL, -1);
+    gui_selectable_toggle("Always show names", &g_names_mode,
+                          CURSOR_NAMES_ALWAYS, NULL, -1);
     gui_group_end();
     return 0;
 }
@@ -586,21 +587,18 @@ void tool_cursor_render_labels(void)
         }
     }
 
-    if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) return;
-    {
-        tool_cursor_t *cursor = (tool_cursor_t *)goxel.tool;
-        if (cursor->names_mode == CURSOR_NAMES_ON_ALT &&
-            !(goxel.cursor.flags & CURSOR_LEFT_ALT))
-            return;
-    }
-
-    if (g_panel_hover) {
-        if (g_panel_hover->name[0] && layer_gizmo_box(g_panel_hover, box)) {
-            box_center(box, pos);
-            gui_world_label(pos, g_panel_hover->name, color);
-        }
+    /* Layers-panel hover: name at bbox centre (any tool; bbox already drawn). */
+    if (g_panel_hover && g_panel_hover->name[0] &&
+        layer_gizmo_box(g_panel_hover, box)) {
+        box_center(box, pos);
+        gui_world_label(pos, g_panel_hover->name, color);
         return;
     }
+
+    if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) return;
+    if (g_names_mode == CURSOR_NAMES_ON_ALT &&
+        !(goxel.cursor.flags & CURSOR_LEFT_ALT))
+        return;
 
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;
