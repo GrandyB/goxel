@@ -1759,25 +1759,41 @@ void goxel_frame_image_box_in_orbit(void)
         camera_frame_box(cam, goxel.image->box);
 }
 
+void goxel_toggle_focus_layer(layer_t *layer)
+{
+    image_t *img = goxel.image;
+
+    if (!img || !layer) return;
+    image_toggle_layer_focus(layer);
+    if (image_get_focused_layer(img) == layer) {
+        if (img->active_layer != layer) {
+            img->active_layer = layer;
+            tool_cursor_clear_edit();
+        }
+    }
+    tool_clear_preview();
+}
+
 void goxel_shift_focus_layer(layer_t *layer)
 {
     image_t *img = goxel.image;
 
     if (!img || !layer) return;
-    if (image_get_focused_layer(img) == layer) {
-        /* Keep selection; only clear solo-focus and reframe. */
+    if (image_get_focused_layer(img) == layer &&
+        image_layer_focus_was_shift()) {
+        /* Second Shift on a Shift-focused layer: clear focus, keep camera. */
         image_clear_layer_focus();
         tool_clear_preview();
-        goxel_frame_image_box_in_orbit();
-    } else {
-        image_set_layer_focus(layer);
-        if (img->active_layer != layer) {
-            img->active_layer = layer;
-            tool_cursor_clear_edit();
-        }
-        tool_clear_preview();
-        goxel_frame_layer_in_orbit(layer);
+        return;
     }
+    /* Regular focus or unfocused → ensure Shift-focus and frame. */
+    image_set_layer_focus_shift(layer);
+    if (img->active_layer != layer) {
+        img->active_layer = layer;
+        tool_cursor_clear_edit();
+    }
+    tool_clear_preview();
+    goxel_frame_layer_in_orbit(layer);
 }
 
 const layer_t *goxel_get_render_layers(bool with_tool_preview)
@@ -2431,7 +2447,7 @@ ACTION_REGISTER(ACTION_view_front,
     .default_shortcut = "1",
 )
 
-/* Frame the active layer bbox in orbit, or the image box if none selected. */
+/* Same as focus-button click on the active layer. */
 static void a_view_frame_layer(void)
 {
     layer_t *layer;
@@ -2439,19 +2455,17 @@ static void a_view_frame_layer(void)
     if (!goxel.image) return;
     layer = goxel.image->active_layer;
     if (layer)
-        goxel_frame_layer_in_orbit(layer);
-    else
-        goxel_frame_image_box_in_orbit();
+        goxel_toggle_focus_layer(layer);
 }
 
 ACTION_REGISTER(ACTION_view_frame_layer,
-    .help = "Frame camera on selected layer (or image box)",
+    .help = "Toggle solo-focus on selected layer",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_view_frame_layer,
     .default_shortcut = "Tab",
 )
 
-/* Shift+focus on the active layer; if none selected, frame the image box. */
+/* Same as Shift+focus-button click on the active layer. */
 static void a_view_focus_frame_layer(void)
 {
     layer_t *layer;
@@ -2460,12 +2474,10 @@ static void a_view_focus_frame_layer(void)
     layer = goxel.image->active_layer;
     if (layer)
         goxel_shift_focus_layer(layer);
-    else
-        goxel_frame_image_box_in_orbit();
 }
 
 ACTION_REGISTER(ACTION_view_focus_frame_layer,
-    .help = "Focus and frame selected layer (or frame image box)",
+    .help = "Solo-focus and frame selected layer (Shift again clears)",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_view_focus_frame_layer,
     .default_shortcut = "Shift Tab",

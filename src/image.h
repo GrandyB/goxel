@@ -94,10 +94,13 @@ layer_t *layer_find(const image_t *img, int id);
 int layer_depth(const image_t *img, const layer_t *layer);
 bool layer_effectively_visible(const image_t *img, const layer_t *layer);
 /* Session-only solo focus: overrides visibility so only one layer shows.
- * Does not change layer->visible. Cleared when the focused layer is deleted. */
+ * Does not change layer->visible. Cleared when the focused layer is deleted.
+ * Focus applied via Shift is tracked so a second Shift can toggle it off. */
 void image_toggle_layer_focus(layer_t *layer);
 void image_set_layer_focus(layer_t *layer);
+void image_set_layer_focus_shift(layer_t *layer);
 void image_clear_layer_focus(void);
+bool image_layer_focus_was_shift(void);
 layer_t *image_get_focused_layer(const image_t *img);
 bool layer_is_ancestor(const image_t *img, const layer_t *ancestor,
                        const layer_t *layer);

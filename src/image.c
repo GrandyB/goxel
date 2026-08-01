@@ -24,8 +24,10 @@
  * buffers in reparent / move / duplicate. Change this one value to retune. */
 #define LAYER_SUBTREE_MAX 2048
 
-/* UI session: id of layer solo-focused in the layers panel (0 = none). */
+/* UI session: id of layer solo-focused in the layers panel (0 = none).
+ * g_focused_via_shift: true if that focus was applied with Shift (framed). */
 static int g_focused_layer_id = 0;
+static bool g_focused_via_shift = false;
 
 /* History
     the images undo history is stored in a linked list.  Every time we call
@@ -154,20 +156,36 @@ int layer_depth(const image_t *img, const layer_t *layer)
 void image_clear_layer_focus(void)
 {
     g_focused_layer_id = 0;
+    g_focused_via_shift = false;
 }
 
 void image_toggle_layer_focus(layer_t *layer)
 {
     if (!layer) return;
-    if (g_focused_layer_id == layer->id)
+    if (g_focused_layer_id == layer->id) {
         g_focused_layer_id = 0;
-    else
+        g_focused_via_shift = false;
+    } else {
         g_focused_layer_id = layer->id;
+        g_focused_via_shift = false;
+    }
 }
 
 void image_set_layer_focus(layer_t *layer)
 {
     g_focused_layer_id = layer ? layer->id : 0;
+    g_focused_via_shift = false;
+}
+
+void image_set_layer_focus_shift(layer_t *layer)
+{
+    g_focused_layer_id = layer ? layer->id : 0;
+    g_focused_via_shift = layer != NULL;
+}
+
+bool image_layer_focus_was_shift(void)
+{
+    return g_focused_layer_id != 0 && g_focused_via_shift;
 }
 
 layer_t *image_get_focused_layer(const image_t *img)
@@ -175,8 +193,10 @@ layer_t *image_get_focused_layer(const image_t *img)
     layer_t *layer;
     if (!g_focused_layer_id || !img) return NULL;
     layer = layer_find(img, g_focused_layer_id);
-    if (!layer)
+    if (!layer) {
         g_focused_layer_id = 0;
+        g_focused_via_shift = false;
+    }
     return layer;
 }
 
@@ -1016,8 +1036,10 @@ void image_delete_layer(image_t *img, layer_t *layer)
     }
     DL_DELETE(img->layers, layer);
     if (layer == img->active_layer) img->active_layer = NULL;
-    if (g_focused_layer_id == layer->id)
+    if (g_focused_layer_id == layer->id) {
         g_focused_layer_id = 0;
+        g_focused_via_shift = false;
+    }
 
     DL_FOREACH(img->layers, other) {
         if (other->base_id == layer->id)

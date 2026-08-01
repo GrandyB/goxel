@@ -287,10 +287,7 @@ static void render_layers_list(void)
                     gui_is_key_down(KEY_RIGHT_SHIFT)) {
                     goxel_shift_focus_layer(layer);
                 } else {
-                    image_toggle_layer_focus(layer);
-                    if (image_get_focused_layer(img) == layer)
-                        select_layer(img, layer);
-                    tool_clear_preview();
+                    goxel_toggle_focus_layer(layer);
                 }
             }
             gui_same_line();

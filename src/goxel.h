@@ -716,8 +716,12 @@ const volume_t *goxel_get_layer_move_volume(const layer_t *layer);
 /* Orbit camera: frame a layer (or group) bbox, or the image box. */
 void goxel_frame_layer_in_orbit(const layer_t *layer);
 void goxel_frame_image_box_in_orbit(void);
-/* Toggle solo-focus on a layer and frame: focus+frame layer, or
- * unfocus+frame image box if already focused. Never clears selection. */
+/* Same as focus-button click: toggle solo-focus; select if newly focused.
+ * No camera change. */
+void goxel_toggle_focus_layer(layer_t *layer);
+/* Same as Shift+focus-button: if already Shift-focused, clear focus (no
+ * camera change); otherwise ensure focus and frame. Regular focus first
+ * then Shift frames without clearing. */
 void goxel_shift_focus_layer(layer_t *layer);
 
 /*
