@@ -32,7 +32,7 @@ typedef struct {
 /* Layer name labels. Holding Alt always shows all names as an override. */
 static int g_names_mode = CURSOR_NAMES_ON_HOVER;
 
-/* Centers captured while drawing gizmos this frame — avoids re-running
+/* Centers captured while drawing gizmos this frame - avoids re-running
  * goxel_get_layer_move_volume / exact bbox just to place labels. */
 typedef struct {
     const layer_t *layer;
@@ -158,7 +158,7 @@ static bool layer_label_center(const image_t *img, const layer_t *layer,
         return true;
     }
 
-    /* Group: union child approx boxes — no voxel merge. */
+    /* Group: union child approx boxes - no voxel merge. */
     {
         layer_t *cur, *first = first_in_layer_subtree(img->layers, layer);
         float u[4][4] = {};
@@ -212,7 +212,7 @@ static bool layer_gizmo_box(const layer_t *layer, float box[4][4])
 {
     if (!layer_move_box(layer, box)) return false;
     /* Groups: pad so the parent wireframe sits outside child boxes.
-     * Visual/hit-test only — never use the grown box for move deltas. */
+     * Visual/hit-test only - never use the grown box for move deltas. */
     if (layer_has_children(goxel.image, layer))
         bbox_grow(box, 0.5f, 0.5f, 0.5f, box);
     return true;

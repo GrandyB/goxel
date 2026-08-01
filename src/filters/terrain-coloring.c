@@ -19,7 +19,7 @@
 /*
  * Terrain coloring extracted from genland.cpp (Tom Dobrowolski / Ken Silverman):
  * slope-based grass tones, water tint, ambient, directional light, shadow
- * rays, shadow blur, and final merge — applied to existing voxel columns.
+ * rays, shadow blur, and final merge - applied to existing voxel columns.
  *
  * Optional phantom height for normals; optional rugged luminance on grass albedo.
  */
@@ -527,7 +527,7 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
                 double secondaryBlend = 0.0;
                 if (nn > 0) {
                     double neighborAvg = sum / (double)nn;
-                    /* Bowl vs local average only (no h_max−h0: that tags cliff sides
+                    /* Bowl vs local average only (no h_max-h0: that tags cliff sides
                      * on mountains as “water”). Damp by neighbour height spread. */
                     double bowl = neighborAvg - (double)h0;
                     if (bowl > 0.0) {
@@ -842,7 +842,7 @@ static int gui(filter_t *filter_)
         }
     }
 
-    if (gui_button("Reset all settings to defaults", -1, 0))
+    if (gui_button("Reset to defaults", -1, 0))
         terrain_coloring_reset_all_defaults(filter);
 
     {
@@ -871,6 +871,8 @@ static int gui(filter_t *filter_)
             }
         }
         gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
     }
     gui_label_size_pop();
     return 0;

@@ -400,7 +400,7 @@ void camera_turntable_around_point(
     mat4_imul(mat, camera->mat);
     mat4_copy(mat, camera->mat);
 
-    /* Pitch around camera right through the same pivot — not local-Z
+    /* Pitch around camera right through the same pivot - not local-Z
      * translate-by-dist, which only orbits a point on the view axis. */
     vec3_normalize(camera->mat[0], axis);
     mat4_set_identity(mat);

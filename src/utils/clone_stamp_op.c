@@ -1,4 +1,4 @@
-/* Clone stamp volume apply — independent of volume_op. */
+/* Clone stamp volume apply - independent of volume_op. */
 
 #include "goxel.h"
 #include "utils/clone_stamp_op.h"
@@ -15,7 +15,7 @@ static void shape_box_setup(const float box[4][4], float mat[4][4],
 
 /*
  * Grow tangential brush axes so soft AA / dither samples outside the hard
- * silhouette are visited.  Do not grow box[0] (Diameter Z / face normal) —
+ * silhouette are visited.  Do not grow box[0] (Diameter Z / face normal) -
  * expanding it paints extra layers of thickness.
  */
 static void grow_box_for_aa(const float box[4][4], float shape_sm,
@@ -58,7 +58,7 @@ static float shape_coverage(const shape_t *shape, const float mat[4][4],
     return v;
 }
 
-/* World axis of box[0] (Diameter Z / face normal) — used for hard depth. */
+/* World axis of box[0] (Diameter Z / face normal) - used for hard depth. */
 static int box_depth_axis(const float box[4][4])
 {
     float ax = fabsf(box[0][0]), ay = fabsf(box[0][1]), az = fabsf(box[0][2]);
@@ -426,7 +426,7 @@ void clone_stamp_apply(volume_t *dest, const volume_t *sample,
     iter = volume_get_box_iterator(dest, iter_box, VOLUME_ITER_SKIP_EMPTY);
 
     while (volume_iter(&iter, vp)) {
-        /* Keep Diameter Z exact — AA/dither must not bleed into other layers. */
+        /* Keep Diameter Z exact - AA/dither must not bleed into other layers. */
         if (!voxel_in_hard_depth(hard_aabb, box, vp)) continue;
 
         v = shape_coverage(shape, mat, size, smoothness, dithering, vp);

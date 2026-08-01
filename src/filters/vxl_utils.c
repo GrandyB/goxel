@@ -61,7 +61,7 @@ static int aabb_index(const int pos[3], const int start_pos[3],
     return (x * dimensions[1] + y) * dimensions[2] + z;
 }
 
-/* Exposed only to air inside the image box — box faces do not count. */
+/* Exposed only to air inside the image box - box faces do not count. */
 static bool voxel_is_surface(const volume_t *volume, volume_iterator_t *iter,
                              const int pos[3], const int start_pos[3],
                              const int dimensions[3])
@@ -255,7 +255,7 @@ static void apply_color_permeation(volume_t *volume, int depth, int blur)
         }
     }
 
-    /* Pass 2a: multi-source BFS — Manhattan distance to nearest surface. */
+    /* Pass 2a: multi-source BFS - Manhattan distance to nearest surface. */
     q_head = 0;
     q_tail = 0;
     visit_token = 1;
@@ -272,7 +272,7 @@ static void apply_color_permeation(volume_t *volume, int depth, int blur)
     bfs_solid(queue, &q_head, &q_tail, size, radius, solid, dimensions,
               start_pos, visited, visit_token, &min_ctx, on_visit_min_dist);
 
-    /* Pass 2b: per-surface BFS — average colours of nearest surfaces only. */
+    /* Pass 2b: per-surface BFS - average colours of nearest surfaces only. */
     acc_ctx.surface = surface;
     acc_ctx.min_dist = min_dist;
     acc_ctx.sum_r = sum_r;
@@ -441,12 +441,21 @@ static int gui(filter_t *filter_)
         gui_text_wrapped(permeate_help);
         gui_input_int("Depth", &filter->depth, 0, 9999);
         gui_input_int("Blur", &filter->blur, 0, 9999);
-        if (gui_button("Apply permeation", -1, 0)) {
-            layer_t *layer = goxel.image ? goxel.image->active_layer : NULL;
-            if (!layer || !layer->volume)
-                return 0;
-            image_history_push(goxel.image);
-            apply_color_permeation(layer->volume, filter->depth, filter->blur);
+        {
+            bool has_layer = goxel.image && goxel.image->active_layer;
+
+            gui_enabled_begin(has_layer);
+            if (gui_button("Apply permeation", -1, 0)) {
+                layer_t *layer = goxel.image->active_layer;
+                if (!layer || !layer->volume)
+                    return 0;
+                image_history_push(goxel.image);
+                apply_color_permeation(layer->volume, filter->depth,
+                                       filter->blur);
+            }
+            gui_enabled_end();
+            gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                          "Select a layer first.");
         }
     }
 
@@ -458,13 +467,20 @@ static int gui(filter_t *filter_)
         if (gui_button("Copy current painter color##fill", -1, 0))
             memcpy(filter->fill_color, goxel.painter.color,
                    sizeof(goxel.painter.color));
-        if (gui_button("Apply fill upwards", -1, 0)) {
-            if (!goxel.image || !goxel.image->active_layer)
-                return 0;
-            image_history_push(goxel.image);
-            if (!image_ensure_layer_for_adding(goxel.image))
-                return 0;
-            apply_fill_upwards(goxel.image->active_layer, filter->fill_color);
+        {
+            bool has_layer = goxel.image && goxel.image->active_layer;
+
+            gui_enabled_begin(has_layer);
+            if (gui_button("Apply fill upwards", -1, 0)) {
+                image_history_push(goxel.image);
+                if (!image_ensure_layer_for_adding(goxel.image))
+                    return 0;
+                apply_fill_upwards(goxel.image->active_layer,
+                                   filter->fill_color);
+            }
+            gui_enabled_end();
+            gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                          "Select a layer first.");
         }
     }
 
@@ -476,12 +492,20 @@ static int gui(filter_t *filter_)
         if (gui_button("Copy current painter color##remove", -1, 0))
             memcpy(filter->remove_color, goxel.painter.color,
                    sizeof(goxel.painter.color));
-        if (gui_button("Apply remove by color", -1, 0)) {
-            layer_t *layer = goxel.image ? goxel.image->active_layer : NULL;
-            if (!layer)
-                return 0;
-            image_history_push(goxel.image);
-            apply_remove_color(layer, filter->remove_color);
+        {
+            bool has_layer = goxel.image && goxel.image->active_layer;
+
+            gui_enabled_begin(has_layer);
+            if (gui_button("Apply remove by color", -1, 0)) {
+                layer_t *layer = goxel.image->active_layer;
+                if (!layer)
+                    return 0;
+                image_history_push(goxel.image);
+                apply_remove_color(layer, filter->remove_color);
+            }
+            gui_enabled_end();
+            gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                          "Select a layer first.");
         }
     }
 

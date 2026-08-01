@@ -381,7 +381,7 @@ static int collect_layer_subtree_checked(image_t *img, layer_t *root,
 
 /* Insert nodes[0..n) as a contiguous block immediately before `before`.
  * nodes must be in forward-list order (children … root). Always prepend
- * before the same anchor — iterating 0..n-1 yields [nodes…, before].
+ * before the same anchor - iterating 0..n-1 yields [nodes…, before].
  * (Iterating n-1..0 would put the root first and break nesting order.) */
 static void layer_insert_block_before(image_t *img, layer_t **nodes, int n,
                                       layer_t *before)
@@ -855,7 +855,7 @@ static image_t *image_snap(image_t *other)
     img = calloc(1, sizeof(*img));
     *img = *other;
 
-    /* Break shared pointer immediately — do not free the live list. */
+    /* Break shared pointer immediately - do not free the live list. */
     img->custom_objects = NULL;
 
     img->layers = NULL;
@@ -1889,7 +1889,7 @@ static void a_image_delete_layer(void)
     if (!goxel.image->active_layer) return;
     /*
      * Snapshot before mutating. ACTION_TOUCH_IMAGE pushes after cfunc and
-     * would only record the post-delete state — nested children added via
+     * would only record the post-delete state - nested children added via
      * the layers panel (push-before, no post snap) would never be
      * restorable. Same pattern as ACTION_layer_clear.
      */

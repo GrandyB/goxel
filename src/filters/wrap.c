@@ -109,14 +109,25 @@ static int gui(filter_t *filter)
     int aabb[2][3];
     bool should_wrap;
     layer_t *layer;
-    bool current_only = wrap->filter.current_only;
+    bool current_only;
 
-    gui_checkbox(
-        "Current layer only",
-        &wrap->filter.current_only,
-        "If checked, only the current layer and its children "
-        "(recursively) are wrapped.\n"
-        "If unchecked, voxels on all layers will be wrapped.");
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        if (!has_layer)
+            wrap->filter.current_only = false;
+        gui_enabled_begin(has_layer);
+        gui_checkbox(
+            "Current layer only",
+            &wrap->filter.current_only,
+            "If checked, only the current layer and its children "
+            "(recursively) are wrapped.\n"
+            "If unchecked, voxels on all layers will be wrapped.");
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
+    }
+    current_only = wrap->filter.current_only;
 
     gui_input_int("Distance", &wrap->distance, 0, 9999);
 

@@ -229,7 +229,7 @@ static void render_layers_list(void)
     int idx = 0;
     int drop_kind;
     layer_t *drop_payload = NULL;
-    /* Defer reparent until after the list walk — mutating mid-iteration
+    /* Defer reparent until after the list walk - mutating mid-iteration
      * corrupts DL_FOREACH_REVERSE. */
     layer_t *pending_drag = NULL;
     layer_t *pending_target = NULL;

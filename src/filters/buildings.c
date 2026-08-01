@@ -1802,7 +1802,7 @@ static void apply_buildings(filter_buildings_t *filter, layer_t *layer)
         volume_accessor_t terrain_acc;
         const volume_t *terrain = filter->terrain_layer->volume;
 
-        /* Approximate tile bbox once — never recompute exact bbox per cell. */
+        /* Approximate tile bbox once - never recompute exact bbox per cell. */
         if (!volume_get_bbox(terrain, terrain_bbox, false)) {
             gui_alert("Plan - Buildings",
                       "Terrain layer bounding box is empty.");
@@ -2175,8 +2175,16 @@ static int gui(filter_t *filter_)
         filter->seed = rand();
     }
 
-    if (gui_button_primary("Generate", -1, 0))
-        apply_buildings(filter, layer);
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        gui_enabled_begin(has_layer);
+        if (gui_button_primary("Generate", -1, 0))
+            apply_buildings(filter, layer);
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
+    }
 
     return 0;
 }

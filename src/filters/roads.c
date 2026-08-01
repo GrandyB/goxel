@@ -452,7 +452,7 @@ static int gui(filter_t *filter_)
         "Uses blocks on the active layer as a road layout.  For each plan "
         "block, terrain is copied from the chosen layer at z-1 and z within the "
         "road band onto a new Roads layer with a painted surface.  The plan "
-        "layer is hidden and left unchanged — merge layers later if you want.";
+        "layer is hidden and left unchanged - merge layers later if you want.";
 
     goxel_set_help_text(help_text);
 
@@ -492,8 +492,16 @@ static int gui(filter_t *filter_)
     if (gui_button("Reset to defaults", -1, 0))
         reset_defaults(filter);
 
-    if (gui_button("Apply", -1, 0))
-        apply_roads(filter, layer);
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        gui_enabled_begin(has_layer);
+        if (gui_button("Apply", -1, 0))
+            apply_roads(filter, layer);
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
+    }
 
     return 0;
 }

@@ -131,7 +131,7 @@ static void get_box3(const float p0[3], const float p1[3], const float n[3],
     if (p1 == NULL) {
         // Block face alignment: Diameter Z along the snapped face normal
         // (e.g. wall +Y → world extents X/Z/Y for diameters X/Y/Z).
-        // box[0]=Z, box[1]=X, box[2]=Y — same convention as box_swap_axis.
+        // box[0]=Z, box[1]=X, box[2]=Y - same convention as box_swap_axis.
         if (goxel.brush_block_face_alignment && n &&
             (face = brush_get_face(n)) >= 0) {
             const float (*fm)[4] = FACES_MATS[face];

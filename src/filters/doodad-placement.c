@@ -551,6 +551,8 @@ static int gui(filter_t *filter_)
         "Clear the selected layer then place doodads.",
         -1);
     gui_enabled_end();
+    gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                  "Select a layer first.");
     gui_row_end();
     filter->replace_current_layer = (target_mode == 1);
 

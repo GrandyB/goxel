@@ -1004,7 +1004,7 @@ static int on_drag(const gesture_t *gest, void *user)
         c->flags |= CURSOR_PRESSED;
     if (gest->state == GESTURE_END)
         c->flags &= ~CURSOR_PRESSED;
-    /* Keep screen coords current — hover is not called during LMB drag. */
+    /* Keep screen coords current - hover is not called during LMB drag. */
     vec2_copy(gest->pos, c->xy);
     c->snaped = goxel_unproject(
             gest->viewport, gest->pos, c->snap_mask,
@@ -2781,7 +2781,7 @@ static layer_t *find_layer_under_cursor(float label_pos[3], bool refresh_pick)
     }
 
     /* Face hit then -0.5 along the normal (same as color picker). Locked
-     * layers are included — lock only affects cursor-tool gizmos. */
+     * layers are included - lock only affects cursor-tool gizmos. */
     if (!goxel_unproject_on_volume(goxel.gui.viewport, goxel.cursor.xy,
                             goxel_get_layers_volume(img), pos, normal))
         return NULL;

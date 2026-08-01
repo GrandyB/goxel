@@ -1,4 +1,4 @@
-/* Goxel — single-volume preview rasterization */
+/* Goxel - single-volume preview rasterization */
 
 #include "goxel.h"
 #include "utils/volume_preview.h"

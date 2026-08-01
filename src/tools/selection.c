@@ -615,7 +615,7 @@ static int gui(tool_t *tool)
             path = sys_get_save_path("", ff_export_current->exts,
                                     ff_export_current->exts_desc);
             if (path) {
-                // Always use the box selection only — never the fuzzy mask.
+                // Always use the box selection only - never the fuzzy mask.
                 copy = volume_copy(goxel.image->active_layer->volume);
                 painter = (painter_t) {
                     .shape = &shape_cube,

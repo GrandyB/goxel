@@ -488,7 +488,7 @@ static int check_action_shortcut(action_t *action, void *user)
     bool check_key = true;
     bool check_char = true;
     if (!*s) return 0;
-    /* Hold/release preview — polled in goxel_iter via goxel_layer_pick_key_update. */
+    /* Hold/release preview - polled in goxel_iter via goxel_layer_pick_key_update. */
     if (action->idx == ACTION_select_layer_under_cursor)
         return 0;
     if (goxel.image && goxel.image->active_camera &&
@@ -750,7 +750,7 @@ static void render_view_cube(void)
                ImVec2(w, h), 0x0);
 
         /* Orbit only: cube may rewrite the view. In FPV/Player, dist is not
-         * the eye offset — writing back would yank the camera along the look
+         * the eye offset - writing back would yank the camera along the look
          * axis. */
         if (!camera_is_firstperson(camera)) {
             mat4_invert(view, view);
@@ -844,7 +844,7 @@ static void gui_iter(const inputs_t *inputs)
         io.FontGlobalScale = 1 / inputs->scale;
         io.MousePos.x = inputs->touches[0].pos[0];
         io.MousePos.y = inputs->touches[0].pos[1];
-        /* inputs: down[0]=L, down[1]=M, down[2]=R — ImGui: 0=L, 1=R, 2=M */
+        /* inputs: down[0]=L, down[1]=M, down[2]=R - ImGui: 0=L, 1=R, 2=M */
         io.MouseDown[0] = inputs->touches[0].down[0];
         io.MouseDown[1] = inputs->touches[0].down[2];
         io.MouseDown[2] = inputs->touches[0].down[1];
@@ -2290,7 +2290,7 @@ bool gui_placer_past_details_row(
         w_name = 40.f;
 
     ImGui::PushStyleColor(ImGuiCol_Button, COLOR(BUTTON, INNER, false));
-    if (ImGui::Button(file_name && file_name[0] ? file_name : "—",
+    if (ImGui::Button(file_name && file_name[0] ? file_name : "-",
                     ImVec2(w_name, 0)))
         load = true;
     ImGui::PopStyleColor();
@@ -2797,6 +2797,18 @@ void gui_enabled_begin(bool enabled)
 void gui_enabled_end(void)
 {
     ImGui::EndDisabled();
+}
+
+bool gui_alert_if_disabled_clicked(bool enabled,
+                                   const char *title, const char *msg)
+{
+    if (enabled) return false;
+    if (!ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        return false;
+    if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        return false;
+    gui_alert(title, msg);
+    return true;
 }
 
 bool gui_quat(const char *label, float q[4])
@@ -3663,7 +3675,7 @@ int gui_dnd_gap_target(const char *type, void *payload_out, int size,
     float base_y = restore.y - spacing_y * 0.5f;
     int slots = (slot_count > 0) ? slot_count : 1;
     int slot = (slot_index < 0) ? 0 : slot_index;
-    /* Keep stacked lines tight — step by ~2px, not full hitbox height. */
+    /* Keep stacked lines tight - step by ~2px, not full hitbox height. */
     float step = 2.f;
     float y_center = base_y - (slots - 1) * (step * 0.5f) + slot * step;
     float y0 = y_center - h * 0.5f;

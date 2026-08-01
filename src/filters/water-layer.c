@@ -730,7 +730,7 @@ static int gui(filter_t *filter_)
         gui_tooltip_if_hovered(
             "Elongates waves along the swell direction (1 = round cells).");
         gui_input_float("Warp", &s->warp, 0.01f, 0.0f, 2.0f, "%.2f");
-        gui_tooltip_if_hovered("Domain warp — bends the pattern into flowing shapes.");
+        gui_tooltip_if_hovered("Domain warp - bends the pattern into flowing shapes.");
         gui_input_float("Detail", &s->detail, 0.01f, 0.0f, 1.0f, "%.2f");
         gui_tooltip_if_hovered("Amount of fine ripple noise on top of the swells.");
         gui_input_float("Foam", &s->foam, 0.01f, 0.0f, 1.0f, "%.2f");
@@ -788,6 +788,8 @@ static int gui(filter_t *filter_)
             "Clear the selected layer then paint the water sheet.",
             -1);
         gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
         gui_row_end();
         filter->replace_current_layer = (target_mode == 1);
     }

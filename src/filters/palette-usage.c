@@ -342,9 +342,19 @@ static int gui(filter_t *filter_)
     gui_label_size_pop();
     filter->usage_threshold = ut;
 
-    gui_checkbox("Current layer only", &filter->current_layer_only,
-                 "If checked, only the active layer and its children "
-                 "(recursively) are scanned (plain voxel layers).");
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        if (!has_layer)
+            filter->current_layer_only = false;
+        gui_enabled_begin(has_layer);
+        gui_checkbox("Current layer only", &filter->current_layer_only,
+                     "If checked, only the active layer and its children "
+                     "(recursively) are scanned (plain voxel layers).");
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
+    }
 
     gui_checkbox("Condense similar colours", &filter->condense_similar,
                  "When reporting, merge colours within the degree difference "

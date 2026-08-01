@@ -1,4 +1,4 @@
-/* Clone stamp volume apply — independent of volume_op. */
+/* Clone stamp volume apply - independent of volume_op. */
 
 #ifndef CLONE_STAMP_OP_H
 #define CLONE_STAMP_OP_H
@@ -9,8 +9,8 @@
 /*
  * How to pick a colour in each source column.
  *
- * take_uppermost — absolute outermost solid along the inherit axis
- * (full map extent).  Otherwise — only search
+ * take_uppermost - absolute outermost solid along the inherit axis
+ * (full map extent).  Otherwise - only search
  * [source_depth ± depth] along that axis.
  *
  * When source_face / target_face are in 0..5 (cube faces), inheritance

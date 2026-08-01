@@ -195,13 +195,23 @@ static int gui(filter_t *filter)
     int half_side;
     bool do_half;
 
-    gui_checkbox(
-        "Current layer only",
-        &mirror_props->filter.current_only,
-        "If checked, only the current layer and its children "
-        "(recursively) are mirrored.\n"
-        "If unchecked, voxels on all layers will be mirrored."
-    );
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        if (!has_layer)
+            mirror_props->filter.current_only = false;
+        gui_enabled_begin(has_layer);
+        gui_checkbox(
+            "Current layer only",
+            &mirror_props->filter.current_only,
+            "If checked, only the current layer and its children "
+            "(recursively) are mirrored.\n"
+            "If unchecked, voxels on all layers will be mirrored."
+        );
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
+    }
 
     gui_text("Mirror the entire content in a specific direction");
     gui_group_begin(NULL);

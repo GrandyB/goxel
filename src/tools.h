@@ -110,7 +110,7 @@ void tool_cursor_clear_edit(void);
 /* Drop idle tool_volume preview (brush/shape/etc.). Keep mid-stroke previews. */
 void tool_clear_preview(void);
 
-/* Brush / shape / laser / fill / etc. — show "recent map colors" in snap bar. */
+/* Brush / shape / laser / fill / etc. - show "recent map colors" in snap bar. */
 bool tool_uses_map_recent_colors(const tool_t *tool);
 
 int tool_gui_mask_mode(void);

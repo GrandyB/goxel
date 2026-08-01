@@ -1,4 +1,4 @@
-/* Goxel 3D voxels editor — Clone Stamp tool (Paint.NET-style). */
+/* Goxel 3D voxels editor - Clone Stamp tool (Paint.NET-style). */
 
 #include "goxel.h"
 #include "utils/clone_stamp_op.h"
@@ -38,7 +38,7 @@ typedef struct {
 
     float last_pos[3];
 
-    /* Stroke path (target centres) — rebuilt when antialiasing / partial
+    /* Stroke path (target centres) - rebuilt when antialiasing / partial
      * opacity is on so soft MODE_PAINT does not harden on overlapping stamps. */
     float (*path)[3];
     int path_count;
@@ -87,7 +87,7 @@ static void ensure_sample_defaults(tool_clone_stamp_t *cs)
     cs->sample_inited = true;
 }
 
-/* Soft MODE_PAINT needs a full path rebuild — overlapping stamps harden. */
+/* Soft MODE_PAINT needs a full path rebuild - overlapping stamps harden. */
 static bool needs_stroke_rebuild(const tool_clone_stamp_t *cs)
 {
     return goxel.painter.smoothness > 0.f || cs->opacity < 1.f;
@@ -123,7 +123,7 @@ static clone_stamp_sample_t sample_opts(const tool_clone_stamp_t *cs,
             tgt_face = clone_get_face(cs->stroke_normal);
     }
     return (clone_stamp_sample_t){
-        /* Wall mode: depth only — no infinite inherit along the normal. */
+        /* Wall mode: depth only - no infinite inherit along the normal. */
         .take_uppermost = cs->wall_mode ? false : cs->take_uppermost,
         .surface_mode = cs->surface_mode,
         .depth = cs->depth,
@@ -198,7 +198,7 @@ static bool check_can_skip(tool_clone_stamp_t *cs, const cursor_t *curs)
 /*
  * Brush box at p0.  Wall mode: Diameter Z along face normal; Diameter X/Y
  * use a stable UV frame (V = world-up on vertical walls) so remapping
- * matches left and right faces — raw FACES_MATS swaps U/V on -X.
+ * matches left and right faces - raw FACES_MATS swaps U/V on -X.
  */
 static void get_box3(const float p0[3], const float n[3],
                      float r_x, float r_y, float r_z,
@@ -245,7 +245,7 @@ static const shape_t *clone_shape(void)
 }
 
 /*
- * Paint stamp at target.  `paint_n` — wall-mode paint face (NULL → stroke_normal).
+ * Paint stamp at target.  `paint_n` - wall-mode paint face (NULL → stroke_normal).
  * Brush Diameter Z follows the paint face; inherit/UV source uses source_normal.
  */
 static void apply_at(tool_clone_stamp_t *cs, volume_t *dest,
@@ -360,7 +360,7 @@ static void refresh_tool_preview(tool_clone_stamp_t *cs)
 }
 
 /* Layer view + exact sample blocks at `at` with the given marker colour.
- * `orient_n` — wall-mode face while picking (live cursor). */
+ * `orient_n` - wall-mode face while picking (live cursor). */
 static void show_exact_source_preview(tool_clone_stamp_t *cs,
                                       const float at[3],
                                       const float *orient_n,
@@ -406,7 +406,7 @@ static int on_set_source(gesture3d_t *gest, void *user)
             cs->has_source = true;
             cs->offset_locked = false;
             goxel_set_help_text(
-                "Clone source set — click and drag to paint from this location");
+                "Clone source set - click and drag to paint from this location");
         }
         /* Confirmed source: yellow exact-block highlight. */
         if (cs->has_source)
@@ -540,7 +540,7 @@ static int on_hover(gesture3d_t *gest, void *user)
     volume_t *layer = goxel.image->active_layer->volume;
 
     if (gest->state == GESTURE_END || !curs->snaped) {
-        /* Ctrl-hover owns the preview while Ctrl is held — do not clear it. */
+        /* Ctrl-hover owns the preview while Ctrl is held - do not clear it. */
         if (!(curs->flags & CURSOR_PRESSED) && !(curs->flags & CURSOR_CTRL)) {
             volume_delete(goxel.tool_volume);
             goxel.tool_volume = NULL;
@@ -615,16 +615,16 @@ static int iter(tool_t *tool, const painter_t *painter,
     if (cs->has_source) {
         goxel_set_help_text(
             cs->wall_mode
-                ? "Wall Clone — click and drag to stamp; Ctrl+Click to move "
+                ? "Wall Clone - click and drag to stamp; Ctrl+Click to move "
                   "the source"
-                : "Clone Stamp — click and drag to paint; Ctrl+Click to move "
+                : "Clone Stamp - click and drag to paint; Ctrl+Click to move "
                   "the source");
     } else {
         goxel_set_help_text(
             cs->wall_mode
-                ? "Wall Clone — Ctrl+Click a wall face to set the source, "
+                ? "Wall Clone - Ctrl+Click a wall face to set the source, "
                   "then click and drag to stamp"
-                : "Clone Stamp — Ctrl+Click to set the clone source, then "
+                : "Clone Stamp - Ctrl+Click to set the clone source, then "
                   "click and drag to paint");
     }
 

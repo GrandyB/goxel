@@ -274,7 +274,7 @@ static int gui(filter_t *filter_)
               cells_with_casters, dims[0] * dims[1], max_blocks_above);
         if (cells_with_casters == 0) {
             LOG_W("[shadows-simple] no shadow casters found above active layer "
-                  "surface — check that other visible layers have voxels above");
+                  "surface - check that other visible layers have voxels above");
         }
 
         // Now we pivot from the shadow_map containing the # of blocks found, to the color multiplier
@@ -364,7 +364,7 @@ static int gui(filter_t *filter_)
               "%d with mult < 1, %d columns had no surface voxel",
               layer->name, voxels_touched, voxels_would_darken, columns_no_height);
         if (voxels_would_darken == 0) {
-            LOG_W("[shadows-simple] no voxels received a darkening multiplier — "
+            LOG_W("[shadows-simple] no voxels received a darkening multiplier - "
                   "see shadow map / caster counts above");
         }
         free(shadow_map);
@@ -372,6 +372,8 @@ static int gui(filter_t *filter_)
         }
 apply_end:
         gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
     }
     return 0;
 }

@@ -87,12 +87,22 @@ static int gui(filter_t *filter_)
         gui_text_wrapped(help_text);
     }
 
-    gui_checkbox(
-        "Current layer only",
-        &filter->filter.current_only,
-        "If checked, only the current layer and its children "
-        "(recursively) are squashed.\n"
-        "If unchecked, voxels on all layers will be squashed.");
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        if (!has_layer)
+            filter->filter.current_only = false;
+        gui_enabled_begin(has_layer);
+        gui_checkbox(
+            "Current layer only",
+            &filter->filter.current_only,
+            "If checked, only the current layer and its children "
+            "(recursively) are squashed.\n"
+            "If unchecked, voxels on all layers will be squashed.");
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
+    }
 
     gui_group_begin(NULL);
     gui_input_int("Percentage", &filter->percentage, 0, 100);

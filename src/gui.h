@@ -243,6 +243,10 @@ void gui_combo_end(void);
 
 void gui_enabled_begin(bool enabled);
 void gui_enabled_end(void);
+/* Call immediately after gui_enabled_end() for a single disabled widget.
+ * If enabled is false and the item was left-clicked, shows an alert. */
+bool gui_alert_if_disabled_clicked(bool enabled,
+                                   const char *title, const char *msg);
 void gui_dummy(int w, int h);
 /* Invisible hit target filling remaining content; true on left click. */
 bool gui_remaining_space_clicked(void);

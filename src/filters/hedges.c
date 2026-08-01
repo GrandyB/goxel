@@ -506,8 +506,8 @@ static int gui(filter_t *filter_)
     layer_t *layer = goxel.image->active_layer;
 
     const char *help_text =
-        "Replaces blocks on the active layer with choppy hedgerow foliage. "
-        "Paint a path (or any footprint) of blocks, then Apply — occupied "
+        "Generate choppy hedgerow foliage that follows the shape of the\nblocks on the currently selected layer. "
+        "Brush a path (or any footprint) of blocks, then Apply - occupied "
         "columns become the hedge centreline and expand to a noisy width/height "
         "like field-edge hedges.";
     goxel_set_help_text(help_text);
@@ -546,6 +546,8 @@ static int gui(filter_t *filter_)
             "Clear and write hedges into the selected plan layer.",
             -1);
         gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
         gui_row_end();
         filter->current_layer = (target_mode == 1);
     }
@@ -585,8 +587,16 @@ static int gui(filter_t *filter_)
     if (gui_button("Reset to defaults", -1, 0))
         reset_defaults(filter);
 
-    if (gui_button("Apply", -1, 0))
-        apply_hedges(filter, layer);
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        gui_enabled_begin(has_layer);
+        if (gui_button("Apply", -1, 0))
+            apply_hedges(filter, layer);
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
+    }
 
     gui_label_size_pop();
     return 0;

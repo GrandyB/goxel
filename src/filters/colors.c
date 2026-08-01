@@ -102,10 +102,18 @@ static int gui(filter_t *filter_)
     filter->saturation = saturation;
     filter->contrast = contrast;
 
-    if (gui_button("Apply", -1, 0))
     {
-        image_history_push(goxel.image);
-        goxel_apply_color_filter(apply_values, filter);
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        gui_enabled_begin(has_layer);
+        if (gui_button("Apply", -1, 0))
+        {
+            image_history_push(goxel.image);
+            goxel_apply_color_filter(apply_values, filter);
+        }
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
     }
 
     if (gui_button("Reset sliders", -1, 0))

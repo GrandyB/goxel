@@ -384,12 +384,22 @@ static int gui(filter_t *filter_)
     }
 
     gui_label_size_push(110);
-    gui_checkbox(
-        "Current layer only",
-        &filter->filter.current_only,
-        "If checked, only the current layer and its children "
-        "(recursively) are considered.\n"
-        "If unchecked, all layers are considered.");
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+
+        if (!has_layer)
+            filter->filter.current_only = false;
+        gui_enabled_begin(has_layer);
+        gui_checkbox(
+            "Current layer only",
+            &filter->filter.current_only,
+            "If checked, only the current layer and its children "
+            "(recursively) are considered.\n"
+            "If unchecked, all layers are considered.");
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
+    }
 
     gui_checkbox(
         "Allow diagonals",

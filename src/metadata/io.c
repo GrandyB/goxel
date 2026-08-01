@@ -166,7 +166,7 @@ static bool read_object_base(const uint8_t *data, int len, int *pos,
         obj->type = CUSTOM_OBJ_POINT_3D;
     memcpy(obj->color, data + *pos, 4);
     *pos += 4;
-    (*pos)++; /* visible byte ignored — session-only */
+    (*pos)++; /* visible byte ignored - session-only */
     obj->visible = true;
     memcpy(obj->p0, data + *pos, 12);
     *pos += 12;

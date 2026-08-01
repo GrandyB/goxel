@@ -3,7 +3,7 @@ Goxel (fork)
 
 Original author: Guillaume Chereau <guillaume@noctua-software.com>
 
-This fork is maintained by Mark 'Grandy' Bishop —
+This fork is maintained by Mark 'Grandy' Bishop -
 https://github.com/GrandyB/goxel
 
 Upstream / original project: https://goxel.xyz ·
@@ -16,7 +16,7 @@ About
 You can use goxel to create voxel graphics (3D images formed of cubes).  It
 works on Linux, BSD, Windows and macOS.
 
-**This fork** builds on that foundation for **voxel map making for games** —
+**This fork** builds on that foundation for **voxel map making for games** -
 large layered maps, doodad placement, terrain generation, game-oriented
 cameras, and export paths useful for titles such as Ace of Spades and similar
 voxel engines. Upstream Goxel remains a general-purpose voxel editor; the
@@ -68,17 +68,17 @@ Designed for **voxel map making for games**. Highlights relative to upstream:
 
 ### Tools
 
-- **Doodad / placer tool** — select a file (or multi-file import) and place it at will
+- **Doodad / placer tool** - select a file (or multi-file import) and place it at will
     - Non-destructive rotate; offset from an origin; scaling before place
     - Flip options; randomised flip/rotate per placement
     - Colour replacement (fixed or random) for variation on repeated objects
     - Optional place into a child layer per placement (default on)
     - Copy / cut / acquire selection into the placer; export placer content to a file
     - History pane with model previews (persisted in the `.gox` file)
-- **Fill tool** — flood-fill with current colour settings (works well with plane snap)
-- **Box select** — after drawing a box, hold **Alt** and drag a face to move the box contents
+- **Fill tool** - flood-fill with current colour settings (works well with plane snap)
+- **Box select** - after drawing a box, hold **Alt** and drag a face to move the box contents
 - Palettes can be added / removed / edited (globally saved); filter to pull colours from layers
-- Colour history bar — 20 recent colours (and noise settings), stored in the `.gox` file
+- Colour history bar - 20 recent colours (and noise settings), stored in the `.gox` file
 - Selection tool
     - Holding **Shift** temporarily switches to move rather than resize
     - Select entire layer; copy / cut selection into the placer
@@ -100,14 +100,14 @@ Designed for **voxel map making for games**. Highlights relative to upstream:
 ### Colours
 
 - Colour picker integrated into the tools panel
-- **Inherit from block(s) beneath** — optional; otherwise uses the chosen colour
-- Noise panel — random noise to texture brush / paint / place / extrude
-- Opacity as 0–100% integers; Ctrl+Shift colour-pick retains previous alpha
+- **Inherit from block(s) beneath** - optional; otherwise uses the chosen colour
+- Noise panel - random noise to texture brush / paint / place / extrude
+- Opacity as 0-100% integers; Ctrl+Shift colour-pick retains previous alpha
 
 ### Cameras
 
-- First-person camera (`#`) — arrows / Page Up-Down, RMB or MMB look, speed / FOV / XYZ
-- **Player camera** — gravity and collisions; WASD, Space jump, Ctrl crouch, Alt noclip
+- First-person camera (`#`) - arrows / Page Up-Down, RMB or MMB look, speed / FOV / XYZ
+- **Player camera** - gravity and collisions; WASD, Space jump, Ctrl crouch, Alt noclip
 - Orbit camera pivots around the block under the cursor; adjustable FOV
 
 ### Filters & generation
@@ -116,7 +116,7 @@ Designed for **voxel map making for games**. Highlights relative to upstream:
 - Bulk: fill upwards by colour, remove by colour
 - Transform: squash, rotate 90°, wrap / mirror (plus View > Wrap edge preview)
     - Mirror includes **half-mirror** (copy one half onto the other) per axis
-- **`.vxl` color permeation** — push exposed surface colours inward through solid voxels (depth / blur)
+- **`.vxl` color permeation** - push exposed surface colours inward through solid voxels (depth / blur)
 - Simple shadows from other visible layers
 - Colour H/S/L/C for layer (from upstream filter system)
 
