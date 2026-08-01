@@ -2447,19 +2447,22 @@ ACTION_REGISTER(ACTION_view_front,
     .default_shortcut = "1",
 )
 
-/* Same as focus-button click on the active layer. */
+/* Tab: clear whatever is solo-focused; if nothing is focused, toggle focus
+ * on the selected layer (same as focus-button click). */
 static void a_view_frame_layer(void)
 {
     layer_t *layer;
 
     if (!goxel.image) return;
-    layer = goxel.image->active_layer;
+    layer = image_get_focused_layer(goxel.image);
+    if (!layer)
+        layer = goxel.image->active_layer;
     if (layer)
         goxel_toggle_focus_layer(layer);
 }
 
 ACTION_REGISTER(ACTION_view_frame_layer,
-    .help = "Toggle solo-focus on selected layer",
+    .help = "Toggle solo-focus (clears any focus; else focuses selected)",
     .flags = ACTION_CAN_EDIT_SHORTCUT,
     .cfunc = a_view_frame_layer,
     .default_shortcut = "Tab",
