@@ -85,6 +85,8 @@ float gui_get_cursor_pos_y(void);
 float gui_get_item_rect_size_y(void);
 float gui_style_item_spacing_x(void);
 float gui_style_item_spacing_y(void);
+void gui_push_item_spacing(float x, float y);
+void gui_pop_style_var(int count);
 void gui_same_line_spaced(float spacing);
 /* Compact button for segmented toolbars; selected uses header-like colors. */
 bool gui_toolbar_segment(const char *label, bool selected);
@@ -297,9 +299,12 @@ bool gui_layer_item(int idx, int icons_count, const int *icons,
     bool *visible, bool *selected, char *name, int len);
 
 bool gui_is_key_down(int key);
-/* Lightweight ImGui group for hover hit-testing a row of widgets. */
-void gui_item_group_begin(void);
-void gui_item_group_end(void);
+/* Lightweight ImGui group for hover hit-testing a row of widgets.
+ * pad_top / pad_bottom add invisible height inside the group so visual
+ * gaps can live in the hitbox (pair with ItemSpacing.y = 0 between rows). */
+void gui_item_group_begin(float pad_top);
+void gui_item_group_end(float pad_bottom);
+/* True if the mouse is in the last item's rect (ignores overlapping items). */
 bool gui_is_item_hovered(void);
 
 void gui_query_quit(void);
@@ -353,9 +358,9 @@ bool gui_dnd_source(const char *type, const void *payload, int size,
                     const char *preview);
 /* Returns 0 none, 1 onto, 2 insert above (UI), 3 insert below (UI). */
 int gui_dnd_target(const char *type, void *payload_out, int size);
-/* Gap hitbox overlay (no layout growth). indent_x shifts the line start;
- * slot_index/slot_count stack multiple gaps in the same spacing band.
- * On drop returns drop_kind (typically 2 or 3). */
+/* Gap hitbox overlay (no layout growth). Centers in ItemSpacing.y, or on the
+ * seam when spacing is 0. indent_x shifts the line start; slot_index/slot_count
+ * stack multiple gaps in the same band. On drop returns drop_kind. */
 int gui_dnd_gap_target(const char *type, void *payload_out, int size,
                        float height, float indent_x, int drop_kind,
                        int slot_index, int slot_count);

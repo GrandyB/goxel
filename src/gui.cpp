@@ -1370,6 +1370,16 @@ float gui_style_item_spacing_y(void)
     return ImGui::GetStyle().ItemSpacing.y;
 }
 
+void gui_push_item_spacing(float x, float y)
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(x, y));
+}
+
+void gui_pop_style_var(int count)
+{
+    ImGui::PopStyleVar(count);
+}
+
 void gui_same_line_spaced(float spacing)
 {
     ImGui::SameLine(0, spacing);
@@ -3046,19 +3056,25 @@ bool gui_is_key_down(int key)
     return ImGui::IsKeyDown((ImGuiKey)key);
 }
 
-void gui_item_group_begin(void)
+void gui_item_group_begin(float pad_top)
 {
     ImGui::BeginGroup();
+    if (pad_top > 0.f)
+        ImGui::Dummy(ImVec2(0.f, pad_top));
 }
 
-void gui_item_group_end(void)
+void gui_item_group_end(float pad_bottom)
 {
+    if (pad_bottom > 0.f)
+        ImGui::Dummy(ImVec2(0.f, pad_bottom));
     ImGui::EndGroup();
 }
 
 bool gui_is_item_hovered(void)
 {
-    return ImGui::IsItemHovered();
+    /* RectOnly: row pads stay hovered even when a DnD gap InvisibleButton
+     * overlaps the seam between abutting groups. */
+    return ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly);
 }
 
 bool gui_menu_bar_begin(void)
@@ -3564,9 +3580,10 @@ int gui_dnd_target(const char *type, void *payload_out, int size)
     return kind;
 }
 
-/* Drop hitbox in the spacing above the next row. Does not add layout height.
- * indent_x: line starts this many px from the content left (child-level hint).
- * slot_index / slot_count: stack several gaps in one spacing band (0 = top).
+/* Drop hitbox at the seam above the next row. Does not add layout height.
+ * With ItemSpacing.y > 0, centers in that band; with 0 (abutting padded
+ * rows), centers on the shared edge. indent_x shifts the line start;
+ * slot_index / slot_count stack several gaps in one band (0 = top).
  * On delivery returns drop_kind; otherwise 0. */
 int gui_dnd_gap_target(const char *type, void *payload_out, int size,
                        float height, float indent_x, int drop_kind,

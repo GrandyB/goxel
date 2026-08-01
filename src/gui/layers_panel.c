@@ -22,6 +22,9 @@
  * marker/opacity/snap, shape tools, material). Keep in sync when adding widgets. */
 #define LAYERS_PANEL_BOTTOM_RESERVE_PX 290
 #define LAYER_DND_TYPE "GOXEL_LAYER_PTR"
+/* Half of the former inter-row ItemSpacing.y; top+bottom pads restore the
+ * visual gap while keeping hover inside the row group. */
+#define LAYER_ROW_VPAD 1.f
 
 /* Set by gui_layers_request_scroll_to_active(); consumed while drawing. */
 static bool g_scroll_to_active = false;
@@ -142,11 +145,8 @@ static void render_layer_dnd_gaps(image_t *img, layer_t *prev, int prev_depth,
     n_slots = n_exit + (layer ? 1 : 0);
     if (n_slots <= 0) return;
 
-    /* Extra space under a child group so the sibling/beneath-parent line is
-     * not covered by the next row. */
-    if (n_exit > 0)
-        gui_dummy(1, 1);
-
+    /* Nest-exit clearance lives in the next row's top pad (see
+     * LAYER_ROW_VPAD), so hover stays continuous across the seam. */
     slot = 0;
     for (d = prev_depth; d > depth; d--) {
         /* Parent that owns the child list at depth d. */
@@ -223,12 +223,17 @@ static void render_layers_list(void)
     int pending_kind = 0;
     bool found_scroll_target = false;
 
-    gui_group_begin(NULL);
+        gui_group_begin(NULL);
+    /* Zero vertical spacing between rows; visual gap is LAYER_ROW_VPAD inside
+     * each item group so panel hover does not flicker in the seam. */
+    gui_push_item_spacing(gui_style_item_spacing_x(), 0.f);
     DL_FOREACH_REVERSE(img->layers, layer) {
         int icons_count, icons[8];
         bool visible, current, has_kids;
         int depth;
         char id[32];
+        float pad_top = LAYER_ROW_VPAD;
+        float pad_bot = LAYER_ROW_VPAD;
 
         if (!layer_panel_row_visible(img, layer)) continue;
 
@@ -246,7 +251,12 @@ static void render_layers_list(void)
         render_layer_dnd_gaps(img, prev, prev_depth, layer, depth,
                               &pending_drag, &pending_target, &pending_kind);
 
-        gui_item_group_begin();
+        /* Extra top pad when leaving a deeper nest (was gui_dummy between
+         * rows) so last-child drop lines are not covered by the next row. */
+        if (prev && prev_depth > depth)
+            pad_top += 1.f;
+
+        gui_item_group_begin(pad_top);
         if (depth > 0) {
             gui_spacing_f((float)depth * 12.f);
             gui_same_line();
@@ -330,7 +340,7 @@ static void render_layers_list(void)
                 layer->collapsed = false;
             }
         }
-        gui_item_group_end();
+        gui_item_group_end(pad_bot);
         if (g_scroll_to_active && current) {
             found_scroll_target = true;
             /* Keep requesting across frames: ImGui applies ScrollTarget on
@@ -385,6 +395,7 @@ static void render_layers_list(void)
         clear_layer_selection(img);
     }
 
+    gui_pop_style_var(1);
     gui_group_end();
 
     if (pending_kind && pending_drag)
