@@ -63,6 +63,19 @@ static void apply_lock_to_descendants(image_t *img, layer_t *root, bool locked)
     }
 }
 
+/* True if every descendant already matches root's lock state. */
+static bool descendants_all_match_lock(image_t *img, layer_t *root)
+{
+    layer_t *other;
+    DL_FOREACH(img->layers, other) {
+        if (other == root) continue;
+        if (layer_is_ancestor(img, root, other) &&
+            other->locked != root->locked)
+            return false;
+    }
+    return true;
+}
+
 /* Select a layer; clear brush/shape previews that still belong to the old
  * active layer (hover END is skipped while the mouse is over this panel). */
 static void select_layer(image_t *img, layer_t *layer)
@@ -326,12 +339,20 @@ static void render_layers_list(void)
             if (gui_condensed_selectable_icon(
                         layer->locked ? "Unlock layer" : "Lock layer",
                         &lock_press, lock_icon)) {
-                bool locked = !layer->locked;
                 bool shift = gui_is_key_down(KEY_LEFT_SHIFT) ||
                              gui_is_key_down(KEY_RIGHT_SHIFT);
-                layer->locked = locked;
-                if (shift && layer_has_children(img, layer))
-                    apply_lock_to_descendants(img, layer, locked);
+                if (shift && layer_has_children(img, layer)) {
+                    /* First pass: push parent's lock onto children.
+                     * Second pass (all already match): flip the whole tree. */
+                    if (!descendants_all_match_lock(img, layer)) {
+                        apply_lock_to_descendants(img, layer, layer->locked);
+                    } else {
+                        layer->locked = !layer->locked;
+                        apply_lock_to_descendants(img, layer, layer->locked);
+                    }
+                } else {
+                    layer->locked = !layer->locked;
+                }
             }
             gui_same_line();
             if (gui_condensed_selectable_icon("Add child", &add_press, ICON_ADD)) {
