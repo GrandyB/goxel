@@ -188,6 +188,13 @@ static void apply_move(layer_t *layer, const float transf[4][4])
         do_move_layer(layer, transf, NULL, false);
 }
 
+/* True while draw_gizmo_boxes solos one wireframe (apostrophe pick, panel
+ * hover, or arrow-key flash) and hides the normal selection/hover boxes. */
+static bool solo_box_preview_active(void)
+{
+    return g_pick_preview || g_panel_hover || flash_preview_active();
+}
+
 static void render_face_gizmo(const float box[4][4], int face)
 {
     uint8_t color[4] = {255, 0, 0, 16};
@@ -294,7 +301,6 @@ static void apply_drag(cursor_edit_t *edit, cursor_t *curs,
     float opos[3], onorm[3], wpos[3], pos[3], local[3];
     float face_plane[4][4], nrm[3], d[3], ofs[3], delta[3];
     float transf[4][4] = MAT4_IDENTITY;
-    float box[4][4];
 
     cam = goxel.image->active_camera;
     if (!cam || !edit->layer) return;
@@ -326,11 +332,8 @@ static void apply_drag(cursor_edit_t *edit, cursor_t *curs,
     ofs[1] = roundf(ofs[1]);
     ofs[2] = roundf(ofs[2]);
     vec3_sub(ofs, edit->applied_ofs, delta);
-    if (delta[0] == 0 && delta[1] == 0 && delta[2] == 0) {
-        if (layer_gizmo_box(edit->layer, box))
-            render_face_gizmo(box, edit->face);
+    if (delta[0] == 0 && delta[1] == 0 && delta[2] == 0)
         return;
-    }
 
     if (!edit->history_pushed) {
         image_history_push(goxel.image);
@@ -339,8 +342,6 @@ static void apply_drag(cursor_edit_t *edit, cursor_t *curs,
     mat4_itranslate(transf, delta[0], delta[1], delta[2]);
     apply_move(edit->layer, transf);
     vec3_copy(ofs, edit->applied_ofs);
-    if (layer_gizmo_box(edit->layer, box))
-        render_face_gizmo(box, edit->face);
 }
 
 static int iter(tool_t *tool, const painter_t *painter,
@@ -413,6 +414,10 @@ static int iter(tool_t *tool, const painter_t *painter,
             g_edit.state = 0;
             g_edit.layer = NULL;
             g_edit.history_pushed = false;
+        } else if (g_edit.state == 1) {
+            /* Leave the box: drop hover so face arrows are not sticky. */
+            g_edit.state = 0;
+            g_edit.layer = NULL;
         }
         return 0;
     }
@@ -430,11 +435,11 @@ static int iter(tool_t *tool, const painter_t *painter,
         return 0;
     }
 
-    /* Selection active: face arrows + drag to move. */
+    /* Selection active: face hover + drag to move. Arrows are drawn from
+     * tool_cursor_render (after pick preview is current for this frame). */
     g_edit.layer = best;
     g_edit.face = best_face;
     g_edit.state = 1;
-    render_face_gizmo(g_edit.box, best_face);
     goxel_set_help_text("Drag to move layer");
 
     if (just_pressed) {
@@ -536,6 +541,7 @@ void tool_cursor_flash_layer_bbox(layer_t *layer, double duration_sec)
 void tool_cursor_render(void)
 {
     image_t *img = goxel.image;
+    float box[4][4];
 
     if (!img) return;
 
@@ -554,6 +560,13 @@ void tool_cursor_render(void)
         return;
     }
     draw_gizmo_boxes(img);
+    /* Face arrows with the boxes (not tool_iter): pick preview is set after
+     * tool_iter each frame, so drawing here keeps arrows hidden with the
+     * solo bbox. */
+    if (!solo_box_preview_active() &&
+        (g_edit.state == 1 || g_edit.state == 2) && g_edit.layer &&
+        layer_gizmo_box(g_edit.layer, box))
+        render_face_gizmo(box, g_edit.face);
 }
 
 void tool_cursor_render_labels(void)
