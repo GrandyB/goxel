@@ -1364,6 +1364,62 @@ void image_merge_layer_down(image_t *img) {
    img->active_layer = active_layer;
 }
 
+void image_merge_layer_children(image_t *img, layer_t *parent)
+{
+    layer_t *nodes[LAYER_SUBTREE_MAX];
+    layer_t *other;
+    volume_t *merged;
+    int n, i;
+
+    assert(img);
+    if (!parent || !layer_has_children(img, parent)) return;
+
+    /* Bake shape/clone volumes before we flatten. */
+    image_update(img);
+
+    n = collect_layer_subtree_checked(img, parent, nodes);
+    if (n <= 1) return;
+
+    for (i = 0; i < n; i++) {
+        if (nodes[i]->image)
+            image_image_layer_to_volume(img, nodes[i]);
+        image_unclone_layer(img, nodes[i]);
+    }
+
+    /* Forward order: children first, parent last (same as move-gizmo merge). */
+    merged = volume_new();
+    for (i = 0; i < n; i++) {
+        if (nodes[i]->volume)
+            volume_merge(merged, nodes[i]->volume, MODE_OVER, NULL);
+    }
+    volume_delete(parent->volume);
+    parent->volume = merged;
+    parent->collapsed = false;
+
+    /* Delete every descendant; parent is nodes[n - 1]. */
+    for (i = 0; i < n - 1; i++) {
+        if (g_focused_layer_id == nodes[i]->id) {
+            g_focused_layer_id = 0;
+            g_focused_via_shift = false;
+        }
+        DL_DELETE(img->layers, nodes[i]);
+    }
+
+    DL_FOREACH(img->layers, other) {
+        for (i = 0; i < n - 1; i++) {
+            if (other->base_id == nodes[i]->id) {
+                other->base_id = 0;
+                break;
+            }
+        }
+    }
+
+    for (i = 0; i < n - 1; i++)
+        layer_delete(nodes[i]);
+
+    img->active_layer = parent;
+}
+
 camera_t *image_add_camera(image_t *img, camera_t *cam)
 {
     assert(img);
@@ -2011,6 +2067,20 @@ ACTION_REGISTER(ACTION_img_merge_visible_layers,
     .help = "Merge all the visible layers",
     .cfunc = a_img_merge_visible_layers,
     .flags = ACTION_TOUCH_IMAGE,
+)
+
+static void a_img_merge_layer_children(void)
+{
+    layer_t *layer = goxel.image->active_layer;
+    if (!layer || !layer_has_children(goxel.image, layer)) return;
+    /* Snapshot before delete; same pattern as ACTION_img_del_layer. */
+    image_history_push(goxel.image);
+    image_merge_layer_children(goxel.image, layer);
+}
+
+ACTION_REGISTER(ACTION_img_merge_layer_children,
+    .help = "Merge all children into the active layer",
+    .cfunc = a_img_merge_layer_children,
 )
 
 static void a_img_new_camera(void)

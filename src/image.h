@@ -98,6 +98,9 @@ layer_t *image_add_shape_layer_below_active(image_t *img);
 void image_delete_layer(image_t *img, layer_t *layer);
 layer_t *image_duplicate_layer(image_t *img, layer_t *layer);
 void image_merge_visible_layers(image_t *img);
+/* Merge all descendants into parent volume and delete them. No-op if parent
+ * has no children. Does not push history. */
+void image_merge_layer_children(image_t *img, layer_t *parent);
 layer_t *img_get_layer(const image_t *img, int id);
 layer_t *layer_find(const image_t *img, int id);
 int layer_depth(const image_t *img, const layer_t *layer);

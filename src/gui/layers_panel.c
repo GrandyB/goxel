@@ -20,7 +20,7 @@
 
 /* Height reserved under the scrollable layer list (toolbar, crop, bbox,
  * marker/opacity/snap, shape tools, material). Keep in sync when adding widgets. */
-#define LAYERS_PANEL_BOTTOM_RESERVE_PX 290
+#define LAYERS_PANEL_BOTTOM_RESERVE_PX 318
 #define LAYER_DND_TYPE "GOXEL_LAYER_PTR"
 /* Half of the former inter-row ItemSpacing.y; top+bottom pads restore the
  * visual gap while keeping hover inside the row group. */
@@ -453,6 +453,12 @@ void gui_layers_panel_impl(bool inner_scroll)
     gui_action_button(ACTION_img_merge_visible_layers, "Merge visible", 1);
 
     layer = goxel.image->active_layer;
+    if (layer && layer_has_children(goxel.image, layer)) {
+        gui_action_button(ACTION_img_merge_layer_children, "Merge all children", 1);
+        gui_tooltip_if_hovered(
+                "Merge every child into this layer's volume and remove the "
+                "children.");
+    }
     if (!layer) {
         if (gui_action_button(ACTION_img_new_shape_layer, "New Shape Layer", 1)) {
             action_exec2(ACTION_tool_set_move);

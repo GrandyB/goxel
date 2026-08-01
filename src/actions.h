@@ -41,6 +41,7 @@ enum
     ACTION_img_select_parent_layer,
     ACTION_img_merge_visible_layers,
     ACTION_img_merge_layer_down,
+    ACTION_img_merge_layer_children,
     ACTION_img_new_camera,
     ACTION_img_del_camera,
     ACTION_img_move_camera_up,
