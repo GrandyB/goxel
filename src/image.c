@@ -872,7 +872,11 @@ void image_delete(image_t *img)
     if (!img) return;
     if (--img->ref > 0) return;
 
-    image_clear_layer_focus();
+    /* Session focus is global; only clear when destroying the live document.
+     * History snaps also go through here (redo discard on push) and must not
+     * wipe focus. */
+    if (img == goxel.image)
+        image_clear_layer_focus();
 
     while ((layer = img->layers)) {
         DL_DELETE(img->layers, layer);
