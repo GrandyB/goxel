@@ -32,6 +32,44 @@ typedef struct {
 /* Layer name labels. Holding Alt always shows all names as an override. */
 static int g_names_mode = CURSOR_NAMES_ON_HOVER;
 
+/* Centers captured while drawing gizmos this frame — avoids re-running
+ * goxel_get_layer_move_volume / exact bbox just to place labels. */
+typedef struct {
+    const layer_t *layer;
+    float pos[3];
+} cursor_label_center_t;
+static cursor_label_center_t g_label_centers[LAYER_SUBTREE_MAX];
+static int g_label_center_n = 0;
+static int g_label_center_frame = -1;
+
+static void label_centers_begin(void)
+{
+    g_label_center_n = 0;
+    g_label_center_frame = goxel.frame_count;
+}
+
+static void label_center_add(const layer_t *layer, const float box[4][4])
+{
+    cursor_label_center_t *slot;
+    if (!layer || g_label_center_n >= LAYER_SUBTREE_MAX) return;
+    slot = &g_label_centers[g_label_center_n++];
+    slot->layer = layer;
+    vec3_copy(box[3], slot->pos);
+}
+
+static bool label_center_get(const layer_t *layer, float pos[3])
+{
+    int i;
+    if (!layer || g_label_center_frame != goxel.frame_count) return false;
+    for (i = 0; i < g_label_center_n; i++) {
+        if (g_label_centers[i].layer == layer) {
+            vec3_copy(g_label_centers[i].pos, pos);
+            return true;
+        }
+    }
+    return false;
+}
+
 typedef struct {
     int state; /* 0 idle, 1 hover, 2 drag */
     layer_t *layer;
@@ -92,6 +130,67 @@ static void normalize_box(const float box[4][4], float out[4][4])
     mat4_copy(box, out);
     box_get_vertices(box, vertices);
     bbox_from_npoints(out, 8, vertices);
+}
+
+/*
+ * Label anchor without goxel_get_layer_move_volume (which merges group
+ * subtrees into a scratch volume and is far too costly for overlay text).
+ */
+static bool layer_label_center(const image_t *img, const layer_t *layer,
+                               float pos[3])
+{
+    float box[4][4];
+
+    if (!layer) return false;
+    if (label_center_get(layer, pos)) return true;
+
+    if (layer->shape) {
+        normalize_box(layer->mat, box);
+        vec3_copy(box[3], pos);
+        return true;
+    }
+
+    if (!layer_has_children(img, layer)) {
+        if (!layer->volume) return false;
+        volume_get_box(layer->volume, false, box);
+        if (box_is_null(box)) return false;
+        vec3_copy(box[3], pos);
+        return true;
+    }
+
+    /* Group: union child approx boxes — no voxel merge. */
+    {
+        layer_t *cur, *first = first_in_layer_subtree(img->layers, layer);
+        float u[4][4] = {};
+        bool any = false;
+
+        for (cur = first; cur; cur = cur->next) {
+            float cbox[4][4];
+            if (cur != layer && cur->volume && !cur->shape) {
+                volume_get_box(cur->volume, false, cbox);
+                if (!box_is_null(cbox)) {
+                    if (!any) {
+                        mat4_copy(cbox, u);
+                        any = true;
+                    } else {
+                        box_union(u, cbox, u);
+                    }
+                }
+            } else if (cur != layer && cur->shape) {
+                normalize_box(cur->mat, cbox);
+                if (!any) {
+                    mat4_copy(cbox, u);
+                    any = true;
+                } else {
+                    box_union(u, cbox, u);
+                }
+            }
+            if (cur == layer) break;
+        }
+        if (!any) return false;
+        vec3_copy(u[3], pos);
+        return true;
+    }
 }
 
 /* Exact move AABB (no group padding). Used for drag math so translations
@@ -211,11 +310,6 @@ static void render_face_gizmo(const float box[4][4], int face)
     render_line(&goxel.rend, a, b, color, EFFECT_ARROW);
 }
 
-static void box_center(const float box[4][4], float out[3])
-{
-    vec3_copy(box[3], out);
-}
-
 /* Parent/group wireframes: muted gray, longer strip dashes. Leaf gizmos
  * stay default white with the normal strip period. */
 static void render_gizmo_box(const layer_t *layer, const float box[4][4])
@@ -238,6 +332,7 @@ static void render_solo_preview_box(const image_t *img, layer_t *layer)
 
     if (!layer || !layer_effectively_visible(img, layer)) return;
     if (!layer_gizmo_box(layer, box)) return;
+    label_center_add(layer, box);
     render_box(&goxel.rend, box, white,
                EFFECT_WIREFRAME | EFFECT_NO_DEPTH_TEST);
 }
@@ -251,6 +346,8 @@ static void draw_gizmo_boxes(const image_t *img)
     const uint8_t yellow[4] = {255, 255, 0, 255};
     const uint8_t white[4] = {255, 255, 255, 255};
     const uint8_t *accent_color = white;
+
+    label_centers_begin();
 
     /* Apostrophe pick preview and panel hover solo a single box. */
     if (g_pick_preview) {
@@ -275,6 +372,7 @@ static void draw_gizmo_boxes(const image_t *img)
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;
         if (!layer_gizmo_box(layer, box)) continue;
+        label_center_add(layer, box);
         if (!img->active_layer && layer == g_viewport_hover) {
             mat4_copy(box, accent_box);
             have_accent = true;
@@ -551,6 +649,7 @@ void tool_cursor_render(void)
     /* Pick-preview / layers-panel hover bbox for every tool. Full cursor
      * gizmos only run while the Cursor tool is active. */
     if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) {
+        label_centers_begin();
         if (g_pick_preview)
             render_solo_preview_box(img, g_pick_preview);
         else {
@@ -576,7 +675,7 @@ void tool_cursor_render_labels(void)
 {
     image_t *img = goxel.image;
     layer_t *layer;
-    float box[4][4], pos[3];
+    float pos[3];
     uint8_t color[4] = {200, 200, 200, 255};
 
     if (!img) return;
@@ -586,18 +685,16 @@ void tool_cursor_render_labels(void)
         if (g_pick_preview_has_label)
             gui_world_label(g_pick_preview_label_pos, g_pick_preview->name,
                             color);
-        else if (layer_gizmo_box(g_pick_preview, box)) {
-            box_center(box, pos);
+        else if (layer_label_center(img, g_pick_preview, pos))
             gui_world_label(pos, g_pick_preview->name, color);
-        }
         return;
     }
 
     /* Arrow-key layer switch: name at bbox centre while flash is active. */
     {
         layer_t *flash = flash_preview_active();
-        if (flash && flash->name[0] && layer_gizmo_box(flash, box)) {
-            box_center(box, pos);
+        if (flash && flash->name[0] &&
+            layer_label_center(img, flash, pos)) {
             gui_world_label(pos, flash->name, color);
             return;
         }
@@ -606,8 +703,7 @@ void tool_cursor_render_labels(void)
     /* Layers-panel hover: name at bbox centre (any tool; bbox already drawn). */
     if (g_panel_hover && g_panel_hover->name[0] &&
         layer_effectively_visible(img, g_panel_hover) &&
-        layer_gizmo_box(g_panel_hover, box)) {
-        box_center(box, pos);
+        layer_label_center(img, g_panel_hover, pos)) {
         gui_world_label(pos, g_panel_hover->name, color);
         return;
     }
@@ -620,18 +716,15 @@ void tool_cursor_render_labels(void)
         layer = g_viewport_hover;
         if (!layer && (g_edit.state == 1 || g_edit.state == 2))
             layer = g_edit.layer;
-        if (layer && layer->name[0] && layer_gizmo_box(layer, box)) {
-            box_center(box, pos);
+        if (layer && layer->name[0] && layer_label_center(img, layer, pos))
             gui_world_label(pos, layer->name, color);
-        }
         return;
     }
 
     DL_FOREACH(img->layers, layer) {
         if (!layer_gets_gizmo(img, layer)) continue;
         if (!layer->name[0]) continue;
-        if (!layer_gizmo_box(layer, box)) continue;
-        box_center(box, pos);
+        if (!layer_label_center(img, layer, pos)) continue;
         gui_world_label(pos, layer->name, color);
     }
 }

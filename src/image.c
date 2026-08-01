@@ -20,10 +20,6 @@
 #include "metadata.h"
 #include "xxhash.h"
 
-/* Max layers in one nested subtree (root + descendants). Used for stack
- * buffers in reparent / move / duplicate. Change this one value to retune. */
-#define LAYER_SUBTREE_MAX 2048
-
 /* UI session: id of layer solo-focused in the layers panel (0 = none).
  * g_focused_via_shift: true if that focus was applied with Shift (framed). */
 static int g_focused_layer_id = 0;

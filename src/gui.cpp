@@ -818,6 +818,8 @@ static void render_view_cube(void)
     gizmo_window_send_to_back("Gizmo");
 }
 
+static void gui_world_labels_flush(void);
+
 static void gui_iter(const inputs_t *inputs)
 {
     gui_init();
@@ -884,6 +886,7 @@ static void gui_iter(const inputs_t *inputs)
     gui_app();
     custom_objects_render_labels(goxel.image);
     tool_cursor_render_labels();
+    gui_world_labels_flush();
     if (goxel.gui.ui_visible &&
         (goxel.gui.view_cube_open || goxel.gui.camera_presets_open))
         render_view_cube();
@@ -909,19 +912,48 @@ void gui_render(const inputs_t *inputs)
     ImImpl_RenderDrawLists(ImGui::GetDrawData());
 }
 
+/* Queued world labels: flushed once so all fills then all text share draw
+ * cmds (Fill/Text alternation per label was splitting the draw list). */
+typedef struct {
+    ImVec2 a, b, text_pos;
+    const char *text;
+    ImU32 border;
+} world_label_t;
+static world_label_t g_world_labels[LAYER_SUBTREE_MAX];
+static int g_world_label_n = 0;
+
+static void gui_world_labels_flush(void)
+{
+    ImDrawList *dl;
+    int i;
+
+    if (g_world_label_n <= 0) return;
+    dl = ImGui::GetBackgroundDrawList();
+    for (i = 0; i < g_world_label_n; i++)
+        dl->AddRectFilled(g_world_labels[i].a, g_world_labels[i].b,
+                          IM_COL32(0, 0, 0, 140));
+    for (i = 0; i < g_world_label_n; i++)
+        dl->AddRect(g_world_labels[i].a, g_world_labels[i].b,
+                    g_world_labels[i].border);
+    for (i = 0; i < g_world_label_n; i++)
+        dl->AddText(g_world_labels[i].text_pos, IM_COL32(255, 255, 255, 255),
+                    g_world_labels[i].text);
+    g_world_label_n = 0;
+}
+
 void gui_world_label(const float pos[3], const char *text,
                      const uint8_t color[4])
 {
     const float *viewport = goxel.gui.viewport;
     const camera_t *camera = goxel.image ? goxel.image->active_camera : NULL;
-    const float pad_x = 6, pad_y = 3, gap = 10, rounding = 4;
+    const float pad_x = 6, pad_y = 3, gap = 10;
     float p[4] = {pos[0], pos[1], pos[2], 1};
     float x, y;
-    ImDrawList *dl;
     ImVec2 size, a, b;
-    ImU32 border;
+    world_label_t *slot;
 
     if (!camera || !text || !text[0]) return;
+    if (g_world_label_n >= LAYER_SUBTREE_MAX) return;
 
     mat4_mul_vec4(camera->view_mat, p, p);
     mat4_mul_vec4(camera->proj_mat, p, p);
@@ -938,17 +970,17 @@ void gui_world_label(const float pos[3], const char *text,
     y = ImGui::GetIO().DisplaySize.y -
         (viewport[1] + (p[1] * 0.5f + 0.5f) * viewport[3]);
 
-    /* Background draw list: over the 3d view, under the panels. */
-    dl = ImGui::GetBackgroundDrawList();
     size = ImGui::CalcTextSize(text);
     b = ImVec2(roundf(x + size.x / 2 + pad_x), roundf(y - gap));
     a = ImVec2(roundf(x - size.x / 2 - pad_x), roundf(b.y - size.y - pad_y * 2));
-    border = color ? IM_COL32(color[0], color[1], color[2], 200)
-                   : IM_COL32(255, 255, 255, 90);
-    dl->AddRectFilled(a, b, IM_COL32(0, 0, 0, 140), rounding);
-    dl->AddRect(a, b, border, rounding);
-    dl->AddText(ImVec2(a.x + pad_x, a.y + pad_y),
-                IM_COL32(255, 255, 255, 255), text);
+
+    slot = &g_world_labels[g_world_label_n++];
+    slot->a = a;
+    slot->b = b;
+    slot->text_pos = ImVec2(a.x + pad_x, a.y + pad_y);
+    slot->text = text;
+    slot->border = color ? IM_COL32(color[0], color[1], color[2], 200)
+                         : IM_COL32(255, 255, 255, 90);
 }
 
 void gui_group_begin(const char *label)

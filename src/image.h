@@ -48,6 +48,13 @@ struct painter; /* see volume_utils.h (painter_t) */
 typedef struct image image_t;
 #   define IMAGE_T_DEFINED
 #endif
+
+/* Max layers in one nested subtree (root + descendants). Stack buffers for
+ * reparent / move / duplicate / delete, and overlay label queues. */
+#ifndef LAYER_SUBTREE_MAX
+#   define LAYER_SUBTREE_MAX 2048
+#endif
+
 struct image {
     int     ref;
     layer_t *layers;
