@@ -157,7 +157,6 @@ static int gui(filter_t *filter_)
             LOG_E("[shadows-simple] abort: no image");
             return 0;
         }
-        image_history_push(goxel.image);
         layer_t *layer = goxel.image->active_layer;
         if (!layer) {
             LOG_E("[shadows-simple] abort: no active layer");
@@ -168,6 +167,7 @@ static int gui(filter_t *filter_)
                   layer->name);
             return 0;
         }
+        image_history_push(goxel.image);
         if (box_is_null(goxel.image->box)) {
             LOG_W("[shadows-simple] image box is null; dims may be wrong");
         }

@@ -442,9 +442,11 @@ static int gui(filter_t *filter_)
         gui_input_int("Depth", &filter->depth, 0, 9999);
         gui_input_int("Blur", &filter->blur, 0, 9999);
         if (gui_button("Apply permeation", -1, 0)) {
+            layer_t *layer = goxel.image ? goxel.image->active_layer : NULL;
+            if (!layer || !layer->volume)
+                return 0;
             image_history_push(goxel.image);
-            apply_color_permeation(goxel.image->active_layer->volume,
-                                   filter->depth, filter->blur);
+            apply_color_permeation(layer->volume, filter->depth, filter->blur);
         }
     }
 
@@ -457,6 +459,8 @@ static int gui(filter_t *filter_)
             memcpy(filter->fill_color, goxel.painter.color,
                    sizeof(goxel.painter.color));
         if (gui_button("Apply fill upwards", -1, 0)) {
+            if (!goxel.image || !goxel.image->active_layer)
+                return 0;
             image_history_push(goxel.image);
             if (!image_ensure_layer_for_adding(goxel.image))
                 return 0;
@@ -473,8 +477,11 @@ static int gui(filter_t *filter_)
             memcpy(filter->remove_color, goxel.painter.color,
                    sizeof(goxel.painter.color));
         if (gui_button("Apply remove by color", -1, 0)) {
+            layer_t *layer = goxel.image ? goxel.image->active_layer : NULL;
+            if (!layer)
+                return 0;
             image_history_push(goxel.image);
-            apply_remove_color(goxel.image->active_layer, filter->remove_color);
+            apply_remove_color(layer, filter->remove_color);
         }
     }
 

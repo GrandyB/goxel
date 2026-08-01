@@ -126,7 +126,8 @@ static int gui(filter_t *filter)
 
     if (should_wrap)
     {
-        if (current_only && !goxel.image->active_layer->visible)
+        if (current_only && (!goxel.image->active_layer ||
+                             !goxel.image->active_layer->visible))
             return 0;
 
         if (!goxel_get_filter_aabb(current_only, aabb))

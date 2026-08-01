@@ -746,7 +746,6 @@ cleanup:
 static int gui(filter_t *filter_)
 {
     filter_terrain_coloring_t *filter = (void *)filter_;
-    layer_t *layer = goxel.image->active_layer;
     terrain_coloring_settings_t *st = &filter->settings;
 
     gui_label_size_push(170.0f);
@@ -847,17 +846,28 @@ static int gui(filter_t *filter_)
         terrain_coloring_reset_all_defaults(filter);
 
     if (gui_button("Apply to layer", -1, 0)) {
+        layer_t *layer;
+
+        if (!goxel.image || !goxel.image->active_layer)
+            return 0;
+
         image_history_push(goxel.image);
-        apply_terrain_coloring(
-            layer->volume, &filter->settings, filter->step_grass_tones, filter->step_water_tint,
-            filter->step_ambient, filter->step_directional, filter->step_shadow_cast,
-            filter->step_shadow_smooth, filter->normal_half_span,
-            filter->grass_detail_noise,
-            filter->grass_slope_exponent, filter->grass_slope_gain,
-            filter->grass_height_scale,
-            filter->water_bottom_layers, filter->water_noise_strength,
-            filter->shadow_blur_blocks, filter->shadow_sun_height_step,
-            filter->rugged_color_noise);
+        DL_FOREACH(goxel.image->layers, layer) {
+            if (!layer_in_active_subtree(goxel.image, layer))
+                continue;
+            if (!layer->volume)
+                continue;
+            apply_terrain_coloring(
+                layer->volume, &filter->settings, filter->step_grass_tones,
+                filter->step_water_tint, filter->step_ambient,
+                filter->step_directional, filter->step_shadow_cast,
+                filter->step_shadow_smooth, filter->normal_half_span,
+                filter->grass_detail_noise, filter->grass_slope_exponent,
+                filter->grass_slope_gain, filter->grass_height_scale,
+                filter->water_bottom_layers, filter->water_noise_strength,
+                filter->shadow_blur_blocks, filter->shadow_sun_height_step,
+                filter->rugged_color_noise);
+        }
     }
     gui_label_size_pop();
     return 0;

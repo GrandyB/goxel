@@ -137,6 +137,12 @@ layer_t *image_add_child_layer(image_t *img, layer_t *parent);
  * image_history_push so undo removes the child with the edit. Returns the
  * layer that should receive the edit, or NULL if creation failed. */
 layer_t *image_ensure_layer_for_adding(image_t *img);
+/* Resolve a generation filter's target layer. Call after image_history_push.
+ * - No active layer: create a top-level layer named `name` (uniquified).
+ * - Active + replace_current: return the active layer.
+ * - Active + !replace_current: add a child under active, name it `name`. */
+layer_t *image_ensure_layer_for_generation(
+    image_t *img, const char *name, bool replace_current);
 /* Reparent layer (+subtree) under new_parent (NULL = top-level). Place after
  * after_sibling in the forward list (NULL = as topmost child under parent,
  * i.e. immediately before the parent node). */

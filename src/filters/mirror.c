@@ -164,7 +164,8 @@ static void mirror_apply(filter_mirror_t *mirror_props, int axis, int side,
     layer_t *layer;
     bool current_only = mirror_props->filter.current_only;
 
-    if (current_only && !goxel.image->active_layer->visible)
+    if (current_only && (!goxel.image->active_layer ||
+                         !goxel.image->active_layer->visible))
         return;
 
     if (!goxel_get_filter_aabb(current_only, aabb))

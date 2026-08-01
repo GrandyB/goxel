@@ -66,6 +66,8 @@ typedef struct
     bool rotate22pt5;
     bool randomly_flip;
 
+    bool replace_current_layer;
+
     doodad_model_t *models;
     doodad_model_t *active_model;
 } filter_doodadplacement_t;
@@ -418,6 +420,7 @@ static int gui(filter_t *filter_)
     }
 
     gui_separator();
+    gui_label_size_push(100);
 
     // File importer
     char label[128];
@@ -467,9 +470,7 @@ static int gui(filter_t *filter_)
         if (!filter->use_image_heights) {
             if (!filter->height_layer)
                 filter->height_layer = goxel.image->layers; // First one.
-            gui_text("Height reference layer: ");
-            gui_same_line();
-            if (gui_combo_begin("Layer", filter->height_layer->name))
+            if (gui_combo_begin("Use layer:", filter->height_layer->name))
             {
                 layer_t *cur;
                 DL_FOREACH_REVERSE(goxel.image->layers, cur) {
@@ -534,13 +535,38 @@ static int gui(filter_t *filter_)
 
     gui_separator();
 
+    bool has_layer = goxel.image && goxel.image->active_layer;
+    int target_mode;
+
+    if (!has_layer)
+        filter->replace_current_layer = false;
+    target_mode = filter->replace_current_layer ? 1 : 0;
+    gui_row_begin(2);
+    gui_selectable_toggle("In new layer", &target_mode, 0,
+        "With a layer selected: create a child named Doodad placement.\n"
+        "With nothing selected: create a top-level Doodad placement layer.",
+        -1);
+    gui_enabled_begin(has_layer);
+    gui_selectable_toggle("Replace current layer", &target_mode, 1,
+        "Clear the selected layer then place doodads.",
+        -1);
+    gui_enabled_end();
+    gui_row_end();
+    filter->replace_current_layer = (target_mode == 1);
+
     if (gui_button("Apply", -1, 0))
     {
+        layer_t *layer;
         image_history_push(goxel.image);
-        if (!image_ensure_layer_for_adding(goxel.image))
+        layer = image_ensure_layer_for_generation(
+            goxel.image, "Doodad placement", filter->replace_current_layer);
+        if (!layer || !layer->volume)
             return 0;
+        if (filter->replace_current_layer)
+            volume_clear(layer->volume);
         place_doodads(filter);
     }
+    gui_label_size_pop();
     return 0;
 }
 
@@ -567,6 +593,7 @@ static void on_open(filter_t *filter_)
     filter->rotate45 = true;
     filter->rotate22pt5 = true;
     filter->randomly_flip = true;
+    filter->replace_current_layer = false;
 }
 
 FILTER_REGISTER(doodadplacer, filter_doodadplacement_t,

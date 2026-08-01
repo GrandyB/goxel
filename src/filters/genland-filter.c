@@ -52,7 +52,7 @@ static const genland_settings_t default_genland_settings = {
     .shadow_factor = 32,
     .ambience_factor = 0.3,
     .resize_image = true,
-    .replace_current_layer = true,
+    .replace_current_layer = false,
 };
 
 
@@ -81,7 +81,7 @@ static void gui_tooltip_with_default(const char *tooltip, const char *default_fm
 static int gui(filter_t *filter_)
 {
     filter_genland_t *filter = (void *)filter_;
-    layer_t *layer = goxel.image->active_layer;
+    layer_t *layer;
 
     const char *help_text = "Genland by Tom Dobrowolski.\n"
         "Hover over each field to get some information about how it affects the end terrain";
@@ -151,14 +151,30 @@ static int gui(filter_t *filter_)
         gui_tooltip_with_default("How strongly lighting normals affect blocks", "%.2f", default_genland_settings.ambience_factor);
     }
 
-    gui_group_begin("Transform");
-    gui_checkbox("Replace layer", &filter->settings->replace_current_layer,
-        "If checked, this will clear the active layer before generating\n"
-        "If unchecked, we will not clear the layer before generating");
+    gui_separator();
+
+    bool has_layer = goxel.image && goxel.image->active_layer;
+    int target_mode;
+
+    if (!has_layer)
+        filter->settings->replace_current_layer = false;
+    target_mode = filter->settings->replace_current_layer ? 1 : 0;
+    gui_row_begin(2);
+    gui_selectable_toggle("In new layer", &target_mode, 0,
+        "With a layer selected: create a child named Genland.\n"
+        "With nothing selected: create a top-level Genland layer.",
+        -1);
+    gui_enabled_begin(has_layer);
+    gui_selectable_toggle("Replace current layer", &target_mode, 1,
+        "Clear and write into the selected layer.",
+        -1);
+    gui_enabled_end();
+    gui_row_end();
+    filter->settings->replace_current_layer = (target_mode == 1);
+
     gui_checkbox("Resize image", &filter->settings->resize_image,
         "If checked, we will automatically resize the image box after generating\n"
         "If unchecked, the image box will remain as it was.");
-    gui_group_end();
 
     gui_separator();
     gui_input_int("Seed", &filter->settings->seed, 0, RAND_MAX);
@@ -178,9 +194,10 @@ static int gui(filter_t *filter_)
     if (gui_button("Generate", -1, 0))
     {
         image_history_push(goxel.image);
-        if (!image_ensure_layer_for_adding(goxel.image))
+        layer = image_ensure_layer_for_generation(
+            goxel.image, "Genland", filter->settings->replace_current_layer);
+        if (!layer || !layer->volume)
             return 0;
-        layer = goxel.image->active_layer;
         generate_tomland_terrain(layer->volume, filter->settings);
 
         if (filter->settings->resize_image) {
@@ -206,5 +223,5 @@ FILTER_REGISTER(genland, filter_genland_t,
                 .menu = "effects",
                 .submenu = "generate",
                 .on_open = on_open,
-                .panel_width = 275,
+                .panel_width = 300,
                 .gui_fn = gui, )

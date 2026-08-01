@@ -494,6 +494,44 @@ layer_t *image_ensure_layer_for_adding(image_t *img)
     return layer;
 }
 
+static void layer_set_uniq_name(image_t *img, layer_t *layer, const char *name)
+{
+    if (!layer || !name || !name[0]) return;
+    if (!layer_name_exists(img, name)) {
+        snprintf(layer->name, sizeof(layer->name), "%s", name);
+        return;
+    }
+    make_uniq_name(layer->name, sizeof(layer->name), name, img,
+                   layer_name_exists);
+}
+
+layer_t *image_ensure_layer_for_generation(
+    image_t *img, const char *name, bool replace_current)
+{
+    layer_t *layer;
+    layer_t *parent;
+    const char *base = (name && name[0]) ? name : "Layer";
+
+    if (!img) return NULL;
+
+    if (!img->active_layer) {
+        layer = layer_new(NULL);
+        layer_set_uniq_name(img, layer, base);
+        return image_add_layer(img, layer);
+    }
+
+    if (replace_current)
+        return img->active_layer;
+
+    parent = img->active_layer;
+    layer = image_add_child_layer(img, parent);
+    if (!layer) return NULL;
+    layer_set_uniq_name(img, layer, base);
+    parent->collapsed = false;
+    tool_clear_preview();
+    return layer;
+}
+
 void image_sanitize_layer_parents(image_t *img)
 {
     layer_t *layer;

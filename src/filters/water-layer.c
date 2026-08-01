@@ -66,6 +66,7 @@ typedef struct {
     float bleed_blur;       /* box-blur radius on dithered bleed (blocks) */
     float bleed_dithering;  /* edge scatter radius (brush-style) */
     float bleed_noise;      /* random RGB noise amplitude on bled colour */
+    bool replace_current_layer;
 } filter_water_layer_t;
 
 static const water_layer_settings_t default_settings = {
@@ -710,15 +711,9 @@ static int gui(filter_t *filter_)
     for (i = 0; i < preset_count && i < 16; i++)
         preset_names[i] = presets[i].name;
 
-    gui_group_begin("Presets");
-    gui_combo("Preset", &filter->preset_index, preset_names, preset_count);
-    gui_row_begin(2);
-    if (gui_button("Load", 0, 0))
+    if (gui_combo("Preset", &filter->preset_index, preset_names, preset_count))
         load_preset(filter, filter->preset_index);
-    if (gui_button("Reset", 0, 0))
-        reset_to_defaults(filter);
-    gui_row_end();
-    gui_group_end();
+    gui_separator();
 
     if(gui_collapsing_header("Colors", false)) {
         gui_color_small("Mid", s->color);
@@ -775,7 +770,28 @@ static int gui(filter_t *filter_)
     }
 
     gui_separator();
-    
+
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer;
+        int target_mode;
+
+        if (!has_layer)
+            filter->replace_current_layer = false;
+        target_mode = filter->replace_current_layer ? 1 : 0;
+        gui_row_begin(2);
+        gui_selectable_toggle("In new layer", &target_mode, 0,
+            "With a layer selected: create a child named Water layer.\n"
+            "With nothing selected: create a top-level Water layer.",
+            -1);
+        gui_enabled_begin(has_layer);
+        gui_selectable_toggle("Replace current layer", &target_mode, 1,
+            "Clear the selected layer then paint the water sheet.",
+            -1);
+        gui_enabled_end();
+        gui_row_end();
+        filter->replace_current_layer = (target_mode == 1);
+    }
+
     gui_input_int("Seed", &s->seed, 0, RAND_MAX);
     if (gui_button("Randomize seed", -1, 0)) {
         srand((unsigned)time(NULL));
@@ -785,17 +801,23 @@ static int gui(filter_t *filter_)
     gui_separator();
 
     if (gui_button("Generate", -1, 0)) {
-        if (!goxel.image || !goxel.image->active_layer ||
-            !goxel.image->active_layer->volume)
+        layer_t *layer;
+        if (!goxel.image)
             return 0;
         image_history_push(goxel.image);
-        if (!image_ensure_layer_for_adding(goxel.image))
+        layer = image_ensure_layer_for_generation(
+            goxel.image, "Water layer", filter->replace_current_layer);
+        if (!layer || !layer->volume)
             return 0;
-        generate_water_layer(goxel.image->active_layer->volume, s,
+        if (filter->replace_current_layer)
+            volume_clear(layer->volume);
+        generate_water_layer(layer->volume, s,
                              filter->bleed_distance, filter->bleed_strength,
                              filter->bleed_lightness, filter->bleed_blur,
                              filter->bleed_dithering, filter->bleed_noise);
     }
+    if (gui_button("Reset", -1, 0))
+        reset_to_defaults(filter);
     return 0;
 }
 
@@ -804,6 +826,7 @@ static void on_open(filter_t *filter_)
     filter_water_layer_t *filter = (void *)filter_;
     reset_to_defaults(filter);
     reset_bleed_defaults(filter);
+    filter->replace_current_layer = false;
 }
 
 FILTER_REGISTER(water_layer, filter_water_layer_t,
@@ -811,5 +834,5 @@ FILTER_REGISTER(water_layer, filter_water_layer_t,
                 .menu = "effects",
                 .submenu = "generate",
                 .on_open = on_open,
-                .panel_width = 275,
+                .panel_width = 300,
                 .gui_fn = gui, )
