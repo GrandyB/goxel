@@ -12,6 +12,9 @@
 #include "metadata.h"
 #include "filters/metadata_gui.h"
 
+#include <ctype.h>
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,6 +33,69 @@ typedef struct {
 
 static template_popup_t g_template_popup;
 static bool g_open_template_popup = false;
+
+static bool str_endswith_case(const char *str, const char *end)
+{
+    int i, n, m;
+    if (!str || !end) return false;
+    n = strlen(str);
+    m = strlen(end);
+    if (m > n) return false;
+    for (i = 0; i < m; i++) {
+        char a = str[n - m + i];
+        char b = end[i];
+        if (tolower((unsigned char)a) != tolower((unsigned char)b))
+            return false;
+    }
+    return true;
+}
+
+static bool path_join2(char *out, size_t out_sz,
+                       const char *a, const char *b)
+{
+    size_t na, nb;
+    int need_slash;
+    if (!out || !out_sz || !a || !b) return false;
+    na = strlen(a);
+    nb = strlen(b);
+    while (na > 0 && (a[na - 1] == '/' || a[na - 1] == '\\'))
+        na--;
+    need_slash = na > 0;
+    if (na + (need_slash ? 1 : 0) + nb + 1 > out_sz) return false;
+    memcpy(out, a, na);
+    if (need_slash) {
+        out[na] = '/';
+        memcpy(out + na + 1, b, nb);
+        out[na + 1 + nb] = '\0';
+    } else {
+        memcpy(out + na, b, nb);
+        out[na + nb] = '\0';
+    }
+    return true;
+}
+
+static void path_normalize_slashes(char *path)
+{
+    int i;
+    if (!path) return;
+    for (i = 0; path[i]; i++) {
+        if (path[i] == '\\')
+            path[i] = '/';
+    }
+}
+
+static const char *path_basename_ptr(const char *path)
+{
+    const char *p = path;
+    const char *last = path;
+    if (!path) return "";
+    while (*p) {
+        if (*p == '/' || *p == '\\')
+            last = p + 1;
+        p++;
+    }
+    return last;
+}
 
 static void on_open(filter_t *filter_)
 {
@@ -63,16 +129,204 @@ static int on_template_file(const char *dirpath, const char *name, void *user)
     return 0;
 }
 
+typedef struct {
+    const char *target_dir;
+    int copied_count;
+} template_seed_ctx_t;
+
+typedef struct {
+    int json_count;
+} template_json_count_ctx_t;
+
+static int metadata_template_count_json(const char *dir, const char *name,
+                                        void *user)
+{
+    template_json_count_ctx_t *ctx = user;
+    (void)dir;
+    if (str_endswith_case(name, ".json"))
+        ctx->json_count++;
+    return 0;
+}
+
+static int metadata_template_seed_copy_asset(int idx, const char *path,
+                                             void *user)
+{
+    template_seed_ctx_t *ctx = user;
+    const char *name = path_basename_ptr(path);
+    char dst[1024];
+    FILE *f = NULL;
+    const void *data;
+    int sz = 0;
+
+    (void)idx;
+    if (!str_endswith_case(path, ".json"))
+        return 0;
+    LOG_I("[meta-tmpl][asset] candidate: '%s'", path);
+    if (!path_join2(dst, sizeof(dst), ctx->target_dir, name)) {
+        LOG_I("[meta-tmpl][asset] skip (join failed): '%s'", path);
+        return 0;
+    }
+    path_normalize_slashes(dst);
+    LOG_I("[meta-tmpl][asset] destination: '%s'", dst);
+    f = fopen(dst, "rb");
+    if (f) { // Keep user file if already present.
+        fclose(f);
+        ctx->copied_count++;
+        LOG_I("[meta-tmpl][asset] already exists: '%s'", dst);
+        return 0;
+    }
+    data = assets_get(path, &sz);
+    if (!data || sz <= 0) {
+        LOG_I("[meta-tmpl][asset] assets_get failed: '%s' (size=%d)", path, sz);
+        return 0;
+    }
+    /* Text assets include a trailing NUL in the recorded size. */
+    if (sz > 0 && ((const char *)data)[sz - 1] == '\0')
+        sz--;
+    f = fopen(dst, "wb");
+    if (!f) {
+        LOG_I("[meta-tmpl][asset] open write failed: '%s' (errno=%d)",
+              dst, errno);
+        return 0;
+    }
+    fwrite(data, (size_t)sz, 1, f);
+    fclose(f);
+    ctx->copied_count++;
+    LOG_I("[meta-tmpl][asset] copied: '%s' bytes=%d", dst, sz);
+    return 0;
+}
+
+static int metadata_template_seed_copy_from_disk(const char *dir,
+                                                 const char *name, void *user)
+{
+    template_seed_ctx_t *ctx = user;
+    char src[1024], dst[1024];
+    const char *base_name = NULL;
+    char *data = NULL;
+    int size = 0;
+    FILE *f = NULL;
+
+    (void)dir;
+    if (!str_endswith_case(name, ".json"))
+        return 0;
+    LOG_I("[meta-tmpl][disk] candidate: '%s'", name);
+    if (!path_join2(src, sizeof(src), "data/metadata-templates", name))
+        return 0;
+    path_normalize_slashes(src);
+    base_name = path_basename_ptr(src);
+    if (!path_join2(dst, sizeof(dst), ctx->target_dir, base_name))
+        return 0;
+    path_normalize_slashes(dst);
+    LOG_I("[meta-tmpl][disk] src='%s' dst='%s'", src, dst);
+    f = fopen(dst, "rb");
+    if (f) {
+        fclose(f);
+        ctx->copied_count++;
+        LOG_I("[meta-tmpl][disk] already exists: '%s'", dst);
+        return 0;
+    }
+    data = read_file(src, &size);
+    if (!data || size <= 0) {
+        LOG_I("[meta-tmpl][disk] read failed: '%s' size=%d", src, size);
+        free(data);
+        return 0;
+    }
+    f = fopen(dst, "wb");
+    if (!f) {
+        LOG_I("[meta-tmpl][disk] open write failed: '%s' (errno=%d)",
+              dst, errno);
+        free(data);
+        return 0;
+    }
+    fwrite(data, size, 1, f);
+    fclose(f);
+    free(data);
+    ctx->copied_count++;
+    LOG_I("[meta-tmpl][disk] copied: '%s' bytes=%d", dst, size);
+    return 0;
+}
+
+static void metadata_templates_seed_user_dir_once(const char *dir)
+{
+    char marker[1024];
+    FILE *f;
+    template_seed_ctx_t ctx = {.target_dir = dir, .copied_count = 0};
+    template_json_count_ctx_t count_ctx = {0};
+    int n;
+
+    if (!path_join2(marker, sizeof(marker), dir, ".seeded_metadata_templates"))
+        return;
+    path_normalize_slashes(marker);
+    LOG_I("[meta-tmpl] marker path: '%s'", marker);
+    f = fopen(marker, "rb");
+    if (f) {
+        fclose(f);
+        LOG_I("[meta-tmpl] marker exists; checking directory contents");
+        sys_list_dir(dir, metadata_template_count_json, &count_ctx);
+        LOG_I("[meta-tmpl] json files currently in dir: %d",
+              count_ctx.json_count);
+        if (count_ctx.json_count > 0)
+            return;
+        LOG_I("[meta-tmpl] marker exists but dir empty; forcing reseed");
+    }
+
+    LOG_I("[meta-tmpl] seeding from embedded assets");
+    n = assets_list("data/metadata-templates", &ctx,
+                    metadata_template_seed_copy_asset);
+    LOG_I("[meta-tmpl] assets_list matched=%d copied_or_existing=%d",
+          n, ctx.copied_count);
+    if (ctx.copied_count == 0) {
+        // Fallback for builds where templates are not embedded in assets.
+        LOG_I("[meta-tmpl] embedded assets unavailable; trying disk fallback");
+        sys_list_dir("data/metadata-templates",
+                     metadata_template_seed_copy_from_disk, &ctx);
+    }
+    LOG_I("Metadata template seeding: target='%s' copied_or_existing=%d",
+          dir, ctx.copied_count);
+    if (ctx.copied_count == 0)
+        return;
+    f = fopen(marker, "wb");
+    if (f) {
+        static const char marker_data[] = "seeded-from-assets\n";
+        fwrite(marker_data, sizeof(marker_data) - 1, 1, f);
+        fclose(f);
+        LOG_I("[meta-tmpl] marker written");
+    } else {
+        LOG_I("[meta-tmpl] marker write failed (errno=%d)", errno);
+    }
+}
+
 static void refresh_template_list(template_popup_t *popup)
 {
     char dir[1024];
+    char dir_create[1024];
+    const char *user_dir = sys_get_user_dir();
+    size_t n;
 
     popup->count = 0;
     popup->selected = 0;
-    if (!sys_get_user_dir()) return;
-    snprintf(dir, sizeof(dir), "%s/metadata-templates", sys_get_user_dir());
-    sys_make_dir(dir);
+    if (!user_dir) {
+        LOG_I("[meta-tmpl] no user dir; skip template refresh");
+        return;
+    }
+    if (!path_join2(dir, sizeof(dir), user_dir, "metadata-templates"))
+        return;
+    path_normalize_slashes(dir);
+    n = strlen(dir);
+    if (n + 2 > sizeof(dir_create))
+        return;
+    memcpy(dir_create, dir, n);
+    dir_create[n] = '/';
+    dir_create[n + 1] = '\0';
+    path_normalize_slashes(dir_create);
+    LOG_I("[meta-tmpl] user_dir='%s'", user_dir);
+    LOG_I("Metadata templates dir: '%s'", dir);
+    if (sys_make_dir(dir_create) != 0)
+        LOG_I("[meta-tmpl] sys_make_dir failed: '%s' (errno=%d)",
+              dir_create, errno);
+    metadata_templates_seed_user_dir_once(dir);
     sys_list_dir(dir, on_template_file, popup);
+    LOG_I("[meta-tmpl] templates listed: %d", popup->count);
 }
 
 static int template_popup_gui(void *data)

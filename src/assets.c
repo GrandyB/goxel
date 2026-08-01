@@ -63,6 +63,7 @@ static asset_t ASSETS[] = {
 #include "assets/sounds.inl"
 #include "assets/themes.inl"
 #include "assets/textures.inl"
+#include "assets/metadata-templates.inl"
 #ifdef ASSETS_EXTRA
 #   include ASSETS_EXTRA // Allow to add custom assets at build time.
 #endif

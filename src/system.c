@@ -141,8 +141,22 @@ int sys_make_dir(const char *path)
 {
     char tmp[PATH_MAX];
     char *p;
+    char *start;
+
+    if (!path || !*path) return -1;
+    if (strlen(path) >= sizeof(tmp)) return -1;
     strcpy(tmp, path);
-    for (p = tmp + 1; *p; p++) {
+    for (p = tmp; *p; p++) {
+        if (*p == '\\')
+            *p = '/';
+    }
+    /* Skip Windows drive letter so we never mkdir("C:"). */
+    start = tmp;
+    if (((tmp[0] >= 'A' && tmp[0] <= 'Z') ||
+         (tmp[0] >= 'a' && tmp[0] <= 'z')) &&
+        tmp[1] == ':' && tmp[2] == '/')
+        start = tmp + 2;
+    for (p = start + 1; *p; p++) {
         if (*p != '/') continue;
         *p = '\0';
         if ((mkdir(tmp, S_IRWXU) != 0) && (errno != EEXIST)) return -1;

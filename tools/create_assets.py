@@ -41,10 +41,11 @@ TYPES = {
     "gox":   { "text": False },
     "lua":   { "text": True },
     "js":    { "text": True },
+    "json":  { "text": True },
 }
 GROUPS = ['fonts', 'icons', 'images', 'other', 'palettes', 'progs',
           'shaders', 'sounds', 'themes', 'samples', 'mobile',
-          'scripts', 'textures']
+          'scripts', 'textures', 'metadata-templates']
 TEMPLATE = '{{.path = "{path}", .size = {size}, .data =\n{data}\n}},'
 File = namedtuple('File', 'path name data size')
 
