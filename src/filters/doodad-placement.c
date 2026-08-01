@@ -310,11 +310,69 @@ static void place_doodads(filter_doodadplacement_t *filter)
     }
 }
 
-static bool render_model_list_item(void *item, int idx, bool current)
+/* Deferred so we do not mutate the list while iterating. */
+static doodad_model_t *g_pending_delete = NULL;
+
+static void remove_model(filter_doodadplacement_t *filter, doodad_model_t *model)
 {
-    doodad_model_t *model = item;
-    _model_item(idx, &current, model->file_name, sizeof(model->file_name));
-    return current;
+    doodad_model_t *prev, *next;
+
+    if (!model) return;
+    volume_delete(model->volume);
+    prev = model->prev;
+    next = model->next;
+    DL_DELETE(filter->models, model);
+    if (filter->active_model == model)
+        filter->active_model = next ? next : prev;
+    free((void *)model->file_name);
+    free(model);
+}
+
+static void render_doodad_list(filter_doodadplacement_t *filter)
+{
+    doodad_model_t *model;
+    int i = 0;
+    char id[32];
+    char name[256];
+    bool selected;
+    bool press;
+    bool name_dbl;
+    float icon_h = gui_icon_height(true);
+    float spacing = gui_style_item_spacing_x();
+    float trailing = icon_h + spacing;
+
+    g_pending_delete = NULL;
+    gui_group_begin(NULL);
+    DL_FOREACH(filter->models, model) {
+        snprintf(id, sizeof(id), "%d", i);
+        gui_push_id(id);
+
+        selected = filter->active_model == model;
+        snprintf(name, sizeof(name), "%s",
+                 model->file_name ? model->file_name : "");
+        /* Non-NULL name_double_clicked suppresses inline rename. */
+        name_dbl = false;
+        gui_condensed_layer_item_trailing(
+                i, 0, NULL, NULL, &selected,
+                name, sizeof(name), trailing,
+                true, false, NULL, false, false, true, &name_dbl);
+        if (selected != (filter->active_model == model))
+            filter->active_model = selected ? model : NULL;
+
+        gui_same_line();
+        press = false;
+        if (gui_condensed_selectable_icon("Remove", &press, ICON_CLOSE))
+            g_pending_delete = model;
+
+        gui_pop_id();
+        i++;
+    }
+    gui_group_end();
+
+    if (g_pending_delete) {
+        remove_model(filter, g_pending_delete);
+        g_pending_delete = NULL;
+    }
 }
 
 // Copied from placer.c
@@ -389,31 +447,13 @@ static int gui(filter_t *filter_)
     if (doodad_count == 0) {
         gui_text("[Empty]");
     } else {
-        gui_list(&(gui_list_t){
-            .items = (void **)&filter->models,
-            .current = (void **)&filter->active_model,
-            .render = render_model_list_item,
-        });
+        render_doodad_list(filter);
 
-        if (gui_button("Remove selected", 0, 0) && doodad_count > 0 && filter->active_model)
+        if (gui_button("Remove all", 0, 0))
         {
-            volume_delete(filter->active_model->volume);
-            doodad_model_t *prev = filter->active_model->prev;
-            doodad_model_t *next = filter->active_model->next;
-            DL_DELETE(filter->models, filter->active_model);
-            if (doodad_count > 1 && next) {
-                filter->active_model = next;
-            } else {
-                filter->active_model = prev ? prev : NULL;
-            }
-        }
-
-        if (gui_button("Remove all", 0, 0) && doodad_count > 0)
-        {
-            doodad_model_t *model;
-            DL_FOREACH(filter->models, model) {
-                volume_delete(model->volume);
-                DL_DELETE(filter->models, model);
+            doodad_model_t *model, *tmp;
+            DL_FOREACH_SAFE(filter->models, model, tmp) {
+                remove_model(filter, model);
             }
             filter->active_model = NULL;
         }
@@ -556,6 +596,7 @@ static int gui(filter_t *filter_)
     gui_row_end();
     filter->replace_current_layer = (target_mode == 1);
 
+    gui_separator();
     if (gui_button_primary("Place doodads", -1, 0))
     {
         layer_t *layer;
