@@ -211,9 +211,8 @@ void gui_menu(void)
                             goxel.gui.camera_presets_open, true))
             goxel.gui.camera_presets_open = !goxel.gui.camera_presets_open;
         gui_separator();
-        if (gui_menu_toggle(0, "Tools",
-                            gui_panel_is_detached(PANEL_TOOLS), true))
-            gui_panel_toggle_detached(PANEL_TOOLS);
+        gui_menu_toggle(ACTION_view_toggle_tools, "Tools",
+                        gui_panel_is_detached(PANEL_TOOLS), true);
         if (gui_menu_toggle(0, "Layers", goxel.gui.layers_panel_open, true))
             gui_layers_panel_toggle();
         if (gui_menu_toggle(0, "Palette",

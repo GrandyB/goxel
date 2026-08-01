@@ -69,6 +69,7 @@ enum
     ACTION_view_frame_layer,
     ACTION_view_focus_frame_layer,
     ACTION_view_toggle_ui,
+    ACTION_view_toggle_tools,
     ACTION_quit,
     ACTION_undo,
     ACTION_redo,

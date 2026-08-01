@@ -2494,6 +2494,18 @@ ACTION_REGISTER(ACTION_view_toggle_ui,
     .cfunc = a_view_toggle_ui,
 )
 
+static void a_view_toggle_tools(void)
+{
+    gui_panel_toggle_detached(PANEL_TOOLS);
+}
+
+ACTION_REGISTER(ACTION_view_toggle_tools,
+    .help = "Show or hide the tools panel",
+    .flags = ACTION_CAN_EDIT_SHORTCUT,
+    .cfunc = a_view_toggle_tools,
+    .default_shortcut = "T",
+)
+
 static void quit(void)
 {
     gui_query_quit();
@@ -2638,7 +2650,7 @@ ACTION_REGISTER(ACTION_set_mode_add,
     .cfunc_data = a_set_mode,
     .data = (int[]){MODE_OVER},
     .icon = ICON_MODE_ADD,
-    .default_shortcut = "T",
+    .default_shortcut = "U",
 )
 
 ACTION_REGISTER(ACTION_set_mode_sub,
@@ -2647,7 +2659,7 @@ ACTION_REGISTER(ACTION_set_mode_sub,
     .cfunc_data = a_set_mode,
     .data = (int[]){MODE_SUB},
     .icon = ICON_MODE_SUB,
-    .default_shortcut = "R",
+    .default_shortcut = "I",
 )
 
 ACTION_REGISTER(ACTION_set_mode_paint,
@@ -2656,7 +2668,7 @@ ACTION_REGISTER(ACTION_set_mode_paint,
     .cfunc_data = a_set_mode,
     .data = (int[]){MODE_PAINT},
     .icon = ICON_MODE_PAINT,
-    .default_shortcut = "G",
+    .default_shortcut = "O",
 )
 
 static void move_plane_up(void) { mat4_itranslate(goxel.plane, 0, 0, 1); }

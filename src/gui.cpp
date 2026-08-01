@@ -3082,10 +3082,14 @@ void gui_menu_bar_panel_toggles(void)
 
     ImGui::SetCursorPosX(ImMax(ImGui::GetCursorPosX(), right_x));
 
+    const action_t *tools_action =
+            action_get(ACTION_view_toggle_tools, true);
+    snprintf(tooltip, sizeof(tooltip), "Tools (%s)",
+             tools_action ? tools_action->shortcut : "");
     bool tools_open = gui_panel_is_detached(PANEL_TOOLS);
     if (menu_bar_panel_toggle(
-                "menu_tools", ICON_TOOLS, tools_open, "Tools"))
-        gui_panel_toggle_detached(PANEL_TOOLS);
+                "menu_tools", ICON_TOOLS, tools_open, tooltip))
+        action_exec(tools_action);
 
     ImGui::SameLine(0.0f, spacing);
     if (menu_bar_panel_toggle(

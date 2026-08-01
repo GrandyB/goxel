@@ -1163,6 +1163,8 @@ void placer_gui_history_floating(void)
 
     if (!goxel.tool || goxel.tool->id != TOOL_PLACER)
         return;
+    if (!gui_panel_is_detached(PANEL_TOOLS))
+        return;
     placer = (tool_placer_t *)goxel.tool;
 
     gui_floating_panel_begin("Placer history##placer_history_win", 440.f, 440.f);
