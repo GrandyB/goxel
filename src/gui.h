@@ -135,6 +135,8 @@ void gui_panel_toggle_detached(int panel);
 void gui_palette_window_toggle(void);
 /* Toggle the right-docked Layers panel. */
 void gui_layers_panel_toggle(void);
+/* Next layers-panel draw: scroll the active layer into view if clipped. */
+void gui_layers_request_scroll_to_active(void);
 
 // Gui widgets:
 bool gui_collapsing_header(const char *label, bool default_opened);
@@ -150,6 +152,9 @@ void gui_group_end(void);
 
 void gui_scrollable_begin(float max_height);
 void gui_scrollable_end();
+/* If the last item is clipped by the current scroll region, scroll so it
+ * is centred. Call after the item/group is submitted. */
+void gui_scroll_item_into_view(void);
 
 // Section have a frame.
 

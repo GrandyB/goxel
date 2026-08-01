@@ -2812,6 +2812,7 @@ static void select_layer_under_cursor(void)
     if (!img || !layer) return;
     img->active_layer = layer;
     image_expand_to_show_layer(img, layer);
+    gui_layers_request_scroll_to_active();
 }
 
 /* Mirror gui check_action_shortcut matching against inputs->keys (held). */
@@ -2856,6 +2857,7 @@ static void layer_pick_commit(image_t *img, layer_t *layer)
     if (!img || !layer || layer_find(img, layer->id) != layer) return;
     img->active_layer = layer;
     image_expand_to_show_layer(img, layer);
+    gui_layers_request_scroll_to_active();
     tool_cursor_clear_edit();
     tool_clear_preview();
 }
@@ -2956,6 +2958,7 @@ static void layer_nav_select(image_t *img, layer_t *layer)
 {
     if (!img || !layer || img->active_layer == layer) return;
     img->active_layer = layer;
+    gui_layers_request_scroll_to_active();
     tool_cursor_clear_edit();
     tool_clear_preview();
     tool_cursor_flash_layer_bbox(layer, 0.5);

@@ -23,6 +23,14 @@
 #define LAYERS_PANEL_BOTTOM_RESERVE_PX 290
 #define LAYER_DND_TYPE "GOXEL_LAYER_PTR"
 
+/* Set by gui_layers_request_scroll_to_active(); consumed while drawing. */
+static bool g_scroll_to_active = false;
+
+void gui_layers_request_scroll_to_active(void)
+{
+    g_scroll_to_active = true;
+}
+
 static void toggle_layer_only_visible(layer_t *layer)
 {
     layer_t *other;
@@ -304,6 +312,10 @@ static void render_layers_list(void)
             }
         }
         gui_item_group_end();
+        if (g_scroll_to_active && current) {
+            gui_scroll_item_into_view();
+            g_scroll_to_active = false;
+        }
         if (gui_is_item_hovered())
             tool_cursor_set_panel_hover(layer);
 
@@ -312,6 +324,8 @@ static void render_layers_list(void)
         prev_depth = depth;
         idx++;
     }
+    /* Active row missing this frame (collapsed nest, deselected, etc.). */
+    g_scroll_to_active = false;
 
     /* End of list: last-child exits when nested, then always a line beneath
      * the last visible layer. */

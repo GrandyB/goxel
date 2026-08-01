@@ -1011,6 +1011,12 @@ void gui_scrollable_end() {
     ImGui::EndChild();
 }
 
+void gui_scroll_item_into_view(void)
+{
+    if (!ImGui::IsItemVisible())
+        ImGui::SetScrollHereY(0.5f);
+}
+
 bool gui_section_begin(const char *label, int flags)
 {
     ImGuiChildFlags childflags =
