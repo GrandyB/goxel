@@ -680,16 +680,44 @@ void image_move_layer_content_subtree(image_t *img, layer_t *layer,
         do_move_layer(nodes[i], mat, NULL, only_origin);
 }
 
-static int img_get_new_id(const image_t *img)
+/* Next free layer id, skipping any already reserved in reserved[0..n_reserved).
+ * Needed when allocating several layers before they are linked into img->layers. */
+static int img_get_new_id_excluding(const image_t *img,
+                                    const int *reserved, int n_reserved)
 {
-    int id;
+    int id, i;
     layer_t *layer;
     for (id = 1;; id++) {
         DL_FOREACH(img->layers, layer)
             if (layer->id == id) break;
-        if (layer == NULL) break;
+        if (layer != NULL) continue;
+        for (i = 0; i < n_reserved; i++)
+            if (reserved[i] == id) break;
+        if (i == n_reserved) return id;
     }
-    return id;
+}
+
+static int img_get_new_id(const image_t *img)
+{
+    return img_get_new_id_excluding(img, NULL, 0);
+}
+
+/* Name check for a batch of not-yet-linked layers (plus existing img layers). */
+typedef struct {
+    image_t *img;
+    layer_t **pending;
+    int n_pending;
+} layer_batch_name_ctx_t;
+
+static bool layer_batch_name_exists(void *user, const char *name)
+{
+    layer_batch_name_ctx_t *ctx = user;
+    int i;
+    if (layer_name_exists(ctx->img, name)) return true;
+    for (i = 0; i < ctx->n_pending; i++) {
+        if (strcasecmp(ctx->pending[i]->name, name) == 0) return true;
+    }
+    return false;
 }
 
 static layer_t *layer_clone(layer_t *other)
@@ -1222,6 +1250,7 @@ layer_t *image_duplicate_layer(image_t *img, layer_t *other)
     layer_t *copies[LAYER_SUBTREE_MAX];
     int n, i, j;
     int id_map_from[LAYER_SUBTREE_MAX], id_map_to[LAYER_SUBTREE_MAX];
+    layer_batch_name_ctx_t name_ctx;
 
     assert(img);
     assert(other);
@@ -1233,12 +1262,15 @@ layer_t *image_duplicate_layer(image_t *img, layer_t *other)
     n = collect_layer_subtree_checked(img, other, nodes);
     if (n <= 0) return NULL;
 
+    name_ctx.img = img;
+    name_ctx.pending = copies;
     for (i = 0; i < n; i++) {
         copies[i] = layer_copy(nodes[i]);
+        name_ctx.n_pending = i;
         make_uniq_name(copies[i]->name, sizeof(copies[i]->name),
-                       nodes[i]->name, img, layer_name_exists);
+                       nodes[i]->name, &name_ctx, layer_batch_name_exists);
         copies[i]->visible = true;
-        copies[i]->id = img_get_new_id(img);
+        copies[i]->id = img_get_new_id_excluding(img, id_map_to, i);
         id_map_from[i] = nodes[i]->id;
         id_map_to[i] = copies[i]->id;
         copies[i]->prev = copies[i]->next = NULL;
@@ -1274,17 +1306,59 @@ layer_t *image_duplicate_layer(image_t *img, layer_t *other)
 
 layer_t *image_clone_layer(image_t *img, layer_t *other)
 {
-    layer_t *layer;
+    layer_t *nodes[LAYER_SUBTREE_MAX];
+    layer_t *clones[LAYER_SUBTREE_MAX];
+    int n, i, j;
+    int id_map_from[LAYER_SUBTREE_MAX], id_map_to[LAYER_SUBTREE_MAX];
+    layer_batch_name_ctx_t name_ctx;
+
     img = img ?: goxel.image;
     other = other ?: img->active_layer;
     assert(img && other);
-    layer = layer_clone(other);
-    layer->visible = true;
-    layer->id = img_get_new_id(img);
-    layer->parent_id = other->parent_id;
-    DL_PREPEND_ELEM(img->layers, other, layer);
-    img->active_layer = layer;
-    return layer;
+
+    if (!layer_parent_can_grow(img, other->parent_id,
+                               layer_subtree_size(img, other)))
+        return NULL;
+
+    n = collect_layer_subtree_checked(img, other, nodes);
+    if (n <= 0) return NULL;
+
+    name_ctx.img = img;
+    name_ctx.pending = clones;
+    for (i = 0; i < n; i++) {
+        clones[i] = layer_clone(nodes[i]);
+        name_ctx.n_pending = i;
+        if (layer_batch_name_exists(&name_ctx, clones[i]->name)) {
+            make_uniq_name(clones[i]->name, sizeof(clones[i]->name),
+                           clones[i]->name, &name_ctx, layer_batch_name_exists);
+        }
+        clones[i]->visible = true;
+        clones[i]->collapsed = nodes[i]->collapsed;
+        clones[i]->parent_id = nodes[i]->parent_id;
+        clones[i]->id = img_get_new_id_excluding(img, id_map_to, i);
+        id_map_from[i] = nodes[i]->id;
+        id_map_to[i] = clones[i]->id;
+        clones[i]->prev = clones[i]->next = NULL;
+    }
+
+    /* Place clone block immediately before `other`'s first (visually below
+     * the whole other subtree in reverse UI). */
+    layer_insert_block_before(img, clones, n, nodes[0]);
+
+    /* Remap parent_id within the new block only. Keep base_id pointing at
+     * the originals so clones stay live-linked. */
+    for (i = 0; i < n; i++) {
+        if (!clones[i]->parent_id) continue;
+        for (j = 0; j < n; j++) {
+            if (id_map_from[j] == clones[i]->parent_id) {
+                clones[i]->parent_id = id_map_to[j];
+                break;
+            }
+        }
+    }
+
+    img->active_layer = clones[n - 1];
+    return clones[n - 1];
 }
 
 void image_delete_hidden_layers(image_t *img) {

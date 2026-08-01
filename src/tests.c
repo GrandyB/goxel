@@ -168,9 +168,116 @@ static void test_delete_layer_subtree_undo(void)
     image_delete(img);
 }
 
+static layer_t *test_find_layer_by_name(image_t *img, const char *name)
+{
+    layer_t *layer;
+    DL_FOREACH(img->layers, layer) {
+        if (strcmp(layer->name, name) == 0)
+            return layer;
+    }
+    return NULL;
+}
+
+static void test_duplicate_layer_subtree(void)
+{
+    image_t *img;
+    layer_t *parent, *child, *dup_parent, *dup_child;
+    int parent_id, child_id;
+
+    img = image_new();
+    parent = img->layers;
+    TEST(parent != NULL);
+    img->active_layer = parent;
+    snprintf(parent->name, sizeof(parent->name), "Parent");
+    parent_id = parent->id;
+
+    child = image_add_child_layer(img, parent);
+    TEST(child != NULL);
+    snprintf(child->name, sizeof(child->name), "Child");
+    child_id = child->id;
+    TEST(child->parent_id == parent_id);
+
+    dup_parent = image_duplicate_layer(img, parent);
+    TEST(dup_parent != NULL);
+    TEST(dup_parent->id != parent_id);
+    TEST(dup_parent->id != child_id);
+    TEST(layer_has_children(img, dup_parent));
+
+    dup_child = NULL;
+    DL_FOREACH(img->layers, child) {
+        if (child->parent_id == dup_parent->id) {
+            dup_child = child;
+            break;
+        }
+    }
+    TEST(dup_child != NULL);
+    TEST(dup_child->id != parent_id);
+    TEST(dup_child->id != child_id);
+    TEST(dup_child->id != dup_parent->id);
+    TEST(dup_child->parent_id == dup_parent->id);
+    TEST(dup_child->parent_id != dup_child->id);
+    /* Originals still present and linked. */
+    TEST(test_find_layer_by_name(img, "Parent") != NULL);
+    TEST(test_find_layer_by_name(img, "Child") != NULL);
+    TEST(layer_find(img, parent_id) != NULL);
+    TEST(layer_find(img, child_id) != NULL);
+    TEST(layer_find(img, child_id)->parent_id == parent_id);
+    TEST(layer_is_ancestor(img, dup_parent, dup_child));
+    TEST(layer_depth(img, dup_child) == layer_depth(img, dup_parent) + 1);
+
+    image_delete(img);
+}
+
+static void test_clone_layer_subtree(void)
+{
+    image_t *img;
+    layer_t *parent, *child, *clone_parent, *clone_child;
+    int parent_id, child_id;
+
+    img = image_new();
+    parent = img->layers;
+    TEST(parent != NULL);
+    img->active_layer = parent;
+    snprintf(parent->name, sizeof(parent->name), "Parent");
+    parent_id = parent->id;
+
+    child = image_add_child_layer(img, parent);
+    TEST(child != NULL);
+    snprintf(child->name, sizeof(child->name), "Child");
+    child_id = child->id;
+
+    clone_parent = image_clone_layer(img, parent);
+    TEST(clone_parent != NULL);
+    TEST(clone_parent->id != parent_id);
+    TEST(clone_parent->id != child_id);
+    TEST(clone_parent->base_id == parent_id);
+    TEST(layer_has_children(img, clone_parent));
+
+    clone_child = NULL;
+    DL_FOREACH(img->layers, child) {
+        if (child->parent_id == clone_parent->id) {
+            clone_child = child;
+            break;
+        }
+    }
+    TEST(clone_child != NULL);
+    TEST(clone_child->id != parent_id);
+    TEST(clone_child->id != child_id);
+    TEST(clone_child->id != clone_parent->id);
+    TEST(clone_child->parent_id == clone_parent->id);
+    TEST(clone_child->parent_id != clone_child->id);
+    TEST(clone_child->base_id == child_id);
+    TEST(layer_is_ancestor(img, clone_parent, clone_child));
+    TEST(layer_depth(img, clone_child) == layer_depth(img, clone_parent) + 1);
+
+    image_delete(img);
+}
+
 void tests_run(void)
 {
     test_delete_layer_subtree_undo();
+    test_duplicate_layer_subtree();
+    test_clone_layer_subtree();
     test_load_file_v2();
     test_load_file_v1_with_preview();
     test_load_corrupt();

@@ -97,6 +97,9 @@ layer_t *image_add_shape_layer_below_active(image_t *img);
  * image_history_push before calling (ACTION_img_del_layer does). */
 void image_delete_layer(image_t *img, layer_t *layer);
 layer_t *image_duplicate_layer(image_t *img, layer_t *layer);
+/* Clone layer (+subtree). Each new layer keeps base_id pointing at the
+ * corresponding original so volumes stay live-linked. */
+layer_t *image_clone_layer(image_t *img, layer_t *layer);
 void image_merge_visible_layers(image_t *img);
 /* Merge all descendants into parent volume and delete them. No-op if parent
  * has no children. Does not push history. */
