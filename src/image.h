@@ -105,6 +105,8 @@ bool layer_is_ancestor(const image_t *img, const layer_t *ancestor,
  * "current layer only" filters so a selected parent includes children. */
 bool layer_in_active_subtree(const image_t *img, const layer_t *layer);
 bool layer_has_children(const image_t *img, const layer_t *layer);
+/* True if no ancestor is collapsed (row would appear in the layers panel). */
+bool layer_panel_row_visible(const image_t *img, const layer_t *layer);
 /* Clear collapsed on all ancestors so the layers panel can show layer. */
 void image_expand_to_show_layer(image_t *img, const layer_t *layer);
 /* Nesting list order: children sit *before* the parent in the forward

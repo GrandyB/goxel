@@ -226,6 +226,17 @@ void image_expand_to_show_layer(image_t *img, const layer_t *layer)
     }
 }
 
+bool layer_panel_row_visible(const image_t *img, const layer_t *layer)
+{
+    const layer_t *p;
+    if (!img || !layer) return false;
+    for (p = layer_find(img, layer->parent_id); p;
+         p = layer_find(img, p->parent_id)) {
+        if (p->collapsed) return false;
+    }
+    return true;
+}
+
 bool layer_has_children(const image_t *img, const layer_t *layer)
 {
     layer_t *other;

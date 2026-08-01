@@ -89,8 +89,8 @@ int tool_gui(tool_t *tool);
 /* Wireframe boxes: Cursor-tool gizmos, plus layers-panel hover bbox for any
  * tool. Call from the 3D view render path so they stay visible over UI. */
 void tool_cursor_render(void);
-/* Alt name labels for the Cursor tool, plus apostrophe pick-preview label;
- * call during the gui frame. */
+/* Cursor-tool layer name labels (always or Alt, per tool panel), plus
+ * apostrophe pick-preview label; call during the gui frame. */
 void tool_cursor_render_labels(void);
 /* Clear panel-hover solo at the start of each GUI frame. */
 void tool_cursor_on_gui_frame(void);
@@ -100,6 +100,9 @@ void tool_cursor_set_panel_hover(layer_t *layer);
 /* Hold-to-preview for select-layer-under-cursor: bbox + name at label_pos
  * (world hit under the cursor). Pass NULL layer to clear. */
 void tool_cursor_set_pick_preview(layer_t *layer, const float label_pos[3]);
+/* Show a visible layer's wireframe bbox + centred name for duration_sec
+ * (e.g. arrow-key layer switch). No-op if hidden or empty. */
+void tool_cursor_flash_layer_bbox(layer_t *layer, double duration_sec);
 /* Drop in-progress cursor drag / viewport hover (e.g. panel selection change). */
 void tool_cursor_clear_edit(void);
 

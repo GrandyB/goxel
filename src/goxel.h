@@ -592,7 +592,7 @@ typedef struct goxel
     struct {
         float  rotation[4];
         float  pos[2];
-        /* FPV: world offset from RMB-rotate (gesture) mat[3] that arrow keys
+        /* FPV: world offset from RMB-rotate (gesture) mat[3] that fly arrows
          * have applied since RMB; on_rotate re-adds it after mouselook reset. */
         float  camera_ofs[3];
         float  camera_mat[4][4];
@@ -600,7 +600,7 @@ typedef struct goxel
         float  pivot_point[3];
         bool   has_pivot_point;
     } move_origin;
-    /* FPV: mouselook (RMB/MMB) in progress; arrow strafe in move_origin.camera_ofs. */
+    /* FPV: mouselook (RMB/MMB) in progress; fly strafe in move_origin.camera_ofs. */
     bool   fpv_look_drag;
     /* Player + Alt: temporary fly (FPV) until Alt released; for shortcut routing. */
     bool   player_flycam_hold;
@@ -703,6 +703,9 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 /* Hold/release for ACTION_select_layer_under_cursor shortcut (preview while
  * held, select on release). Call from goxel_iter after cursor updates. */
 void goxel_layer_pick_key_iter(const inputs_t *inputs);
+/* Arrow keys: up/down select among layers-panel-visible rows; left/right
+ * collapse/expand. Skipped while fly/FPV arrows move the camera. */
+void goxel_layer_nav_key_iter(const inputs_t *inputs);
 
 const volume_t *goxel_get_layers_volume(const image_t *img);
 const volume_t *goxel_get_layers_volume_for_snap(const image_t *img);

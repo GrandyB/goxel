@@ -958,6 +958,7 @@ int goxel_iter(const inputs_t *inputs)
 
     /* After cursor.xy is current: hold ' shows layer bbox/name, release picks. */
     goxel_layer_pick_key_iter(inputs);
+    goxel_layer_nav_key_iter(inputs);
 
     if (DEFINED(SOUND) && time - goxel.last_click_time > 0.1) {
         volume_key = volume_get_key(goxel_get_render_volume(goxel.image));
@@ -1212,7 +1213,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         return;
     }
 
-    // handle keyboard rotations
+    // Keyboard camera (fly arrows / page turntable) and related keys.
     if (!capture_keys) return;
 
     if (!camera_is_player(camera)) {
@@ -1236,33 +1237,18 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     } else {
         const bool fly_move = camera->mode == CAMERA_MODE_FPV || player_alt_fly;
         const float fly_speed = camera->fly_speed;
-        if (inputs->keys[KEY_LEFT]) {
-            if (fly_move) {
+        /* Orbit: arrows navigate layers (see goxel_layer_nav_key_iter).
+         * Fly/FPV (and player+Alt): arrows still strafe. PageUp/Down pitch
+         * or move vertically. */
+        if (fly_move) {
+            if (inputs->keys[KEY_LEFT])
                 camera_move(camera, -t, 0, 0, fly_speed);
-            } else {
-                camera_turntable(camera, +0.05, 0);
-            }
-        }
-        if (inputs->keys[KEY_RIGHT]) {
-            if (fly_move) {
+            if (inputs->keys[KEY_RIGHT])
                 camera_move(camera, +t, 0, 0, fly_speed);
-            } else {
-                camera_turntable(camera, -0.05, 0);
-            }
-        }
-        if (inputs->keys[KEY_UP]) {
-            if (fly_move) {
+            if (inputs->keys[KEY_UP])
                 camera_move(camera, 0, -t, 0, fly_speed);
-            } else {
-                camera_turntable(camera, +0.05, 0);
-            }
-        }
-        if (inputs->keys[KEY_DOWN]) {
-            if (fly_move) {
+            if (inputs->keys[KEY_DOWN])
                 camera_move(camera, 0, +t, 0, fly_speed);
-            } else {
-                camera_turntable(camera, 0, -0.05);
-            }
         }
         if (inputs->keys[KEY_PAGE_UP]) {
             if (fly_move) {
@@ -2882,6 +2868,126 @@ void goxel_layer_pick_key_iter(const inputs_t *inputs)
     action = action_get(ACTION_select_layer_under_cursor, false);
     held = action_shortcut_held(action, inputs);
     goxel_layer_pick_key_update(held);
+}
+
+/* Walk up to the panel-visible ancestor when the active layer is nested
+ * under a collapsed parent (still selected, but not listed). */
+static layer_t *layer_nav_visible_anchor(const image_t *img, layer_t *layer)
+{
+    if (!layer) return NULL;
+    while (layer && !layer_panel_row_visible(img, layer))
+        layer = layer_find(img, layer->parent_id);
+    return layer;
+}
+
+static void layer_nav_select(image_t *img, layer_t *layer)
+{
+    if (!img || !layer || img->active_layer == layer) return;
+    img->active_layer = layer;
+    tool_cursor_clear_edit();
+    tool_clear_preview();
+    tool_cursor_flash_layer_bbox(layer, 0.5);
+}
+
+/* True on key-down edge, or while held after an initial delay (repeat). */
+static bool layer_nav_key_pulse(bool down, bool *was_down, double *next_t,
+                                double now, bool allow_repeat)
+{
+    if (!down) {
+        *was_down = false;
+        *next_t = 0;
+        return false;
+    }
+    if (!*was_down) {
+        *was_down = true;
+        *next_t = now + (allow_repeat ? 0.35 : 1e9);
+        return true;
+    }
+    if (allow_repeat && now >= *next_t) {
+        *next_t = now + 0.07;
+        return true;
+    }
+    return false;
+}
+
+void goxel_layer_nav_key_iter(const inputs_t *inputs)
+{
+    static bool was_up, was_down, was_left, was_right;
+    static double next_up, next_down, next_left, next_right;
+    image_t *img = goxel.image;
+    camera_t *cam;
+    layer_t *layer;
+    layer_t *cur;
+    layer_t *prev = NULL;
+    layer_t *next = NULL;
+    layer_t *first = NULL;
+    layer_t *last = NULL;
+    layer_t *seen_cur = NULL;
+    bool fly_move;
+    bool player_alt_fly;
+    double now;
+    bool go_up, go_down, go_left, go_right;
+
+    if (!inputs || !img || gui_want_capture_keyboard()) {
+        was_up = was_down = was_left = was_right = false;
+        return;
+    }
+
+    cam = img->active_camera;
+    player_alt_fly = cam && cam->mode == CAMERA_MODE_PLAYER &&
+        (inputs->keys[KEY_LEFT_ALT] || inputs->keys[KEY_RIGHT_ALT]);
+    fly_move = cam && (cam->mode == CAMERA_MODE_FPV || player_alt_fly);
+    /* Fly/FPV keeps arrows for movement. */
+    if (fly_move) {
+        was_up = was_down = was_left = was_right = false;
+        return;
+    }
+
+    now = sys_get_time();
+    go_up = layer_nav_key_pulse(inputs->keys[KEY_UP], &was_up, &next_up,
+                                now, true);
+    go_down = layer_nav_key_pulse(inputs->keys[KEY_DOWN], &was_down,
+                                  &next_down, now, true);
+    go_left = layer_nav_key_pulse(inputs->keys[KEY_LEFT], &was_left,
+                                  &next_left, now, false);
+    go_right = layer_nav_key_pulse(inputs->keys[KEY_RIGHT], &was_right,
+                                   &next_right, now, false);
+
+    if (!go_up && !go_down && !go_left && !go_right)
+        return;
+
+    cur = layer_nav_visible_anchor(img, img->active_layer);
+
+    /* Panel order (top → bottom): reverse list walk, skip collapsed nests. */
+    DL_FOREACH_REVERSE(img->layers, layer) {
+        if (!layer_panel_row_visible(img, layer)) continue;
+        if (!first) first = layer;
+        if (seen_cur && !next)
+            next = layer;
+        if (cur && layer == cur) {
+            prev = last;
+            seen_cur = layer;
+        }
+        last = layer;
+    }
+
+    if (go_up) {
+        if (!cur)
+            layer_nav_select(img, last);
+        else if (prev)
+            layer_nav_select(img, prev);
+    } else if (go_down) {
+        if (!cur)
+            layer_nav_select(img, first);
+        else if (next)
+            layer_nav_select(img, next);
+    } else if (go_right) {
+        if (cur && layer_has_children(img, cur) && cur->collapsed)
+            cur->collapsed = false;
+    } else if (go_left) {
+        if (cur && layer_has_children(img, cur) && !cur->collapsed)
+            cur->collapsed = true;
+    }
 }
 
 ACTION_REGISTER(ACTION_select_layer_under_cursor,

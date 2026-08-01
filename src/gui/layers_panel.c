@@ -65,16 +65,6 @@ static void unfocus_and_frame_image(void)
     goxel_frame_image_box_in_orbit();
 }
 
-static bool ancestor_collapsed(const image_t *img, const layer_t *layer)
-{
-    const layer_t *p;
-    for (p = layer_find(img, layer->parent_id); p;
-         p = layer_find(img, p->parent_id)) {
-        if (p->collapsed) return true;
-    }
-    return false;
-}
-
 /* Indent for in-group drop lines: aligns with the name column at that depth. */
 static float layer_dnd_indent(int depth)
 {
@@ -218,7 +208,7 @@ static void render_layers_list(void)
         int depth;
         char id[32];
 
-        if (ancestor_collapsed(img, layer)) continue;
+        if (!layer_panel_row_visible(img, layer)) continue;
 
         depth = layer_depth(img, layer);
         has_kids = layer_has_children(img, layer);

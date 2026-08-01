@@ -20,8 +20,14 @@
 
 #include <math.h>
 
+enum {
+    CURSOR_NAMES_ON_ALT = 0, /* default (zero-init) */
+    CURSOR_NAMES_ALWAYS = 1,
+};
+
 typedef struct {
     tool_t tool;
+    int names_mode; /* CURSOR_NAMES_ON_ALT or CURSOR_NAMES_ALWAYS */
 } tool_cursor_t;
 
 typedef struct {
@@ -44,6 +50,24 @@ static layer_t *g_viewport_hover = NULL;
 static layer_t *g_pick_preview = NULL;
 static float g_pick_preview_label_pos[3];
 static bool g_pick_preview_has_label = false;
+/* Timed bbox flash after arrow-key layer switch (any tool). */
+static layer_t *g_flash_preview = NULL;
+static double g_flash_preview_until = 0;
+
+static layer_t *flash_preview_active(void)
+{
+    if (!g_flash_preview) return NULL;
+    if (sys_get_time() >= g_flash_preview_until) {
+        g_flash_preview = NULL;
+        return NULL;
+    }
+    if (!goxel.image ||
+        layer_find(goxel.image, g_flash_preview->id) != g_flash_preview) {
+        g_flash_preview = NULL;
+        return NULL;
+    }
+    return g_flash_preview;
+}
 
 static bool layer_gets_gizmo(const image_t *img, const layer_t *layer)
 {
@@ -223,6 +247,13 @@ static void draw_gizmo_boxes(const image_t *img)
     if (g_pick_preview) {
         render_solo_preview_box(img, g_pick_preview);
         return;
+    }
+    {
+        layer_t *flash = flash_preview_active();
+        if (flash) {
+            render_solo_preview_box(img, flash);
+            return;
+        }
     }
     if (g_panel_hover) {
         render_solo_preview_box(img, g_panel_hover);
@@ -425,10 +456,17 @@ static int iter(tool_t *tool, const painter_t *painter,
 
 static int gui(tool_t *tool)
 {
-    (void)tool;
+    tool_cursor_t *cursor = (tool_cursor_t *)tool;
+
     gui_text("Click a box to select a layer.");
     gui_text("With a layer selected, drag the arrows to move.");
-    gui_text("Hold Alt to show layer names.");
+
+    gui_group_begin(NULL);
+    gui_selectable_toggle("Always show names", &cursor->names_mode,
+                          CURSOR_NAMES_ALWAYS, NULL, -1);
+    gui_selectable_toggle("Show names on alt", &cursor->names_mode,
+                          CURSOR_NAMES_ON_ALT, NULL, -1);
+    gui_group_end();
     return 0;
 }
 
@@ -476,6 +514,24 @@ void tool_cursor_set_pick_preview(layer_t *layer, const float label_pos[3])
     }
 }
 
+void tool_cursor_flash_layer_bbox(layer_t *layer, double duration_sec)
+{
+    float box[4][4];
+
+    /* Only flash when the layer is effectively visible and has a bbox. */
+    if (layer && goxel.image &&
+        layer_find(goxel.image, layer->id) == layer &&
+        duration_sec > 0 &&
+        layer_effectively_visible(goxel.image, layer) &&
+        layer_gizmo_box(layer, box)) {
+        g_flash_preview = layer;
+        g_flash_preview_until = sys_get_time() + duration_sec;
+    } else {
+        g_flash_preview = NULL;
+        g_flash_preview_until = 0;
+    }
+}
+
 void tool_cursor_render(void)
 {
     image_t *img = goxel.image;
@@ -487,8 +543,13 @@ void tool_cursor_render(void)
     if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) {
         if (g_pick_preview)
             render_solo_preview_box(img, g_pick_preview);
-        else if (g_panel_hover)
-            render_solo_preview_box(img, g_panel_hover);
+        else {
+            layer_t *flash = flash_preview_active();
+            if (flash)
+                render_solo_preview_box(img, flash);
+            else if (g_panel_hover)
+                render_solo_preview_box(img, g_panel_hover);
+        }
         return;
     }
     draw_gizmo_boxes(img);
@@ -515,8 +576,23 @@ void tool_cursor_render_labels(void)
         return;
     }
 
+    /* Arrow-key layer switch: name at bbox centre while flash is active. */
+    {
+        layer_t *flash = flash_preview_active();
+        if (flash && flash->name[0] && layer_gizmo_box(flash, box)) {
+            box_center(box, pos);
+            gui_world_label(pos, flash->name, color);
+            return;
+        }
+    }
+
     if (!goxel.tool || goxel.tool->id != TOOL_CURSOR) return;
-    if (!(goxel.cursor.flags & CURSOR_LEFT_ALT)) return;
+    {
+        tool_cursor_t *cursor = (tool_cursor_t *)goxel.tool;
+        if (cursor->names_mode == CURSOR_NAMES_ON_ALT &&
+            !(goxel.cursor.flags & CURSOR_LEFT_ALT))
+            return;
+    }
 
     if (g_panel_hover) {
         if (g_panel_hover->name[0] && layer_gizmo_box(g_panel_hover, box)) {
