@@ -361,33 +361,83 @@ void voxel_combine(const uint8_t a[4], const uint8_t b[4], int mode,
     memcpy(out, ret, 4);
 }
 
-/** Beginning at the given world position, burrow downwards until you find a block and funnel out its color. */
-void get_color_beneath(int start_pos[3], uint8_t* out) {
-    uint8_t color[4];
-    volume_iterator_t iter = {0};
-    int z, pos[3];
-    pos[0] = start_pos[0];
-    pos[1] = start_pos[1];
-    pos[2] = start_pos[2];
-    const volume_t *volume = goxel_get_layers_volume(goxel.image);
+/* Context for color_inherit lookups within one volume_op / surface stamp.
+ * Caller fetches goxel_get_layers_volume once; do not call it per voxel. */
+typedef struct color_beneath_ctx {
+    const volume_t *volume;
+    volume_iterator_t iter;
+    int lowest_z;
+    /* Column memo: first solid at/below empty_top is at found_z with color. */
+    bool memo_valid;
+    int memo_x, memo_y;
+    int memo_empty_top;
+    int memo_found_z;
+    uint8_t memo_color[4];
+} color_beneath_ctx_t;
 
-    // Grab the image box extents
+static void color_beneath_ctx_init(color_beneath_ctx_t *ctx)
+{
     float box[4][4];
+
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->volume = goxel_get_layers_volume(goxel.image);
     mat4_copy(goxel.image->box, box);
     if (box_is_null(box))
-        volume_get_box(volume, true, box);
-    int lowest_z = box[3][2] - box[2][2];
+        volume_get_box(ctx->volume, true, box);
+    ctx->lowest_z = (int)(box[3][2] - box[2][2]);
+}
 
-    for (z = start_pos[2]; z >= lowest_z; z--) {
-        pos[2] = z;
-        volume_get_at(volume, &iter, pos, color);
-        bool hasBlock = color[3] != 0; // Completely transparent colour of block
-        if (hasBlock) {
-            //LOG_D("FOUND : %i / %i / %i / %i", color[0], color[1], color[2], color[3]);
-            break;
-        }
+/** Beginning at start_pos, burrow downwards until a block is found. */
+static void get_color_beneath(color_beneath_ctx_t *ctx, const int start_pos[3],
+                              uint8_t *out)
+{
+    uint8_t color[4] = {0};
+    int z, pos[3];
+    int start_z = start_pos[2];
+
+    pos[0] = start_pos[0];
+    pos[1] = start_pos[1];
+
+    if (ctx->memo_valid &&
+            ctx->memo_x == pos[0] && ctx->memo_y == pos[1] &&
+            start_z >= ctx->memo_found_z && start_z <= ctx->memo_empty_top) {
+        memcpy(out, ctx->memo_color, 4);
+        return;
     }
-    //LOG_D("Color @ %i/%i/%i : %i / %i / %i / %i (lowest: %i, start: %i)", pos[0], pos[1], pos[2], color[0], color[1], color[2], color[3], lowest_z, start_pos[2]);
+
+    /* Extend an existing column memo upward when possible. */
+    if (ctx->memo_valid &&
+            ctx->memo_x == pos[0] && ctx->memo_y == pos[1] &&
+            start_z > ctx->memo_empty_top) {
+        for (z = start_z; z > ctx->memo_empty_top; z--) {
+            pos[2] = z;
+            volume_get_at(ctx->volume, &ctx->iter, pos, color);
+            if (color[3] != 0) {
+                ctx->memo_empty_top = start_z;
+                ctx->memo_found_z = z;
+                memcpy(ctx->memo_color, color, 4);
+                memcpy(out, color, 4);
+                return;
+            }
+        }
+        ctx->memo_empty_top = start_z;
+        memcpy(out, ctx->memo_color, 4);
+        return;
+    }
+
+    for (z = start_z; z >= ctx->lowest_z; z--) {
+        pos[2] = z;
+        volume_get_at(ctx->volume, &ctx->iter, pos, color);
+        if (color[3] != 0)
+            break;
+    }
+
+    ctx->memo_valid = true;
+    ctx->memo_x = pos[0];
+    ctx->memo_y = pos[1];
+    ctx->memo_empty_top = start_z;
+    ctx->memo_found_z = z;
+    memcpy(ctx->memo_color, color, 4);
     memcpy(out, color, 4);
 }
 
@@ -567,6 +617,7 @@ void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
     uint8_t src_voxel[4], dst_voxel[4], paint_voxel[4], new_voxel[4];
     volume_iterator_t src_iter = {0};
     volume_accessor_t dst_accessor;
+    color_beneath_ctx_t inherit_ctx;
 
     if (!src || !dst) return;
 
@@ -591,6 +642,9 @@ void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
                 (int)ceilf(center[1] + radius_y + band));
     if (min_x > max_x || min_y > max_y)
         return;
+
+    if (painter->color_inherit)
+        color_beneath_ctx_init(&inherit_ctx);
 
     dst_accessor = volume_get_accessor(dst);
     for (x = min_x; x <= max_x; x++) {
@@ -621,7 +675,7 @@ void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
                         brush_sample_texture_color(pos, paint_voxel)) {
                     paint_voxel[3] = ((int)paint_voxel[3] * (int)painter->color[3]) / 255;
                 } else if (painter->color_inherit) {
-                    get_color_beneath(pos, paint_voxel);
+                    get_color_beneath(&inherit_ctx, pos, paint_voxel);
                 }
                 if (!(goxel.tool && goxel.tool->id == TOOL_BRUSH &&
                       goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE)) {
@@ -765,7 +819,11 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     // XXX: for the moment we cannot use the same accessor for both
     // setting and getting!  Need to fix that!!
     accessor = volume_get_accessor(volume);
-    
+
+    color_beneath_ctx_t inherit_ctx;
+    if (painter->color_inherit)
+        color_beneath_ctx_init(&inherit_ctx);
+
     // For every tile in the volume, iterate
     while (volume_iter(&iter, vp)) {
         vec3_set(p, vp[0] + 0.5, vp[1] + 0.5, vp[2] + 0.5);
@@ -797,7 +855,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
             // Apply shared brush opacity to sampled texture alpha.
             col[3] = ((int)col[3] * (int)painter->color[3]) / 255;
         } else if (painter->color_inherit) {
-            get_color_beneath(vp, col);
+            get_color_beneath(&inherit_ctx, vp, col);
         }
 
         // Apply noise

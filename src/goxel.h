@@ -77,7 +77,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_2t-pre3"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_2t-pre5"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -529,7 +529,8 @@ typedef struct goxel
     uint32_t   render_volume_hash;
 
     layer_t    *render_layers;
-    uint32_t   render_layers_hash;
+    uint32_t   render_layers_hash;      /* Structural: image + focus + active (no tool). */
+    uint32_t   render_layers_tool_key;  /* Applied tool_volume key, or 0 if none. */
 
     struct     {
         volume_t *volume;
@@ -733,7 +734,9 @@ void goxel_shift_focus_layer(layer_t *layer);
  * Compute merged current image layer list
  *
  * This returns a simplified list of layers from the current image where
- * we merged as many layers as possible into a single one.
+ * we merged as many layers as possible into a single one.  The active layer
+ * is never merged into neighbors so tool preview can be swapped in place
+ * without remashing the whole stack when tool_volume changes.
  *
  * It also can replace the current layer volume with the tool preview.
  *

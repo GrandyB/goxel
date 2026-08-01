@@ -1798,22 +1798,27 @@ void goxel_shift_focus_layer(layer_t *layer)
 
 const layer_t *goxel_get_render_layers(bool with_tool_preview)
 {
-    uint32_t hash, k;
+    uint32_t hash;
+    uint32_t tool_key = 0;
     layer_t *l, *layer, *tmp;
+    layer_t *active = goxel.image ? goxel.image->active_layer : NULL;
+    layer_t *focused;
+    layer_t *active_render = NULL;
+    int active_id = active ? active->id : 0;
+    int focus_id;
+    bool is_active, prev_is_active, can_merge;
 
+    /* Structural cache only - tool_volume must not force a full remash. */
     hash = image_get_key(goxel.image);
-    if (with_tool_preview && goxel.tool_volume) {
-        k = volume_get_key(goxel.tool_volume);
-        hash = XXH32(&k, sizeof(k), hash);
-    }
-    {
-        layer_t *focused = image_get_focused_layer(goxel.image);
-        int focus_id = focused ? focused->id : 0;
-        hash = XXH32(&focus_id, sizeof(focus_id), hash);
-    }
+    focused = image_get_focused_layer(goxel.image);
+    focus_id = focused ? focused->id : 0;
+    hash = XXH32(&focus_id, sizeof(focus_id), hash);
+    hash = XXH32(&active_id, sizeof(active_id), hash);
 
     if (hash != goxel.render_layers_hash) {
         goxel.render_layers_hash = hash;
+        /* Rebuild uses committed volumes; clear so tool preview re-applies. */
+        goxel.render_layers_tool_key = 0;
         image_update(goxel.image);
 
         DL_FOREACH_SAFE(goxel.render_layers, layer, tmp) {
@@ -1828,17 +1833,18 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview)
             /* Inclusion already means draw-worthy (incl. focus override of a
              * hidden layer); force visible so downstream checks agree. */
             layer->visible = true;
-            if (    with_tool_preview && goxel.tool_volume &&
-                    goxel.image->active_layer &&
-                    l->volume == goxel.image->active_layer->volume)
-            {
-                volume_set(layer->volume, goxel.tool_volume);
-            }
 
-            if (    goxel.render_layers &&
+            /* Keep the active layer as its own entry so tool preview can
+             * volume_set in place without remashing the whole stack. */
+            is_active = active && l->id == active->id;
+            prev_is_active = active && goxel.render_layers &&
+                             goxel.render_layers->prev->id == active->id;
+            can_merge = goxel.render_layers &&
                     goxel.render_layers->prev->material == layer->material &&
-                    fabsf(goxel.render_layers->prev->opacity - layer->opacity) < 1e-4f)
-            {
+                    fabsf(goxel.render_layers->prev->opacity - layer->opacity) < 1e-4f &&
+                    !is_active && !prev_is_active;
+
+            if (can_merge) {
                 volume_merge(goxel.render_layers->prev->volume, layer->volume,
                            MODE_OVER, NULL);
                 layer_delete(layer);
@@ -1847,6 +1853,28 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview)
             }
         }
     }
+
+    if (with_tool_preview && goxel.tool_volume)
+        tool_key = volume_get_key(goxel.tool_volume);
+
+    if (tool_key != goxel.render_layers_tool_key) {
+        goxel.render_layers_tool_key = tool_key;
+        if (active) {
+            DL_FOREACH(goxel.render_layers, layer) {
+                if (layer->id == active->id) {
+                    active_render = layer;
+                    break;
+                }
+            }
+        }
+        if (active_render && active_render->volume) {
+            if (tool_key)
+                volume_set(active_render->volume, goxel.tool_volume);
+            else if (active && active->volume)
+                volume_set(active_render->volume, active->volume);
+        }
+    }
+
     return goxel.render_layers;
 }
 
