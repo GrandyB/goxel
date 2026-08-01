@@ -251,7 +251,8 @@ void gui_menu(void)
             goxel_rotate_90(-1, false);
         gui_menu_end();
     }
-    if (gui_menu_begin("Layer", true)) {
+    if (goxel.image && goxel.image->active_layer &&
+        gui_menu_begin("Layer", true)) {
         filters_iter_menu("adjustments", NULL, NULL, on_layer_filter);
         gui_separator();
         filters_iter_menu("image", NULL, NULL, on_layer_filter);
