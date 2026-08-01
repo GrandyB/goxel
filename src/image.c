@@ -1051,8 +1051,6 @@ void image_delete_layer(image_t *img, layer_t *layer)
 {
     layer_t *nodes[LAYER_SUBTREE_MAX];
     layer_t *other;
-    layer_t *sel_after_delete = NULL;
-    layer_t *first;
     int n, i;
     bool active_in_subtree = false;
 
@@ -1082,19 +1080,6 @@ void image_delete_layer(image_t *img, layer_t *layer)
     if (n <= 0) {
         nodes[0] = layer;
         n = 1;
-    }
-
-    first = nodes[0];
-    /*
-     * Layers panel renders tail-to-head with DL_FOREACH_REVERSE.
-     * Select the row visually below the deleted block: first->prev, or
-     * (when the block is at the forward head / visual bottom) layer->next.
-     * Skip when the subtree is the entire list (circular wrap).
-     */
-    if (img->layers && !(first == img->layers && layer->next == first)) {
-        sel_after_delete = (first == img->layers)
-                ? layer->next
-                : first->prev;
     }
 
     for (i = 0; i < n; i++) {
@@ -1129,12 +1114,6 @@ void image_delete_layer(image_t *img, layer_t *layer)
         layer->visible = true;
         layer->id = img_get_new_id(img);
         DL_APPEND(img->layers, layer);
-    }
-    if (!img->active_layer) {
-        if (sel_after_delete && layer_find(img, sel_after_delete->id))
-            img->active_layer = sel_after_delete;
-        else
-            img->active_layer = img->layers;
     }
 }
 
