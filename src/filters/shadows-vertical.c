@@ -23,7 +23,7 @@
 #include <time.h>
 
 /*
- * Filter to apply baked shadows.
+ * Filter to apply baked shadows cast straight down from other visible layers.
  */
 typedef struct
 {
@@ -32,9 +32,9 @@ typedef struct
     float multi_block_multiplier;
     float multi_block_cap;
     bool do_smoothing;
-} filter_simple_shadows_t;
+} filter_vertical_shadows_t;
 
-void adjust_colour_brightness(uint8_t colour[4], float multiplier)
+static void adjust_colour_brightness(uint8_t colour[4], float multiplier)
 {
     for (int i = 0; i < 3; i++)
     { // Only R, G, B
@@ -54,7 +54,7 @@ int ind(int x, int y, int width, int height)
     return wrapped_y * width + wrapped_x;
 }
 
-static void shadows_simple_debug_log_layers(const char *phase)
+static void shadows_vertical_debug_log_layers(const char *phase)
 {
     image_t *img = goxel.image;
     layer_t *active = img ? img->active_layer : NULL;
@@ -62,16 +62,16 @@ static void shadows_simple_debug_log_layers(const char *phase)
     int idx = 0;
     int visible_with_volume = 0;
 
-    LOG_I("[shadows-simple] --- %s ---", phase);
+    LOG_I("[shadows-vertical] --- %s ---", phase);
 
     if (!img) {
-        LOG_W("[shadows-simple] goxel.image is NULL");
+        LOG_W("[shadows-vertical] goxel.image is NULL");
         return;
     }
     if (!active) {
-        LOG_W("[shadows-simple] no active layer on image");
+        LOG_W("[shadows-vertical] no active layer on image");
     } else {
-        LOG_I("[shadows-simple] active (target) layer: \"%s\" id=%d visible=%d "
+        LOG_I("[shadows-vertical] active (target) layer: \"%s\" id=%d visible=%d "
               "volume=%p empty=%d is_volume=%d",
               active->name, active->id, active->visible,
               (void *)active->volume,
@@ -79,12 +79,12 @@ static void shadows_simple_debug_log_layers(const char *phase)
               layer_is_volume(active));
     }
 
-    LOG_I("[shadows-simple] image box is_null=%d", box_is_null(img->box));
+    LOG_I("[shadows-vertical] image box is_null=%d", box_is_null(img->box));
     if (!box_is_null(img->box)) {
         int dims[3], start[3];
         box_get_dimensions(img->box, dims);
         box_get_start_pos(img->box, start);
-        LOG_I("[shadows-simple] image box dims=%d x %d x %d, start=%d,%d,%d",
+        LOG_I("[shadows-vertical] image box dims=%d x %d x %d, start=%d,%d,%d",
               dims[0], dims[1], dims[2], start[0], start[1], start[2]);
     }
 
@@ -95,7 +95,7 @@ static void shadows_simple_debug_log_layers(const char *phase)
         /* Casters: visible layers merged into goxel_get_layers_volume while active is hidden. */
         bool casts_shadow = layer->visible && has_vol && !empty && !is_active;
 
-        LOG_I("[shadows-simple]   layer[%d] \"%s\" id=%d active=%d visible=%d "
+        LOG_I("[shadows-vertical]   layer[%d] \"%s\" id=%d active=%d visible=%d "
               "volume=%p empty=%d is_volume=%d casts_shadow=%d",
               idx++, layer->name, layer->id, is_active, layer->visible,
               (void *)layer->volume, empty ? 1 : 0, layer_is_volume(layer),
@@ -104,13 +104,13 @@ static void shadows_simple_debug_log_layers(const char *phase)
         if (layer->visible && has_vol && !empty)
             visible_with_volume++;
     }
-    LOG_I("[shadows-simple] %d layer(s) with visible non-empty volume (incl. active)",
+    LOG_I("[shadows-vertical] %d layer(s) with visible non-empty volume (incl. active)",
           visible_with_volume);
 }
 
 static int gui(filter_t *filter_)
 {
-    filter_simple_shadows_t *filter = (void *)filter_;
+    filter_vertical_shadows_t *filter = (void *)filter_;
 
     const char *help_text = "This filter applies shadow to the current layer, using blocks from other visible layers, directly vertically downwards.";
     goxel_set_help_text(help_text);
@@ -152,40 +152,40 @@ static int gui(filter_t *filter_)
         gui_enabled_begin(has_layer);
         if (gui_button_primary("Apply to current layer", -1, 0))
         {
-        shadows_simple_debug_log_layers("Apply pressed");
-        LOG_I("[shadows-simple] settings: strength=%.3f multi_block=%.3f cap=%.3f smoothing=%d",
+        shadows_vertical_debug_log_layers("Apply pressed");
+        LOG_I("[shadows-vertical] settings: strength=%.3f multi_block=%.3f cap=%.3f smoothing=%d",
               filter->strength, filter->multi_block_multiplier,
               filter->multi_block_cap, filter->do_smoothing);
 
         if (!goxel.image) {
-            LOG_E("[shadows-simple] abort: no image");
+            LOG_E("[shadows-vertical] abort: no image");
             goto apply_end;
         }
         layer_t *layer = goxel.image->active_layer;
         if (!layer) {
-            LOG_E("[shadows-simple] abort: no active layer");
+            LOG_E("[shadows-vertical] abort: no active layer");
             goto apply_end;
         }
         if (!layer->volume) {
-            LOG_E("[shadows-simple] abort: active layer \"%s\" has no volume",
+            LOG_E("[shadows-vertical] abort: active layer \"%s\" has no volume",
                   layer->name);
             goto apply_end;
         }
         image_history_push(goxel.image);
         if (box_is_null(goxel.image->box)) {
-            LOG_W("[shadows-simple] image box is null; dims may be wrong");
+            LOG_W("[shadows-vertical] image box is null; dims may be wrong");
         }
 
         layer->visible = false;
         const volume_t *other_visible_layers_combined = goxel_get_layers_volume(goxel.image);
         layer->visible = true;
 
-        LOG_I("[shadows-simple] shadow caster volume (visible layers, active hidden): "
+        LOG_I("[shadows-vertical] shadow caster volume (visible layers, active hidden): "
               "ptr=%p empty=%d",
               (void *)other_visible_layers_combined,
               other_visible_layers_combined ?
                   volume_is_empty(other_visible_layers_combined) : -1);
-        LOG_I("[shadows-simple] target volume (active layer \"%s\"): empty=%d",
+        LOG_I("[shadows-vertical] target volume (active layer \"%s\"): empty=%d",
               layer->name, volume_is_empty(layer->volume));
 
         int dims[3], start_pos[3], pos[3];
@@ -195,13 +195,13 @@ static int gui(filter_t *filter_)
         box_get_dimensions(box, dims);
         box_get_start_pos(box, start_pos);
 
-        LOG_I("[shadows-simple] working grid %d x %d x %d at start %d,%d,%d "
+        LOG_I("[shadows-vertical] working grid %d x %d x %d at start %d,%d,%d "
               "(shadow_map cells=%d)",
               dims[0], dims[1], dims[2], start_pos[0], start_pos[1], start_pos[2],
               dims[0] * dims[1]);
 
         if (dims[0] <= 0 || dims[1] <= 0 || dims[2] <= 0) {
-            LOG_E("[shadows-simple] abort: invalid dimensions");
+            LOG_E("[shadows-vertical] abort: invalid dimensions");
             goto apply_end;
         }
 
@@ -211,7 +211,7 @@ static int gui(filter_t *filter_)
         float *shadow_map;
         shadow_map = malloc(sizeof(float) * dims[0] * dims[1]);
         if (!shadow_map) {
-            LOG_E("[shadows-simple] abort: shadow_map malloc failed");
+            LOG_E("[shadows-vertical] abort: shadow_map malloc failed");
             goto apply_end;
         }
 
@@ -227,10 +227,10 @@ static int gui(filter_t *filter_)
             else
                 no_surface_cells++;
         }
-        LOG_I("[shadows-simple] height map: %d surface cells, %d empty columns "
+        LOG_I("[shadows-vertical] height map: %d surface cells, %d empty columns "
               "(no voxel on active layer)",
               surface_cells, no_surface_cells);
-        LOG_D("[shadows-simple] setup complete");
+        LOG_D("[shadows-vertical] setup complete");
 
         // Formulate the shadow map
         int num_blocks_above_current, height;
@@ -269,11 +269,11 @@ static int gui(filter_t *filter_)
                 shadow_map[globalIndex] = num_blocks_above_current;
             }
         }
-        LOG_I("[shadows-simple] shadow map: %d/%d cells have casters above "
+        LOG_I("[shadows-vertical] shadow map: %d/%d cells have casters above "
               "(max blocks above a surface=%d)",
               cells_with_casters, dims[0] * dims[1], max_blocks_above);
         if (cells_with_casters == 0) {
-            LOG_W("[shadows-simple] no shadow casters found above active layer "
+            LOG_W("[shadows-vertical] no shadow casters found above active layer "
                   "surface - check that other visible layers have voxels above");
         }
 
@@ -309,7 +309,7 @@ static int gui(filter_t *filter_)
                     max_mult = mult;
             }
         }
-        LOG_I("[shadows-simple] multipliers: %d cells darkened, mult range %.4f .. %.4f",
+        LOG_I("[shadows-vertical] multipliers: %d cells darkened, mult range %.4f .. %.4f",
               cells_darkened, min_mult, max_mult);
 
         float amt = 0;
@@ -329,7 +329,7 @@ static int gui(filter_t *filter_)
                     shadow_map[globalIndex] = amt;
                 }
             }
-            LOG_D("[shadows-simple] smoothing completed");
+            LOG_D("[shadows-vertical] smoothing completed");
         }
 
         // Apply the shadows to the volume
@@ -360,11 +360,11 @@ static int gui(filter_t *filter_)
             }
         }
 
-        LOG_I("[shadows-simple] apply done on \"%s\": %d top voxels written, "
+        LOG_I("[shadows-vertical] apply done on \"%s\": %d top voxels written, "
               "%d with mult < 1, %d columns had no surface voxel",
               layer->name, voxels_touched, voxels_would_darken, columns_no_height);
         if (voxels_would_darken == 0) {
-            LOG_W("[shadows-simple] no voxels received a darkening multiplier - "
+            LOG_W("[shadows-vertical] no voxels received a darkening multiplier - "
                   "see shadow map / caster counts above");
         }
         free(shadow_map);
@@ -380,17 +380,17 @@ apply_end:
 
 static void on_open(filter_t *filter_)
 {
-    filter_simple_shadows_t *filter = (void *)filter_;
+    filter_vertical_shadows_t *filter = (void *)filter_;
     filter->multi_block_multiplier = 0.03f;
     filter->multi_block_cap = 0.5f;
     filter->strength = 0.9;
     filter->do_smoothing = true;
-    LOG_I("[shadows-simple] filter opened (defaults: strength=%.2f)", filter->strength);
-    shadows_simple_debug_log_layers("filter opened");
+    LOG_I("[shadows-vertical] filter opened (defaults: strength=%.2f)", filter->strength);
+    shadows_vertical_debug_log_layers("filter opened");
 }
 
-FILTER_REGISTER(simple_shadows, filter_simple_shadows_t,
-                .name = "Shadows (Simple)",
+FILTER_REGISTER(vertical_shadows, filter_vertical_shadows_t,
+                .name = "Shadows (Vertical)",
                 .menu = "effects",
                 .submenu = "lighting",
                 .on_open = on_open,
