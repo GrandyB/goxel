@@ -52,7 +52,7 @@ typedef struct
 
     // Layers
     bool use_image_heights;
-    layer_t *height_layer;
+    int height_layer_id;
     bool restrict_to_layer_box;
 
     // Restrictions
@@ -216,6 +216,7 @@ static void place_doodads(filter_doodadplacement_t *filter)
     float box[4][4];
     int dimensions[3], start_pos[3], *heights;
     const volume_t *vol_to_use_for_heights;
+    layer_t *height_layer = NULL;
     mat4_copy(goxel.image->box, box);
     box_get_dimensions(box, dimensions);
     if (dimensions[0] == 0 || dimensions[1] == 0)
@@ -225,10 +226,21 @@ static void place_doodads(filter_doodadplacement_t *filter)
     }
     box_get_start_pos(box, start_pos);
 
-    if (filter->restrict_to_layer_box) {
+    if (!filter->use_image_heights) {
+        height_layer = layer_find(goxel.image, filter->height_layer_id);
+        if (!height_layer)
+            height_layer = goxel.image->layers;
+        if (!height_layer || !height_layer->volume) {
+            LOG_W("No height layer available, not running the script");
+            return;
+        }
+        filter->height_layer_id = height_layer->id;
+    }
+
+    if (filter->restrict_to_layer_box && height_layer) {
         int layer_dimensions[3], layer_start_pos[3];
         float layer_box[4][4];
-        volume_get_box(filter->height_layer->volume, true, layer_box);
+        volume_get_box(height_layer->volume, true, layer_box);
         box_get_start_pos(layer_box, layer_start_pos);
         // LOG_D("Height until top of image box: %i - d: %i/%i/%i, lsp: %i,%i,%i", ,
         //     dimensions[0], dimensions[1], dimensions[2],
@@ -246,7 +258,7 @@ static void place_doodads(filter_doodadplacement_t *filter)
     if (filter->use_image_heights) {
         vol_to_use_for_heights = goxel_get_layers_volume(goxel.image);
     } else {
-        vol_to_use_for_heights = filter->height_layer->volume;
+        vol_to_use_for_heights = height_layer->volume;
     }
     //clock_t start = clock(); // Start timing
     allocate_heights(dimensions, &heights);
@@ -508,16 +520,20 @@ static int gui(filter_t *filter_)
             "If checked, blocks in all visible layers will be considered for potential placements.\n"
             "If unchecked, a specific layer will be considered and the rest are ignored.");
         if (!filter->use_image_heights) {
-            if (!filter->height_layer)
-                filter->height_layer = goxel.image->layers; // First one.
-            if (gui_combo_begin("Use layer:", filter->height_layer->name))
+            layer_t *height_layer = layer_find(goxel.image, filter->height_layer_id);
+            if (!height_layer && goxel.image) {
+                height_layer = goxel.image->layers;
+                filter->height_layer_id = height_layer ? height_layer->id : 0;
+            }
+            gui_text("Use layer");
+            gui_same_line();
+            if (gui_combo_begin("##doodad_height_layer",
+                                height_layer ? height_layer->name : "(none)"))
             {
                 layer_t *cur;
                 DL_FOREACH_REVERSE(goxel.image->layers, cur) {
-                    if (gui_combo_item(cur->name, cur == filter->height_layer))
-                    {
-                        filter->height_layer = cur;
-                    }
+                    if (gui_combo_item(cur->name, cur == height_layer))
+                        filter->height_layer_id = cur->id;
                 }
                 gui_combo_end();
             }
@@ -627,6 +643,7 @@ static void on_open(filter_t *filter_)
     filter->z_offset = 0;
 
     filter->use_image_heights = true;
+    filter->height_layer_id = 0;
 
     filter->place_on_0 = false;
     filter->place_on_empty = false;
