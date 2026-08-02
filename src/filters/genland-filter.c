@@ -94,14 +94,14 @@ static int gui(filter_t *filter_)
     gui_separator();
     if (gui_collapsing_header("Heights", true))
     {
-        gui_input_float("Base height", &filter->settings->base_height, 1.00, 0, 100, "%.0f");
+        gui_input_float("Base height", &filter->settings->base_height, 1.00, 0, 1000, "%.0f");
         gui_tooltip_with_default(
             "Average column height before noise is applied. Amplitude adds and "
             "subtracts from this. Columns are clipped to the image box height "
             "(at least 64)",
             "%.0f", default_genland_settings.base_height);
 
-        gui_input_float("Amplitude", &filter->settings->amplitude, 1.00, 0, 100, "%.0f");
+        gui_input_float("Amplitude", &filter->settings->amplitude, 1.00, 0, 1000, "%.0f");
         gui_tooltip_with_default(
             "How strongly noise pushes terrain up and down from Base height. "
             "Higher = more extreme peaks and valleys. Columns are clipped to the "
