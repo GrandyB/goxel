@@ -207,10 +207,12 @@ typedef struct
     /* Scales Perlin + hash variation on water (tint strength + water RGB). */
     float water_noise_strength;
     /* When Soften shadow map is on: symmetric box radius in cells (1 = 3×3
-     * average, 2 = 5×5, …). Uses toroidal wrap like the shadow cast pass. */
+     * average, 2 = 5×5, …). Wrap matches shadow cast when wrap_shadows is on. */
     int shadow_blur_blocks;
     /* Voxel z per cell along the shadow ray (genland default 0.44); sun elevation. */
     float shadow_sun_height_step;
+    /* When true, shadow rays and blur wrap toroidally (genland / map tiling). */
+    bool wrap_shadows;
     /* Multiplicative rugged on grass-tinted land albedo only (0 = off). */
     float rugged_color_noise;
     /* After first-time defaults; reopening the panel does not wipe settings. */
@@ -251,6 +253,7 @@ static void terrain_coloring_reset_all_defaults(filter_terrain_coloring_t *filte
     filter->water_noise_strength = 0.32f;
     filter->shadow_blur_blocks = 1;
     filter->shadow_sun_height_step = 0.44f;
+    filter->wrap_shadows = true;
     filter->rugged_color_noise = 1.4f;
 }
 
@@ -262,9 +265,11 @@ static int wrap_coord(int v, int m)
     return v;
 }
 
-/* Symmetric toroidal box blur: radius r uses (2r+1)^2 taps (no diagonal bias). */
+/* Symmetric box blur: radius r uses (2r+1)^2 taps (no diagonal bias).
+ * wrap: toroidal; otherwise out-of-bounds taps are skipped and the average
+ * is over the remaining samples. */
 static void terrain_shadow_box_blur(unsigned char *dst, const unsigned char *src,
-                                    int gw, int gh, int r)
+                                    int gw, int gh, int r, bool wrap)
 {
     if (r <= 0 || gw <= 0 || gh <= 0)
         return;
@@ -273,14 +278,24 @@ static void terrain_shadow_box_blur(unsigned char *dst, const unsigned char *src
     for (int y = 0; y < gh; y++) {
         for (int x = 0; x < gw; x++) {
             int sum = 0;
+            int count = 0;
             for (int dy = -r; dy <= r; dy++) {
-                const int yy = wrap_coord(y + dy, gh);
+                const int yy = y + dy;
+                if (!wrap && (yy < 0 || yy >= gh))
+                    continue;
+                const int yyy = wrap ? wrap_coord(yy, gh) : yy;
                 for (int dx = -r; dx <= r; dx++) {
-                    const int xx = wrap_coord(x + dx, gw);
-                    sum += (int)src[yy * gw + xx];
+                    const int xx = x + dx;
+                    if (!wrap && (xx < 0 || xx >= gw))
+                        continue;
+                    const int xxx = wrap ? wrap_coord(xx, gw) : xx;
+                    sum += (int)src[yyy * gw + xxx];
+                    count++;
                 }
             }
-            dst[y * gw + x] = (unsigned char)((sum + area / 2) / area);
+            if (count <= 0)
+                count = area;
+            dst[y * gw + x] = (unsigned char)((sum + count / 2) / count);
         }
     }
 }
@@ -335,7 +350,7 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
                                    float grass_height_scale,
                                    int water_bottom_layers,
                                    float water_noise_strength, int shadow_blur_blocks,
-                                   float shadow_sun_height_step,
+                                   float shadow_sun_height_step, bool wrap_shadows,
                                    float rugged_color_noise)
 {
     float box[4][4];
@@ -654,8 +669,15 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
                 float shadowCheckValue = hgt[idx] + sun_step;
                 for (int shadowIter = 1, octaveIndex = 1; octaveIndex < shadow_range;
                      shadowIter++, octaveIndex++, shadowCheckValue += sun_step) {
-                    int sy = wrap_coord(y - (shadowIter >> 1), gh);
-                    int sx = wrap_coord(x - octaveIndex, gw);
+                    int sy = y - (shadowIter >> 1);
+                    int sx = x - octaveIndex;
+                    if (wrap_shadows) {
+                        sy = wrap_coord(sy, gh);
+                        sx = wrap_coord(sx, gw);
+                    } else if (sx < 0 || sx >= gw || sy < 0 || sy >= gh) {
+                        /* Left the map; no further occluders without wrap. */
+                        break;
+                    }
                     if (hgt[sy * gw + sx] > shadowCheckValue) {
                         sh[idx] = (unsigned char)clamp(
                             (int)(s->shadow_factor + 0.5f), 0, 255);
@@ -670,7 +692,7 @@ static void apply_terrain_coloring(volume_t *volume, terrain_coloring_settings_t
             if (r > 0) {
                 unsigned char *sh_tmp = malloc((size_t)n);
                 if (sh_tmp) {
-                    terrain_shadow_box_blur(sh_tmp, sh, gw, gh, r);
+                    terrain_shadow_box_blur(sh_tmp, sh, gw, gh, r, wrap_shadows);
                     memcpy(sh, sh_tmp, (size_t)n);
                     free(sh_tmp);
                 }
@@ -829,6 +851,9 @@ static int gui(filter_t *filter_)
         gui_checkbox("Shadows", &filter->step_shadow_cast,
                     "Ray-marched shadows cast onto blocks");
         if (filter->step_shadow_cast) {
+            gui_checkbox("Wrap shadows", &filter->wrap_shadows,
+                        "When on, shadow rays and blur wrap around map edges "
+                        "(tiling). When off, shadows stop at the border.");
             gui_checkbox("Soften shadows", &filter->step_shadow_smooth,
                         "Enable shadow-map blur; extent is set below.");
             gui_input_int("Shadow blur (blocks)", &filter->shadow_blur_blocks, 0, 64);
@@ -867,7 +892,7 @@ static int gui(filter_t *filter_)
                     filter->grass_slope_gain, filter->grass_height_scale,
                     filter->water_bottom_layers, filter->water_noise_strength,
                     filter->shadow_blur_blocks, filter->shadow_sun_height_step,
-                    filter->rugged_color_noise);
+                    filter->wrap_shadows, filter->rugged_color_noise);
             }
         }
         gui_enabled_end();
@@ -892,5 +917,5 @@ FILTER_REGISTER(terrain_coloring, filter_terrain_coloring_t,
                 .menu = "effects",
                 .submenu = "generate",
                 .on_open = on_open,
-                .panel_width = 400,
+                .panel_width = 350,
                 .gui_fn = gui, )

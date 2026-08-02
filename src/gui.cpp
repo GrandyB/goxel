@@ -3015,9 +3015,12 @@ bool _layer_item(int idx, int icons_count, const int *icons,
 
     if (g_layer_edit_name != name)
     {
+        float icon_slot = btn_h * 0.75f;
+        float icon_half = btn_h * (12.f / (float)GUI_ICON_HEIGHT);
+
         ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5));
         padding = style.FramePadding;
-        padding.x += GUI_ICON_HEIGHT * 0.75 * icons_count;
+        padding.x += icon_slot * icons_count;
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, padding);
         name_w = ImGui::GetContentRegionAvail().x - trailing_w;
         if (name_w < btn_h) name_w = btn_h;
@@ -3037,13 +3040,13 @@ bool _layer_item(int idx, int icons_count, const int *icons,
         {
             icon = icons[i];
             center = ImGui::GetItemRectMin() +
-                     ImVec2(GUI_ICON_HEIGHT * 0.75 * (i + 0.5), GUI_ICON_HEIGHT / 2);
+                     ImVec2(icon_slot * (i + 0.5f), btn_h * 0.5f);
             uv0 = ImVec2(((icon - 1) % 8) / 8.0, ((icon - 1) / 8) / 8.0);
             uv1 = ImVec2(uv0.x + 1. / 8, uv0.y + 1. / 8);
             draw_list->AddImage(
                     (intptr_t)g_tex_icons->tex,
-                    center - ImVec2(12, 12),
-                    center + ImVec2(12, 12),
+                    center - ImVec2(icon_half, icon_half),
+                    center + ImVec2(icon_half, icon_half),
                     uv0, uv1, get_icon_color(icon, 0));
         }
         ImGui::PopStyleVar();
