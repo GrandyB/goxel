@@ -50,6 +50,8 @@ enum {
 typedef struct {
     float h;
     float w;
+    /* True if the panel body child showed a vertical scrollbar this frame. */
+    bool has_v_scrollbar;
 } gui_window_ret_t;
 
 float gui_get_available_height();

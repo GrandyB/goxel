@@ -1249,6 +1249,7 @@ gui_window_ret_t gui_window_end(void)
 {
     gui_window_ret_t ret = {};
     if (gui->win_body_started) {
+        ret.has_v_scrollbar = ImGui::GetCurrentWindow()->ScrollbarY;
         ImGui::EndChild();
         ImGui::PopStyleColor(/* ChildBg */ 1);
         gui->win_body_started = false;

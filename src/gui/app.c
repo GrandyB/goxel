@@ -166,6 +166,8 @@ void gui_app(void)
     const char *name;
     int i;
     filter_layout_state_t filter_layout_state;
+    /* Extra Tools width when body scrolled last frame (avoids content squeeze). */
+    static bool tools_had_v_scrollbar = false;
 
     goxel.show_export_viewport = false;
 
@@ -213,14 +215,19 @@ void gui_app(void)
     y += ICON_HEIGHT + 28;
 
     for (i = 0; i < ARRAY_SIZE(PANELS); i++) {
+        float panel_w;
+        gui_window_ret_t win_ret;
+
         if (!PANELS[i].detached || !PANELS[i].fn) continue;
         name = PANELS[i].name;
+        panel_w = goxel.gui.panel_width;
         /* Toolbox stays top-left; other panels open centred. */
         if (i == PANEL_TOOLS) {
-            gui_window_begin(
-                    name, 0, y, goxel.gui.panel_width, 0, GUI_WINDOW_MOVABLE);
+            if (tools_had_v_scrollbar)
+                panel_w += 20.0f;
+            gui_window_begin(name, 0, y, panel_w, 0, GUI_WINDOW_MOVABLE);
         } else {
-            gui_window_begin(name, 0, 0, goxel.gui.panel_width, 0,
+            gui_window_begin(name, 0, 0, panel_w, 0,
                              GUI_WINDOW_MOVABLE | GUI_WINDOW_CENTER);
         }
         if (gui_panel_header(name)) {
@@ -228,7 +235,9 @@ void gui_app(void)
         } else {
             PANELS[i].fn();
         }
-        gui_window_end();
+        win_ret = gui_window_end();
+        if (i == PANEL_TOOLS)
+            tools_had_v_scrollbar = win_ret.has_v_scrollbar;
     }
     
     if (goxel.gui.layers_panel_open) {
