@@ -54,6 +54,7 @@ enum
     ACTION_img_crop_to_box,
 
     ACTION_cut_as_new_layer,
+    ACTION_copy_as_new_layer,
     ACTION_reset_selection,
     ACTION_fill_selection_box,
     ACTION_paint_selection,

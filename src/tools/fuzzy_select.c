@@ -142,6 +142,16 @@ static layer_t *cut_as_new_layer(image_t *img, layer_t *layer,
     return new_layer;
 }
 
+static layer_t *copy_as_new_layer(image_t *img, layer_t *layer,
+                                  const volume_t *mask)
+{
+    layer_t *new_layer;
+
+    new_layer = image_duplicate_layer(img, layer);
+    volume_merge(new_layer->volume, mask, MODE_INTERSECT, NULL);
+    return new_layer;
+}
+
 /* Grow goxel.mask by Chebyshev distance, clamped to the image box. */
 static void expand_selection_mask(int distance)
 {
@@ -370,11 +380,18 @@ static int gui(tool_t *tool_)
         if (volume_get_key(volume) != k0)
             image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     }
-    if (gui_button("Cut as new layer", 1, 0)) {
+    gui_row_begin(2);
+    if (gui_button("Cut as new layer", 0.5, 0)) {
         image_history_push(goxel.image);
         cut_as_new_layer(goxel.image, goxel.image->active_layer,
                          goxel.mask);
     }
+    if (gui_button("Copy as new layer", 1, 0)) {
+        image_history_push(goxel.image);
+        copy_as_new_layer(goxel.image, goxel.image->active_layer,
+                          goxel.mask);
+    }
+    gui_row_end();
     gui_group_end();
 
     if (gui_section_begin("Paint", true)) {

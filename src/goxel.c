@@ -2262,6 +2262,37 @@ ACTION_REGISTER(ACTION_cut_as_new_layer,
     .flags = ACTION_TOUCH_IMAGE,
 )
 
+static void a_copy_as_new_layer(void)
+{
+    layer_t *new_layer;
+    painter_t painter;
+
+    image_t *img = goxel.image;
+    layer_t *layer = img->active_layer;
+    const float (*box)[4][4] = &goxel.selection;
+
+    new_layer = image_duplicate_layer(img, layer);
+
+    // Use the mask in priority.
+    if (!volume_is_empty(goxel.mask)) {
+        volume_merge(new_layer->volume, goxel.mask, MODE_INTERSECT, NULL);
+        return;
+    }
+
+    painter = (painter_t) {
+        .shape = &shape_cube,
+        .mode = MODE_INTERSECT,
+        .color = {255, 255, 255, 255},
+    };
+    volume_op(new_layer->volume, &painter, *box);
+}
+
+ACTION_REGISTER(ACTION_copy_as_new_layer,
+    .help = "Copies the selected area into a new layer",
+    .cfunc = a_copy_as_new_layer,
+    .flags = ACTION_TOUCH_IMAGE,
+)
+
 static void a_reset_selection(void)
 {
     if (!volume_is_empty(goxel.mask)) {

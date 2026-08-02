@@ -500,7 +500,10 @@ static int gui(tool_t *tool)
     gui_action_button(ACTION_add_selection, "Add", 0.5);
     gui_action_button(ACTION_sub_selection, "Sub", 1.0);
     gui_row_end();
-    gui_action_button(ACTION_cut_as_new_layer, "Cut as new layer", 1.0);
+    gui_row_begin(2);
+    gui_action_button(ACTION_cut_as_new_layer, "Cut as new layer", 0.5);
+    gui_action_button(ACTION_copy_as_new_layer, "Copy as new layer", 1.0);
+    gui_row_end();
     gui_group_end();
 
     // XXX: why not using gui_bbox here?
