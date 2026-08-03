@@ -288,6 +288,17 @@ static const char *tb_tile_name(int tx, int ty, int nx, int ny)
     return low_x ? "T3" : "T4";
 }
 
+/* MagicaVoxel / Trenchblocks expect models in T1, T2, T3, T4 order. */
+static int tb_tile_rank(const char *name)
+{
+    if (!name) return 99;
+    if (strcmp(name, "T1") == 0) return 0;
+    if (strcmp(name, "T2") == 0) return 1;
+    if (strcmp(name, "T3") == 0) return 2;
+    if (strcmp(name, "T4") == 0) return 3;
+    return 99;
+}
+
 static int tb_find_stamp_index(const tb_stamp_t *stamps, int n,
                                int x, int y, int z)
 {
@@ -374,6 +385,144 @@ static bool tb_add_stamp(tb_stamp_t **stamps, int *n, int *cap,
     return true;
 }
 
+static bool tb_is_player_spawn_meta(int index)
+{
+    return index == 2 || index == 4; /* SpawnRed, SpawnBlue */
+}
+
+static const char *tb_layers_player_spawn_csv(const image_t *image)
+{
+    const custom_object_t *obj;
+
+    DL_FOREACH(image->custom_objects, obj) {
+        if (obj->type != CUSTOM_OBJ_TEXT) continue;
+        if (strcmp(obj->name, "LayersPlayerSpawn") != 0) continue;
+        if (!obj->text_value[0]) return NULL;
+        return obj->text_value;
+    }
+    return NULL;
+}
+
+/* Trim leading/trailing ASCII space/tab from [start, end) into out (NUL-terminated).
+ * Returns false if the token is empty after trim. */
+static bool tb_csv_token_trim(const char *start, const char *end,
+                              char *out, size_t out_sz)
+{
+    while (start < end && (*start == ' ' || *start == '\t'))
+        start++;
+    while (end > start && (end[-1] == ' ' || end[-1] == '\t'))
+        end--;
+    if (start >= end || out_sz == 0) return false;
+    if ((size_t)(end - start) >= out_sz) return false;
+    memcpy(out, start, (size_t)(end - start));
+    out[end - start] = '\0';
+    return true;
+}
+
+static bool tb_layer_name_in_csv(const char *csv, const char *layer_name)
+{
+    const char *p, *comma;
+    char token[256];
+
+    if (!csv || !layer_name || !layer_name[0]) return false;
+    p = csv;
+    while (*p) {
+        comma = strchr(p, ',');
+        if (!comma) comma = p + strlen(p);
+        if (tb_csv_token_trim(p, comma, token, sizeof(token)) &&
+            strcmp(token, layer_name) == 0)
+            return true;
+        if (!*comma) break;
+        p = comma + 1;
+    }
+    return false;
+}
+
+static int tb_count_csv_layers_found(const image_t *image, const char *csv)
+{
+    const layer_t *layer;
+    int n = 0;
+
+    DL_FOREACH(image->layers, layer) {
+        if (tb_layer_name_in_csv(csv, layer->name))
+            n++;
+    }
+    return n;
+}
+
+/* Merge every visible layer whose name is not listed in csv into out. */
+static volume_t *tb_build_blocking_volume(const image_t *image, const char *csv)
+{
+    volume_t *out;
+    const layer_t *layer;
+
+    out = volume_new();
+    if (!out) return NULL;
+    DL_FOREACH(image->layers, layer) {
+        if (tb_layer_name_in_csv(csv, layer->name)) continue;
+        if (!layer_effectively_visible(image, layer)) continue;
+        if (!layer->volume) continue;
+        volume_merge(out, layer->volume, MODE_OVER, NULL);
+    }
+    return out;
+}
+
+/* 1 = other layers have any solid voxel in this XY column. */
+static uint8_t *tb_build_xy_blocked(const volume_t *blocking,
+                                    int xmin, int ymin, int sx, int sy)
+{
+    uint8_t *occ;
+    int pos[3], n;
+    uint8_t v[4];
+    volume_iterator_t iter;
+
+    n = sx * sy;
+    occ = calloc((size_t)n, 1);
+    if (!occ || !blocking) return occ;
+
+    iter = volume_get_iterator(blocking, VOLUME_ITER_VOXELS);
+    while (volume_iter(&iter, pos)) {
+        if (pos[0] < xmin || pos[0] >= xmin + sx) continue;
+        if (pos[1] < ymin || pos[1] >= ymin + sy) continue;
+        volume_get_at(blocking, &iter, pos, v);
+        if (v[3] < 127) continue;
+        occ[(pos[0] - xmin) + (pos[1] - ymin) * sx] = 1;
+    }
+    return occ;
+}
+
+static bool tb_xy_blocked_2d(const uint8_t *occ, int xmin, int ymin,
+                             int sx, int sy, int x, int y)
+{
+    if (!occ) return false;
+    if (x < xmin || x >= xmin + sx || y < ymin || y >= ymin + sy)
+        return false;
+    return occ[(x - xmin) + (y - ymin) * sx] != 0;
+}
+
+/* True if blocking has a solid voxel at an exact (x,y,z) inside [z0,z1]. */
+static bool tb_xy_blocked_3d_exact(const volume_t *blocking,
+                                   int x, int y, int z0, int z1)
+{
+    int z, pos[3];
+    uint8_t v[4];
+
+    if (!blocking) return false;
+    if (z1 < z0) {
+        int t = z0;
+        z0 = z1;
+        z1 = t;
+    }
+    pos[0] = x;
+    pos[1] = y;
+    for (z = z0; z <= z1; z++) {
+        pos[2] = z;
+        volume_get_at(blocking, NULL, pos, v);
+        if (v[3] >= 127) return true;
+    }
+    return false;
+}
+
 static bool tb_stamp_column(const int *hm, int xmin, int ymin, int sx, int sy,
                             int x, int y, uint8_t index, int zmin,
                             int *zmax_excl_io, tb_stamp_t **stamps,
@@ -398,10 +547,35 @@ static bool tb_collect_stamps(const image_t *image, const int *hm,
 {
     const custom_object_t *obj;
     const char *meta_name;
-    int index, x0, x1, y0, y1, x, y, cap = 0;
+    const char *spawn_layers_csv;
+    volume_t *blocking = NULL;
+    uint8_t *xy_blocked = NULL;
+    int index, x0, x1, y0, y1, z0, z1, x, y, cap = 0;
+    bool ok = true;
 
     *stamps = NULL;
     *n_stamps = 0;
+
+    spawn_layers_csv = tb_layers_player_spawn_csv(image);
+    if (spawn_layers_csv) {
+        if (tb_count_csv_layers_found(image, spawn_layers_csv) == 0) {
+            LOG_W("LayersPlayerSpawn: none of the listed layers were found "
+                  "(\"%s\"); SpawnRed/SpawnBlue will not filter other layers.",
+                  spawn_layers_csv);
+        } else {
+            blocking = tb_build_blocking_volume(image, spawn_layers_csv);
+            if (!blocking) {
+                gui_alert("vox (Trenchblocks)", "Out of memory.");
+                return false;
+            }
+            xy_blocked = tb_build_xy_blocked(blocking, xmin, ymin, sx, sy);
+            if (!xy_blocked) {
+                gui_alert("vox (Trenchblocks)", "Out of memory.");
+                volume_delete(blocking);
+                return false;
+            }
+        }
+    }
 
     DL_FOREACH(image->custom_objects, obj) {
         if (obj->type == CUSTOM_OBJ_GROUP)
@@ -412,28 +586,74 @@ static bool tb_collect_stamps(const image_t *image, const int *hm,
         if (index < 0)
             continue;
 
-        if (obj->type == CUSTOM_OBJ_ZONE_2D || obj->type == CUSTOM_OBJ_ZONE_3D) {
+        if (obj->type == CUSTOM_OBJ_ZONE_3D) {
+            x0 = min(obj->p0[0], obj->p1[0]);
+            x1 = max(obj->p0[0], obj->p1[0]);
+            y0 = min(obj->p0[1], obj->p1[1]);
+            y1 = max(obj->p0[1], obj->p1[1]);
+            z0 = min(obj->p0[2], obj->p1[2]);
+            z1 = max(obj->p0[2], obj->p1[2]);
+            for (y = y0; y <= y1; y++) {
+                for (x = x0; x <= x1; x++) {
+                    if (tb_is_player_spawn_meta(index) &&
+                        tb_xy_blocked_3d_exact(blocking, x, y, z0, z1))
+                        continue;
+                    if (!tb_stamp_column(hm, xmin, ymin, sx, sy, x, y,
+                                         (uint8_t)index, zmin, zmax_excl_io,
+                                         stamps, n_stamps, &cap)) {
+                        ok = false;
+                        goto done;
+                    }
+                }
+            }
+        } else if (obj->type == CUSTOM_OBJ_ZONE_2D) {
             x0 = min(obj->p0[0], obj->p1[0]);
             x1 = max(obj->p0[0], obj->p1[0]);
             y0 = min(obj->p0[1], obj->p1[1]);
             y1 = max(obj->p0[1], obj->p1[1]);
             for (y = y0; y <= y1; y++) {
                 for (x = x0; x <= x1; x++) {
+                    if (tb_is_player_spawn_meta(index) &&
+                        tb_xy_blocked_2d(xy_blocked, xmin, ymin, sx, sy, x, y))
+                        continue;
                     if (!tb_stamp_column(hm, xmin, ymin, sx, sy, x, y,
                                          (uint8_t)index, zmin, zmax_excl_io,
-                                         stamps, n_stamps, &cap))
-                        return false;
+                                         stamps, n_stamps, &cap)) {
+                        ok = false;
+                        goto done;
+                    }
                 }
             }
-        } else if (obj->type == CUSTOM_OBJ_POINT_2D ||
-                   obj->type == CUSTOM_OBJ_POINT_3D) {
+        } else if (obj->type == CUSTOM_OBJ_POINT_3D) {
+            if (tb_is_player_spawn_meta(index) &&
+                tb_xy_blocked_3d_exact(blocking, obj->p0[0], obj->p0[1],
+                                       obj->p0[2], obj->p0[2]))
+                continue;
+            /* Use the authored world position; do not lift onto terrain. */
+            if (!tb_add_stamp(stamps, n_stamps, &cap,
+                              obj->p0[0], obj->p0[1], obj->p0[2],
+                              (uint8_t)index, zmin, zmax_excl_io)) {
+                ok = false;
+                goto done;
+            }
+        } else if (obj->type == CUSTOM_OBJ_POINT_2D) {
+            if (tb_is_player_spawn_meta(index) &&
+                tb_xy_blocked_2d(xy_blocked, xmin, ymin, sx, sy,
+                                 obj->p0[0], obj->p0[1]))
+                continue;
             if (!tb_stamp_column(hm, xmin, ymin, sx, sy,
                                  obj->p0[0], obj->p0[1], (uint8_t)index,
-                                 zmin, zmax_excl_io, stamps, n_stamps, &cap))
-                return false;
+                                 zmin, zmax_excl_io, stamps, n_stamps, &cap)) {
+                ok = false;
+                goto done;
+            }
         }
     }
-    return true;
+
+done:
+    free(xy_blocked);
+    if (blocking) volume_delete(blocking);
+    return ok;
 }
 
 static void tb_init_palette(uint8_t (*palette)[4])
@@ -461,11 +681,12 @@ static int vox_trenchblocks_export(const file_format_t *format,
     tb_stamp_t *stamps = NULL;
     tb_tile_t *tiles = NULL;
     int *tile_child_ids = NULL;
+    int *tile_order = NULL;
     uint8_t *voxels = NULL;
     int n_stamps = 0;
     int start[3], dims[3];
     int xmin, ymin, zmin, xmax, ymax, zmax;
-    int sx, sy, sz, nx, ny, tx, ty, ti, i, pos[3];
+    int sx, sy, sz, nx, ny, tx, ty, ti, i, j, pos[3];
     int nb_vox = 0, nb_tiles = 0, model_i, children_size;
     int stamp_i, color_index;
     uint8_t v[4], stamp_rgb[4];
@@ -660,20 +881,42 @@ static int vox_trenchblocks_export(const file_format_t *format,
         qsort(tiles[i].voxels, tiles[i].nb_vox, 4, tb_voxel_cmp);
     }
 
-    children_size = 0;
+    /* Emit non-empty tiles in T1..T4 name order (not grid scan order). */
+    tile_order = calloc(nb_tiles, sizeof(*tile_order));
+    if (!tile_order) {
+        gui_alert("vox (Trenchblocks)", "Out of memory.");
+        goto error;
+    }
+    model_i = 0;
     for (i = 0; i < nx * ny; i++) {
         if (!tiles[i].nb_vox) continue;
-        children_size += tb_size_xyzi_chunk_bytes(tiles[i].nb_vox);
+        tile_order[model_i++] = i;
+    }
+    for (i = 0; i < nb_tiles; i++) {
+        for (j = i + 1; j < nb_tiles; j++) {
+            if (tb_tile_rank(tiles[tile_order[j]].name) <
+                tb_tile_rank(tiles[tile_order[i]].name)) {
+                ti = tile_order[i];
+                tile_order[i] = tile_order[j];
+                tile_order[j] = ti;
+            }
+        }
+    }
+
+    children_size = 0;
+    for (i = 0; i < nb_tiles; i++) {
+        ti = tile_order[i];
+        children_size += tb_size_xyzi_chunk_bytes(tiles[ti].nb_vox);
     }
     children_size += 12 + tb_ntrn_content_size(NULL, NULL);
     children_size += 12 + tb_ngrp_content_size(nb_tiles);
-    for (i = 0; i < nx * ny; i++) {
-        if (!tiles[i].nb_vox) continue;
+    for (i = 0; i < nb_tiles; i++) {
+        ti = tile_order[i];
         snprintf(trans, sizeof(trans), "%d %d %d",
-                 tiles[i].ox + tiles[i].sx / 2,
-                 tiles[i].oy + tiles[i].sy / 2,
-                 tiles[i].oz + tiles[i].sz / 2);
-        children_size += 12 + tb_ntrn_content_size(tiles[i].name, trans);
+                 tiles[ti].ox + tiles[ti].sx / 2,
+                 tiles[ti].oy + tiles[ti].sy / 2,
+                 tiles[ti].oz + tiles[ti].sz / 2);
+        children_size += 12 + tb_ntrn_content_size(tiles[ti].name, trans);
         children_size += 12 + tb_nshp_content_size();
     }
     children_size += 12 + 4 * 256; /* RGBA always written */
@@ -690,12 +933,10 @@ static int vox_trenchblocks_export(const file_format_t *format,
     WRITE(uint32_t, 0, file);
     WRITE(uint32_t, children_size, file);
 
-    model_i = 0;
-    for (i = 0; i < nx * ny; i++) {
-        if (!tiles[i].nb_vox) continue;
-        tb_write_size_xyzi(file, tiles[i].sx, tiles[i].sy, tiles[i].sz,
-                           tiles[i].voxels, tiles[i].nb_vox);
-        model_i++;
+    for (i = 0; i < nb_tiles; i++) {
+        ti = tile_order[i];
+        tb_write_size_xyzi(file, tiles[ti].sx, tiles[ti].sy, tiles[ti].sz,
+                           tiles[ti].voxels, tiles[ti].nb_vox);
     }
 
     tile_child_ids = calloc(nb_tiles, sizeof(*tile_child_ids));
@@ -703,12 +944,8 @@ static int vox_trenchblocks_export(const file_format_t *format,
         gui_alert("vox (Trenchblocks)", "Out of memory.");
         goto error;
     }
-    model_i = 0;
-    for (i = 0; i < nx * ny; i++) {
-        if (!tiles[i].nb_vox) continue;
-        tile_child_ids[model_i] = 2 + 2 * model_i;
-        model_i++;
-    }
+    for (i = 0; i < nb_tiles; i++)
+        tile_child_ids[i] = 2 + 2 * i;
 
     fprintf(file, "nTRN");
     tb_write_ntrn(file, 0, 1, NULL, NULL);
@@ -716,19 +953,16 @@ static int vox_trenchblocks_export(const file_format_t *format,
     fprintf(file, "nGRP");
     tb_write_ngrp(file, 1, tile_child_ids, nb_tiles);
 
-    model_i = 0;
-    for (i = 0; i < nx * ny; i++) {
-        if (!tiles[i].nb_vox) continue;
+    for (i = 0; i < nb_tiles; i++) {
+        ti = tile_order[i];
         snprintf(trans, sizeof(trans), "%d %d %d",
-                 tiles[i].ox + tiles[i].sx / 2,
-                 tiles[i].oy + tiles[i].sy / 2,
-                 tiles[i].oz + tiles[i].sz / 2);
+                 tiles[ti].ox + tiles[ti].sx / 2,
+                 tiles[ti].oy + tiles[ti].sy / 2,
+                 tiles[ti].oz + tiles[ti].sz / 2);
         fprintf(file, "nTRN");
-        tb_write_ntrn(file, 2 + 2 * model_i, 3 + 2 * model_i,
-                      tiles[i].name, trans);
+        tb_write_ntrn(file, 2 + 2 * i, 3 + 2 * i, tiles[ti].name, trans);
         fprintf(file, "nSHP");
-        tb_write_nshp(file, 3 + 2 * model_i, model_i);
-        model_i++;
+        tb_write_nshp(file, 3 + 2 * i, i);
     }
 
     tb_write_rgba(file, palette);
@@ -737,18 +971,27 @@ static int vox_trenchblocks_export(const file_format_t *format,
     file = NULL;
 
     free(tile_child_ids);
+    tile_child_ids = NULL;
+    free(tile_order);
+    tile_order = NULL;
     for (i = 0; i < nx * ny; i++)
         free(tiles[i].voxels);
     free(tiles);
+    tiles = NULL;
     free(stamps);
+    stamps = NULL;
     free(heightmap);
+    heightmap = NULL;
     free(palette);
+    palette = NULL;
     volume_delete(volume);
+    volume = NULL;
     return 0;
 
 error:
     if (file) fclose(file);
     free(tile_child_ids);
+    free(tile_order);
     if (tiles) {
         for (i = 0; i < nx * ny; i++)
             free(tiles[i].voxels);

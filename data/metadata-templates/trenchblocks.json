@@ -34,7 +34,7 @@
 			"type": "Point2D",
 			"color": [100, 100, 100, 255]
 		}, {
-			"name": "LayerPlayerSpawn",
+			"name": "LayersPlayerSpawn",
 			"type": "Text",
 			"default": ""
 		}, {

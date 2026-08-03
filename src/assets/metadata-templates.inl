@@ -100,7 +100,7 @@
     "			\"type\": \"Point2D\",\n"
     "			\"color\": [100, 100, 100, 255]\n"
     "		}, {\n"
-    "			\"name\": \"LayerPlayerSpawn\",\n"
+    "			\"name\": \"LayersPlayerSpawn\",\n"
     "			\"type\": \"Text\",\n"
     "			\"default\": \"\"\n"
     "		}, {\n"
