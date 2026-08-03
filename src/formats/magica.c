@@ -830,7 +830,7 @@ static int vox_export(const file_format_t *format, const image_t *image,
 }
 
 FILE_FORMAT_REGISTER(vox,
-    .name = "Magica Voxel",
+    .name = "vox",
     .exts = {"*.vox"},
     .exts_desc = "vox",
     .import_func = vox_import,

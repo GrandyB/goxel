@@ -88,7 +88,13 @@ static void import_menu_callback(void *user, file_format_t *f)
 
 static void export_menu_callback(void *user, file_format_t *f)
 {
-    if (gui_menu_item(0, f->name, true))
+    char label[128];
+    const char *ext = f->exts[0] ? f->exts[0] + 1 : "";
+    if (strchr(f->name, '('))
+        snprintf(label, sizeof(label), "%s", f->name);
+    else
+        snprintf(label, sizeof(label), "%s (%s)", f->name, ext);
+    if (gui_menu_item(0, label, true))
         goxel_export_to_file(NULL, f->name);
 }
 

@@ -45,7 +45,12 @@ static file_format_t *g_current = NULL;
 static const char *make_label(const file_format_t *f, char *buf, int len)
 {
     const char *ext = f->exts[0] + 1;
-    snprintf(buf, len, "%s (%s)", f->name, ext);
+    /* Names that already include a parenthetical (e.g. "vox (Trenchblocks)")
+     * keep that form; only append the extension once. */
+    if (strchr(f->name, '('))
+        snprintf(buf, len, "%s", f->name);
+    else
+        snprintf(buf, len, "%s (%s)", f->name, ext);
     return buf;
 }
 

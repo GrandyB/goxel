@@ -747,6 +747,9 @@ void goxel_init(void)
 
     goxel_load_recent_files();
 
+    /* Ensure Trenchblocks vox export is registered (also keeps the TU linked). */
+    goxel_ensure_vox_trenchblocks_format();
+
     goxel_reset();
 }
 

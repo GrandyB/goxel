@@ -37,14 +37,22 @@ static bool endswith(const char *str, const char *end)
 }
 
 
+static int file_format_name_cmp(file_format_t *a, file_format_t *b)
+{
+    return strcasecmp(a->name, b->name);
+}
+
 void file_format_register(file_format_t *format)
 {
     DL_APPEND(file_formats, format);
+    DL_SORT(file_formats, file_format_name_cmp);
     if (format->import_volume_func) {
         DL_APPEND(file_formats_import_to_volume, format);
+        DL_SORT(file_formats_import_to_volume, file_format_name_cmp);
     }
     if (format->export_volume_func) {
         DL_APPEND(file_formats_export_to_volume, format);
+        DL_SORT(file_formats_export_to_volume, file_format_name_cmp);
     }
 }
 

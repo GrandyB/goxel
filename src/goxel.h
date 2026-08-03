@@ -661,6 +661,7 @@ extern goxel_t goxel;
 
 // XXX: add some doc.
 void goxel_init(void);
+void goxel_ensure_vox_trenchblocks_format(void);
 void goxel_release(void);
 void goxel_reset(void);
 
