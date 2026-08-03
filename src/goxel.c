@@ -2237,7 +2237,14 @@ static void a_cut_as_new_layer(void)
     layer_t *layer = img->active_layer;
     const float (*box)[4][4] = &goxel.selection;
 
+    /*
+     * Snapshot before mutating. ACTION_TOUCH_IMAGE pushes after cfunc and
+     * would only record the post-cut state (undo would not remove the new
+     * layer). Same pattern as ACTION_layer_clear.
+     */
+    image_history_push(img);
     new_layer = image_duplicate_layer(img, layer);
+    if (!new_layer) return;
 
     // Use the mask in priority.
     if (!volume_is_empty(goxel.mask)) {
@@ -2259,7 +2266,6 @@ static void a_cut_as_new_layer(void)
 ACTION_REGISTER(ACTION_cut_as_new_layer,
     .help = "Cuts the selected area into a new layer",
     .cfunc = a_cut_as_new_layer,
-    .flags = ACTION_TOUCH_IMAGE,
 )
 
 static void a_copy_as_new_layer(void)
@@ -2271,7 +2277,10 @@ static void a_copy_as_new_layer(void)
     layer_t *layer = img->active_layer;
     const float (*box)[4][4] = &goxel.selection;
 
+    /* Snapshot before mutating; see a_cut_as_new_layer. */
+    image_history_push(img);
     new_layer = image_duplicate_layer(img, layer);
+    if (!new_layer) return;
 
     // Use the mask in priority.
     if (!volume_is_empty(goxel.mask)) {
@@ -2290,7 +2299,6 @@ static void a_copy_as_new_layer(void)
 ACTION_REGISTER(ACTION_copy_as_new_layer,
     .help = "Copies the selected area into a new layer",
     .cfunc = a_copy_as_new_layer,
-    .flags = ACTION_TOUCH_IMAGE,
 )
 
 static void a_reset_selection(void)
