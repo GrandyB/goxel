@@ -787,8 +787,6 @@ image_t *image_new(void)
     image_add_material(img, NULL);
     image_add_camera(img, NULL);
     image_add_layer(img, NULL);
-    /* Start with no layer selected (Cursor shows all leaf gizmos). */
-    img->active_layer = NULL;
     DL_APPEND2(img->history, img, history_prev, history_next);
     // Prevent saving an empty image.
     img->saved_key = image_get_key(img);

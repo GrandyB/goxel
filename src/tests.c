@@ -134,10 +134,8 @@ static void test_delete_layer_subtree_undo(void)
     int n = 0;
 
     img = image_new();
-    /* image_new leaves active_layer NULL; pick the default layer. */
-    parent = img->layers;
+    parent = img->active_layer;
     TEST(parent != NULL);
-    img->active_layer = parent;
     snprintf(parent->name, sizeof(parent->name), "Parent");
 
     child = image_add_child_layer(img, parent);
