@@ -40,6 +40,7 @@ void gui_tools_panel(void)
         {TOOL_PLACER,       ACTION_tool_set_placer,       ICON_TOOL_PLACER},
         {TOOL_FILL,         ACTION_tool_set_fill,         ICON_TOOL_FILL},
         {TOOL_CLONE_STAMP,  ACTION_tool_set_clone_stamp,  ICON_TOOL_CLONE_STAMP},
+        {TOOL_SMOOTH,       ACTION_tool_set_smooth,       ICON_TOOL_SMOOTH},
     };
 
     const int nb = ARRAY_SIZE(values);

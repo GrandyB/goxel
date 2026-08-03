@@ -20,3 +20,4 @@ goxel-aos.code-workspace
 .vscode/settings.json
 goxel_info.exe
 /.cursor
+/tmp

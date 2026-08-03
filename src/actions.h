@@ -118,6 +118,7 @@ enum
     ACTION_tool_set_fill,
     ACTION_tool_set_clone_stamp,
     ACTION_tool_set_cursor,
+    ACTION_tool_set_smooth,
 
     ACTION_COUNT
 };

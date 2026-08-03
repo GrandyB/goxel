@@ -63,7 +63,7 @@
     "	]\n"
     "}"
 },
-{.path = "data/metadata-templates/trenchblocks.json", .size = 1584, .data =
+{.path = "data/metadata-templates/trenchblocks.json", .size = 1585, .data =
     "{\n"
     "	\"metadata\": [\n"
     "		{\n"

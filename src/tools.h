@@ -40,6 +40,7 @@ enum {
     TOOL_FILL,
     TOOL_CLONE_STAMP,
     TOOL_CURSOR,
+    TOOL_SMOOTH,
 
     TOOL_COUNT
 };

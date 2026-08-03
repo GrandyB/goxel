@@ -470,6 +470,7 @@ enum {
     X(ICON_CAMERA_FLY,              1, 7, THEME_GROUP_ICON_VIEW),
     X(ICON_CAMERA_PLAYER,           2, 7, THEME_GROUP_ICON_VIEW),
     X(ICON_CAMERA_TOPDOWN,          3, 7, THEME_GROUP_ICON_VIEW),
+    X(ICON_TOOL_SMOOTH,             4, 7, THEME_GROUP_ICON),
 };
 
 #undef X
