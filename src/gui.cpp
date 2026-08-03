@@ -3252,8 +3252,10 @@ void gui_menu_bar_panel_toggles(void)
     ImGui::SameLine(0.0f, spacing);
     if (menu_bar_panel_toggle(
                 "menu_image_box", ICON_IMAGE, !goxel.hide_box,
-                "Image box on/off"))
+                "Image box on/off")) {
         goxel.hide_box = !goxel.hide_box;
+        settings_save();
+    }
 
     ImGui::SameLine(0.0f, spacing);
     plane_action = action_get(ACTION_toggle_plane_visible, true);

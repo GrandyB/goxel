@@ -200,8 +200,10 @@ void gui_menu(void)
         gui_menu_toggle(ACTION_view_toggle_ui, "Show UI",
                         goxel.gui.ui_visible, true);
         gui_separator();
-        if (gui_menu_toggle(0, "Image box", !goxel.hide_box, true))
+        if (gui_menu_toggle(0, "Image box", !goxel.hide_box, true)) {
             goxel.hide_box = !goxel.hide_box;
+            settings_save();
+        }
         if (gui_menu_toggle(0, "Wrap preview", goxel.wrap_view, true))
             goxel_wrap_view_set(!goxel.wrap_view);
         gui_separator();

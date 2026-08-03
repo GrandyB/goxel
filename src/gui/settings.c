@@ -88,6 +88,9 @@ static int settings_ini_handler(void *user, const char *section,
         if (strcmp(name, "theme") == 0) {
             theme_set(value);
         }
+        if (strcmp(name, "hide_box") == 0) {
+            goxel.hide_box = atoi(value);
+        }
     }
     if (strcmp(section, "shortcuts") == 0) {
         if ((a = action_get_by_name(name))) {
@@ -127,6 +130,7 @@ void settings_save(void)
     }
     fprintf(file, "[ui]\n");
     fprintf(file, "theme=%s\n", theme_get()->name);
+    fprintf(file, "hide_box=%d\n", goxel.hide_box ? 1 : 0);
 
     fprintf(file, "[shortcuts]\n");
     actions_iter(shortcut_save_callback, file);
