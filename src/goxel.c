@@ -773,6 +773,8 @@ void goxel_reset(void)
     goxel.radius_x = 0.5;
     goxel.radius_y = 0.5;
     goxel.radius_z = 0.5;
+    goxel.smooth_radius_x = 10.f; /* Diameter 20 */
+    goxel.smooth_radius_y = 10.f;
     goxel.brush_origin_at_base = false;
     goxel.brush_block_face_alignment = false;
     goxel.brush_auto_plane = false;
@@ -2778,13 +2780,21 @@ ACTION_REGISTER(ACTION_toggle_plane_visible,
 )
 
 static void tool_size_change(float delta, bool include_z) {
-    if (delta != 0) {
-        goxel.radius_x = clamp(goxel.radius_x + delta, 0.5, 64);
-        goxel.radius_y = clamp(goxel.radius_y + delta, 0.5, 64);
-        if (include_z) {
-            goxel.radius_z = clamp(goxel.radius_z + delta, 0.5, 64);
-        }
+    if (delta == 0) return;
+
+    /* Smooth keeps its own XY size; [ ] / { } only touch that while selected. */
+    if (goxel.tool && goxel.tool->id == TOOL_SMOOTH) {
+        goxel.smooth_radius_x =
+            clamp(goxel.smooth_radius_x + delta, 0.5, 64);
+        goxel.smooth_radius_y =
+            clamp(goxel.smooth_radius_y + delta, 0.5, 64);
+        return;
     }
+
+    goxel.radius_x = clamp(goxel.radius_x + delta, 0.5, 64);
+    goxel.radius_y = clamp(goxel.radius_y + delta, 0.5, 64);
+    if (include_z)
+        goxel.radius_z = clamp(goxel.radius_z + delta, 0.5, 64);
 }
 static void tool_size_increase(void) { tool_size_change(0.5, true); }
 static void tool_size_decrease(void) { tool_size_change(-0.5, true); }

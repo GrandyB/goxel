@@ -213,22 +213,30 @@ int tool_gui_radius(void)
     return 0;
 }
 
-int tool_gui_radius_xy(void)
+int tool_gui_radius_xy_values(float *radius_x, float *radius_y)
 {
+    int x, y;
+
+    assert(radius_x && radius_y);
     gui_text("Size");
     gui_group_begin(NULL);
-    int x = goxel.radius_x * 2;
-    if (gui_input_int("Diameter X", &x, 1, 128)) {
-        x = clamp(x, 1, 128);
-        goxel.radius_x = x / 2.0;
+    x = (int)(*radius_x * 2);
+    if (gui_input_int("Diameter X", &x, 1, 512)) {
+        x = clamp(x, 1, 512);
+        *radius_x = x / 2.0f;
     }
-    int y = goxel.radius_y * 2;
-    if (gui_input_int("Diameter Y", &y, 1, 128)) {
-        y = clamp(y, 1, 128);
-        goxel.radius_y = y / 2.0;
+    y = (int)(*radius_y * 2);
+    if (gui_input_int("Diameter Y", &y, 1, 512)) {
+        y = clamp(y, 1, 512);
+        *radius_y = y / 2.0f;
     }
     gui_group_end();
     return 0;
+}
+
+int tool_gui_radius_xy(void)
+{
+    return tool_gui_radius_xy_values(&goxel.radius_x, &goxel.radius_y);
 }
 
 int tool_gui_smoothness(void)
