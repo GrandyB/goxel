@@ -376,7 +376,7 @@ static int gui(filter_t *filter_)
         "Split each layer into child layers, one per connected group of "
         "voxels. The original layer becomes an empty parent. If a layer has "
         "more connected regions than Max sublayers, it is left unchanged. "
-        "Set Max sublayers to 0 to allow up to the remaining layer budget.";
+        "Set Max sublayers to -1 to allow up to the remaining layer budget.";
     goxel_set_help_text(help_text);
 
     if (gui_collapsing_header("Hint", false)) {
