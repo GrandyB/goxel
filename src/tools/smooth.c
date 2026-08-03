@@ -145,6 +145,26 @@ static void get_brush_box(const float p[3], float r_x, float r_y, float out[4][4
     mat4_copy(box, out);
 }
 
+/*
+ * Fast e^x for Gaussian weights / falloff (x typically in [-8, 0]).
+ * (1 + x/256)^256 via eight squares; relative error ~1% on that range,
+ * and far cheaper than libm expf.
+ */
+static float smooth_fast_exp(float x)
+{
+    float y;
+
+    if (x <= -16.f)
+        return 0.f;
+    if (x >= 0.f)
+        return 1.f + x; /* callers pass x <= 0; keep positive tiny-safe */
+
+    y = 1.f + x * (1.f / 256.f);
+    y *= y; y *= y; y *= y; y *= y;
+    y *= y; y *= y; y *= y; y *= y;
+    return y;
+}
+
 /* Absolute world-Z top of column (x,y), or INT_MIN if empty. */
 static int column_top_z(const volume_t *volume, volume_accessor_t *acc,
                         int x, int y, int z_lo, int z_hi)
@@ -310,7 +330,7 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
                 continue;
 
             /* Soft brush falloff (1 at centre, ~0 at rim). */
-            falloff = expf(-2.f * d2);
+            falloff = smooth_fast_exp(-2.f * d2);
 
             /* Coherent Perlin: warp kernel, modulate strength, residual. */
             kox = 0.f;
@@ -350,7 +370,8 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
                     if (hn == INT_MIN) continue;
                     wx = (float)nx - kox;
                     wy = (float)ny - koy;
-                    w = expf(-(wx * wx * inv_2sx2 + wy * wy * inv_2sy2));
+                    w = smooth_fast_exp(
+                        -(wx * wx * inv_2sx2 + wy * wy * inv_2sy2));
                     wsum += w;
                     hsum += w * (float)hn;
                 }
