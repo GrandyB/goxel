@@ -188,6 +188,25 @@ void gui_menu(void)
     }
     if (gui_menu_begin("View", true)) {
         gui_menu_checkbox_column(true);
+        gui_menu_toggle(ACTION_view_toggle_tools, "Tools",
+                        gui_panel_is_detached(PANEL_TOOLS), true);
+        if (gui_menu_toggle(0, "Layers", goxel.gui.layers_panel_open, true))
+            gui_layers_panel_toggle();
+        if (gui_menu_toggle(0, "Palette",
+                            goxel.gui.palette_win_open, true))
+            gui_palette_window_toggle();
+        if (gui_menu_toggle(0, "Cameras",
+                            gui_panel_is_detached(PANEL_CAMERAS), true))
+            gui_panel_toggle_detached(PANEL_CAMERAS);
+        if (gui_menu_toggle(0, "Materials",
+                            gui_panel_is_detached(PANEL_MATERIAL), true))
+            gui_panel_toggle_detached(PANEL_MATERIAL);
+        filters_iter_menu("view", NULL, NULL, on_filter_toggle);
+        gui_separator();
+        if (gui_menu_toggle(0, "View settings",
+                            gui_panel_is_detached(PANEL_VIEW), true))
+            gui_panel_toggle_detached(PANEL_VIEW);
+        gui_separator();
         gui_menu_item(ACTION_view_left, "Left", true);
         gui_menu_item(ACTION_view_right, "Right", true);
         gui_menu_item(ACTION_view_front, "Front", true);
@@ -212,28 +231,6 @@ void gui_menu(void)
         if (gui_menu_toggle(0, "Camera presets",
                             goxel.gui.camera_presets_open, true))
             goxel.gui.camera_presets_open = !goxel.gui.camera_presets_open;
-        gui_separator();
-        gui_menu_toggle(ACTION_view_toggle_tools, "Tools",
-                        gui_panel_is_detached(PANEL_TOOLS), true);
-        if (gui_menu_toggle(0, "Layers", goxel.gui.layers_panel_open, true))
-            gui_layers_panel_toggle();
-        if (gui_menu_toggle(0, "Palette",
-                            goxel.gui.palette_win_open, true))
-            gui_palette_window_toggle();
-        if (gui_menu_toggle(0, "Cameras",
-                            gui_panel_is_detached(PANEL_CAMERAS), true))
-            gui_panel_toggle_detached(PANEL_CAMERAS);
-        if (gui_menu_toggle(0, "Editor lighting",
-                            gui_panel_is_detached(PANEL_LIGHT), true))
-            gui_panel_toggle_detached(PANEL_LIGHT);
-        if (gui_menu_toggle(0, "Materials",
-                            gui_panel_is_detached(PANEL_MATERIAL), true))
-            gui_panel_toggle_detached(PANEL_MATERIAL);
-        filters_iter_menu("view", NULL, NULL, on_filter_toggle);
-        gui_separator();
-        if (gui_menu_toggle(0, "View settings",
-                            gui_panel_is_detached(PANEL_VIEW), true))
-            gui_panel_toggle_detached(PANEL_VIEW);
         gui_menu_end();
     }
     if (gui_menu_begin("Image", true)) {

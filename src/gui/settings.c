@@ -21,6 +21,54 @@
 
 #include "utils/ini.h"
 
+/* Keys we do not manage; kept so settings_save does not wipe them. */
+typedef struct {
+    char *section;
+    char *name;
+    char *value;
+} settings_extra_t;
+
+static settings_extra_t *g_extras = NULL;
+static int g_extras_nb = 0;
+
+static void settings_extras_clear(void)
+{
+    int i;
+    for (i = 0; i < g_extras_nb; i++) {
+        free(g_extras[i].section);
+        free(g_extras[i].name);
+        free(g_extras[i].value);
+    }
+    free(g_extras);
+    g_extras = NULL;
+    g_extras_nb = 0;
+}
+
+static void settings_extras_add(const char *section, const char *name,
+                                const char *value)
+{
+    settings_extra_t *e;
+    g_extras = realloc(g_extras, (g_extras_nb + 1) * sizeof(*g_extras));
+    e = &g_extras[g_extras_nb++];
+    e->section = strdup(section);
+    e->name = strdup(name);
+    e->value = strdup(value);
+}
+
+static void settings_path(char *path, size_t size)
+{
+    const char *dir = sys_get_user_dir();
+    size_t len;
+
+    if (!dir) dir = "";
+    snprintf(path, size, "%s", dir);
+    len = strlen(path);
+    while (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\')) {
+        path[--len] = '\0';
+    }
+    snprintf(path + len, size - len, "/settings.ini");
+}
+
 static int shortcut_callback(action_t *action, void *user)
 {
     if (!(action->flags & ACTION_CAN_EDIT_SHORTCUT)) return 0;
@@ -87,9 +135,11 @@ static int settings_ini_handler(void *user, const char *section,
     if (strcmp(section, "ui") == 0) {
         if (strcmp(name, "theme") == 0) {
             theme_set(value);
+            return 1;
         }
         if (strcmp(name, "hide_box") == 0) {
-            goxel.hide_box = atoi(value);
+            goxel.hide_box = atoi(value) != 0;
+            return 1;
         }
     }
     if (strcmp(section, "shortcuts") == 0) {
@@ -98,14 +148,17 @@ static int settings_ini_handler(void *user, const char *section,
         } else {
             LOG_W("Cannot set shortcut for unknown action '%s'", name);
         }
+        return 1;
     }
-    return 0;
+    settings_extras_add(section, name, value);
+    return 1;
 }
 
 void settings_load(void)
 {
     char path[1024];
-    snprintf(path, sizeof(path), "%s/settings.ini", sys_get_user_dir());
+    settings_extras_clear();
+    settings_path(path, sizeof(path));
     ini_parse(path, settings_ini_handler, NULL);
 }
 
@@ -121,7 +174,10 @@ void settings_save(void)
 {
     char path[1024];
     FILE *file;
-    snprintf(path, sizeof(path), "%s/settings.ini", sys_get_user_dir());
+    int i;
+    const char *prev_section = NULL;
+
+    settings_path(path, sizeof(path));
     sys_make_dir(path);
     file = fopen(path, "w");
     if (!file) {
@@ -134,6 +190,14 @@ void settings_save(void)
 
     fprintf(file, "[shortcuts]\n");
     actions_iter(shortcut_save_callback, file);
+
+    for (i = 0; i < g_extras_nb; i++) {
+        if (!prev_section || strcmp(prev_section, g_extras[i].section) != 0) {
+            fprintf(file, "[%s]\n", g_extras[i].section);
+            prev_section = g_extras[i].section;
+        }
+        fprintf(file, "%s=%s\n", g_extras[i].name, g_extras[i].value);
+    }
 
     fclose(file);
 }

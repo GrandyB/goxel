@@ -52,7 +52,6 @@ void gui_layers_panel(void);
 void gui_layers_panel_with_scroll();
 void gui_view_panel(void);
 void gui_material_panel(void);
-void gui_light_panel(void);
 void gui_cameras_panel(void);
 void gui_image_panel(void);
 void gui_render_panel(void);
@@ -71,7 +70,6 @@ static struct {
     [PANEL_LAYERS]      = {"Layers", ICON_LAYERS, gui_layers_panel},
     [PANEL_VIEW]        = {"View", ICON_VIEW, gui_view_panel},
     [PANEL_MATERIAL]    = {"Material", ICON_MATERIAL, gui_material_panel},
-    [PANEL_LIGHT]       = {"Editor lighting", ICON_LIGHT, gui_light_panel},
     [PANEL_CAMERAS]     = {"Cameras", ICON_CAMERA, gui_cameras_panel},
     [PANEL_IMAGE]       = {"Image", ICON_IMAGE, gui_image_panel},
 #if YOCTO
