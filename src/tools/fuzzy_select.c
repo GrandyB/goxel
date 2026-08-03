@@ -330,7 +330,8 @@ static int gui(tool_t *tool_)
         tool->threshold = use_color ? 0 : 255;
     }
     if (use_color) {
-        gui_input_int("Threshold", &tool->threshold, 1, 254);
+        gui_input_int("Threshold", &tool->threshold, 0, 254);
+        gui_tooltip_if_hovered("How close the colors need to be to be considered the same");
     }
     
     if (!volume_is_empty(goxel.mask)) {
@@ -348,8 +349,6 @@ static int gui(tool_t *tool_)
 
     volume_t *volume = goxel.image->active_layer->volume;
 
-    tool_gui_color(true);
-    gui_section_end();
     gui_group_begin(NULL);
     if (gui_button("Delete blocks", 1, 0)) {
         image_history_push(goxel.image);
@@ -380,8 +379,7 @@ static int gui(tool_t *tool_)
         if (volume_get_key(volume) != k0)
             image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     }
-    gui_row_begin(2);
-    if (gui_button("Cut as new layer", 0.5, 0)) {
+    if (gui_button("Cut as new layer", 1, 0)) {
         image_history_push(goxel.image);
         cut_as_new_layer(goxel.image, goxel.image->active_layer,
                          goxel.mask);
@@ -391,10 +389,12 @@ static int gui(tool_t *tool_)
         copy_as_new_layer(goxel.image, goxel.image->active_layer,
                           goxel.mask);
     }
-    gui_row_end();
-    gui_group_end();
+    gui_group_end();   
+    
+    tool_gui_color_default_collapsed(true);
+    gui_section_end();
 
-    if (gui_section_begin("Paint", true)) {
+    if (gui_collapsing_header("Paint", false)) {
         int s = (int)tool->paint_smoothness;
         if (gui_input_int("Antialiasing", &s, 0, 16)) {
             s = clamp(s, 0, 16);
@@ -412,16 +412,14 @@ static int gui(tool_t *tool_)
             paint_selection(tool->paint_smoothness, tool->paint_dithering);
         }
     }
-    gui_section_end();
 
     if (tool->expand_distance < 1)
         tool->expand_distance = 1;
-    if (gui_section_begin("Expand selection", true)) {
+    if (gui_collapsing_header("Expand selection", false)) {
         gui_input_int("Distance", &tool->expand_distance, 1, 128);
         if (gui_button("Expand", -1, 0))
             expand_selection_mask(tool->expand_distance);
     }
-    gui_section_end();
     return 0;
 }
 

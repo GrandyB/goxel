@@ -249,9 +249,9 @@ int tool_gui_smoothness(void)
     return 0;
 }
 
-int tool_gui_noise(void)
+int tool_gui_noise(int section_flags)
 {
-    if (gui_section_begin("Noise", true)) {
+    if (gui_section_begin("Noise", section_flags)) {
         bool noise_enabled = goxel.painter.noise_enabled;
         if (gui_checkbox("Enable", &noise_enabled, NULL)) {
             goxel.painter.noise_enabled = noise_enabled ? 1 : 0;
@@ -283,9 +283,9 @@ int tool_gui_noise(void)
     return 0;
 }
 
-int tool_gui_color(bool always_show_opacity)
+static int tool_gui_color_ex(bool always_show_opacity, int section_flags)
 {
-    if (gui_section_begin("Color", true)) {
+    if (gui_section_begin("Color", section_flags)) {
         /* Skip the default label column so the checkbox sits on the left. */
         gui_label_size_push(0);
         gui_checkbox("Inherit from block(s) beneath", &goxel.painter.color_inherit,
@@ -298,9 +298,20 @@ int tool_gui_color(bool always_show_opacity)
             }
         }
     }
-    
-    tool_gui_noise();
+
+    tool_gui_noise(section_flags);
     return 0;
+}
+
+int tool_gui_color(bool always_show_opacity)
+{
+    return tool_gui_color_ex(always_show_opacity, GUI_SECTION_COLLAPSABLE);
+}
+
+int tool_gui_color_default_collapsed(bool always_show_opacity)
+{
+    return tool_gui_color_ex(always_show_opacity,
+                             GUI_SECTION_COLLAPSABLE_CLOSED);
 }
 
 int tool_gui_symmetry(void)

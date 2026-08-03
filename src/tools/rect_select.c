@@ -155,8 +155,7 @@ static int gui(tool_t *tool_)
         image_history_push(goxel.image);
         volume_merge(volume, goxel.mask, MODE_OVER, goxel.painter.color);
     }
-    gui_row_begin(2);
-    if (gui_button("Cut as new layer", 0.5, 0)) {
+    if (gui_button("Cut as new layer", 1, 0)) {
         image_history_push(goxel.image);
         cut_as_new_layer(goxel.image, goxel.image->active_layer,
                          goxel.mask);
@@ -166,7 +165,6 @@ static int gui(tool_t *tool_)
         copy_as_new_layer(goxel.image, goxel.image->active_layer,
                           goxel.mask);
     }
-    gui_row_end();
     gui_group_end();
 
     return 0;
