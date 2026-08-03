@@ -273,11 +273,50 @@ static void test_clone_layer_subtree(void)
     image_delete(img);
 }
 
+static void test_merge_children_updates_clone(void)
+{
+    image_t *img;
+    layer_t *parent, *child, *clone_parent, *layer;
+    int parent_id, clone_parent_id;
+
+    img = image_new();
+    parent = img->layers;
+    TEST(parent != NULL);
+    img->active_layer = parent;
+    snprintf(parent->name, sizeof(parent->name), "Parent");
+    parent_id = parent->id;
+
+    child = image_add_child_layer(img, parent);
+    TEST(child != NULL);
+    snprintf(child->name, sizeof(child->name), "Child");
+
+    clone_parent = image_clone_layer(img, parent);
+    TEST(clone_parent != NULL);
+    clone_parent_id = clone_parent->id;
+    TEST(layer_has_children(img, clone_parent));
+
+    image_merge_layer_children(img, parent);
+    TEST(!layer_has_children(img, parent));
+
+    clone_parent = layer_find(img, clone_parent_id);
+    TEST(clone_parent != NULL);
+    TEST(clone_parent->base_id == parent_id);
+    TEST(!layer_has_children(img, clone_parent));
+
+    DL_FOREACH(img->layers, layer) {
+        if (layer != parent && layer != clone_parent)
+            TEST(layer->parent_id != clone_parent_id);
+    }
+
+    image_delete(img);
+}
+
 void tests_run(void)
 {
     test_delete_layer_subtree_undo();
     test_duplicate_layer_subtree();
     test_clone_layer_subtree();
+    test_merge_children_updates_clone();
     test_load_file_v2();
     test_load_file_v1_with_preview();
     test_load_corrupt();

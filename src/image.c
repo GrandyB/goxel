@@ -1438,44 +1438,25 @@ void image_merge_layer_down(image_t *img) {
    img->active_layer = active_layer;
 }
 
-void image_merge_layer_children(image_t *img, layer_t *parent)
+/* Delete all descendants of parent; parent remains. Clears base_id on any
+ * remaining layers that pointed at the deleted ids. */
+static void image_delete_layer_descendants(image_t *img, layer_t *parent)
 {
     layer_t *nodes[LAYER_SUBTREE_MAX];
     layer_t *other;
-    volume_t *merged;
     int n, i;
 
-    assert(img);
-    if (!parent || !layer_has_children(img, parent)) return;
-
-    /* Bake shape/clone volumes before we flatten. */
-    image_update(img);
-
+    assert(img && parent);
     n = collect_layer_subtree_checked(img, parent, nodes);
     if (n <= 1) return;
 
-    for (i = 0; i < n; i++) {
-        if (nodes[i]->image)
-            image_image_layer_to_volume(img, nodes[i]);
-        image_unclone_layer(img, nodes[i]);
-    }
-
-    /* Forward order: children first, parent last (same as move-gizmo merge). */
-    merged = volume_new();
-    for (i = 0; i < n; i++) {
-        if (nodes[i]->volume)
-            volume_merge(merged, nodes[i]->volume, MODE_OVER, NULL);
-    }
-    volume_delete(parent->volume);
-    parent->volume = merged;
-    parent->collapsed = false;
-
-    /* Delete every descendant; parent is nodes[n - 1]. */
     for (i = 0; i < n - 1; i++) {
         if (g_focused_layer_id == nodes[i]->id) {
             g_focused_layer_id = 0;
             g_focused_via_shift = false;
         }
+        if (img->active_layer == nodes[i])
+            img->active_layer = parent;
         DL_DELETE(img->layers, nodes[i]);
     }
 
@@ -1491,7 +1472,99 @@ void image_merge_layer_children(image_t *img, layer_t *parent)
     for (i = 0; i < n - 1; i++)
         layer_delete(nodes[i]);
 
-    img->active_layer = parent;
+    parent->collapsed = false;
+}
+
+void image_merge_layer_children(image_t *img, layer_t *parent)
+{
+    layer_t *nodes[LAYER_SUBTREE_MAX];
+    layer_t *peers[LAYER_SUBTREE_MAX];
+    layer_t *other, *merge_target, *base;
+    volume_t *merged;
+    int n, i, n_peers;
+
+    assert(img);
+    if (!parent || !layer_has_children(img, parent)) return;
+
+    /* Prefer flattening the clone base when the selection is a clone of a
+     * still-nested parent. That keeps live links and lets peers just drop
+     * matching children instead of baking a second merged volume. */
+    merge_target = parent;
+    if (parent->base_id) {
+        base = layer_find(img, parent->base_id);
+        if (base && layer_has_children(img, base))
+            merge_target = base;
+    }
+
+    /* Bake shape/clone volumes before we flatten. */
+    image_update(img);
+
+    n = collect_layer_subtree_checked(img, merge_target, nodes);
+    if (n <= 1) {
+        if (merge_target == parent) return;
+        merge_target = parent;
+        n = collect_layer_subtree_checked(img, merge_target, nodes);
+        if (n <= 1) return;
+    }
+
+    for (i = 0; i < n; i++) {
+        if (nodes[i]->image)
+            image_image_layer_to_volume(img, nodes[i]);
+        image_unclone_layer(img, nodes[i]);
+    }
+
+    /* Forward order: children first, parent last (same as move-gizmo merge). */
+    merged = volume_new();
+    for (i = 0; i < n; i++) {
+        if (nodes[i]->volume)
+            volume_merge(merged, nodes[i]->volume, MODE_OVER, NULL);
+    }
+    volume_delete(merge_target->volume);
+    merge_target->volume = merged;
+    merge_target->collapsed = false;
+
+    /* Delete every descendant; merge_target is nodes[n - 1]. */
+    for (i = 0; i < n - 1; i++) {
+        if (g_focused_layer_id == nodes[i]->id) {
+            g_focused_layer_id = 0;
+            g_focused_via_shift = false;
+        }
+        if (img->active_layer == nodes[i])
+            img->active_layer = merge_target;
+        DL_DELETE(img->layers, nodes[i]);
+    }
+
+    DL_FOREACH(img->layers, other) {
+        for (i = 0; i < n - 1; i++) {
+            if (other->base_id == nodes[i]->id) {
+                other->base_id = 0;
+                break;
+            }
+        }
+    }
+
+    for (i = 0; i < n - 1; i++)
+        layer_delete(nodes[i]);
+
+    /* Clone peers (and the invoked layer if we flattened its base) keep the
+     * same hierarchy: strip their children so they match the flat parent. */
+    n_peers = 0;
+    DL_FOREACH(img->layers, other) {
+        if (other == merge_target) continue;
+        if (other->base_id != merge_target->id && other != parent) continue;
+        if (!layer_has_children(img, other)) continue;
+        if (n_peers < LAYER_SUBTREE_MAX)
+            peers[n_peers++] = other;
+    }
+    for (i = 0; i < n_peers; i++) {
+        image_delete_layer_descendants(img, peers[i]);
+        if (peers[i]->base_id == merge_target->id)
+            peers[i]->base_volume_key = 0;
+    }
+
+    img->active_layer = layer_find(img, parent->id);
+    if (!img->active_layer)
+        img->active_layer = merge_target;
 }
 
 camera_t *image_add_camera(image_t *img, camera_t *cam)
