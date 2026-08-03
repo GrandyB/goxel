@@ -63,7 +63,7 @@
     "	]\n"
     "}"
 },
-{.path = "data/metadata-templates/trenchblocks.json", .size = 1510, .data =
+{.path = "data/metadata-templates/trenchblocks.json", .size = 1584, .data =
     "{\n"
     "	\"metadata\": [\n"
     "		{\n"
@@ -99,6 +99,10 @@
     "			\"name\": \"SpectatorSpawnPoint\",\n"
     "			\"type\": \"Point2D\",\n"
     "			\"color\": [100, 100, 100, 255]\n"
+    "		}, {\n"
+    "			\"name\": \"LayerPlayerSpawn\",\n"
+    "			\"type\": \"Text\",\n"
+    "			\"default\": \"\"\n"
     "		}, {\n"
     "			\"name\": \"FlagRed\",\n"
     "			\"type\": \"Point2D\",\n"

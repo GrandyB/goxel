@@ -6,8 +6,12 @@ Place `.json` files in your Goxel user folder:
 - **Windows:** `%AppData%\Goxel\metadata-templates\`
 - **Linux / macOS:** `~/.goxel/metadata-templates/`
 
-On first run, Goxel copies bundled examples into that folder. After that, you can add,
-edit, or remove files there freely.
+On first run (and whenever `GOXEL_VERSION_STR` changes), Goxel copies bundled
+examples into that folder. The seed marker
+`.seeded_metadata_templates` stores the Goxel version string; a mismatch
+overwrites the bundled template files (custom `.json` files you added yourself
+are left alone). After seeding for the current version, you can edit those
+files freely until the next version bump.
 
 Load a template from the **Metadata** panel (**Load template**). Loading replaces all
 current metadata items on the open map.

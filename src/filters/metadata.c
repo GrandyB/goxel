@@ -132,6 +132,7 @@ static int on_template_file(const char *dirpath, const char *name, void *user)
 typedef struct {
     const char *target_dir;
     int copied_count;
+    bool force_overwrite;
 } template_seed_ctx_t;
 
 typedef struct {
@@ -146,6 +147,24 @@ static int metadata_template_count_json(const char *dir, const char *name,
     if (str_endswith_case(name, ".json"))
         ctx->json_count++;
     return 0;
+}
+
+/* Marker holds GOXEL_VERSION_STR so bundled templates reseed on version bumps. */
+static bool metadata_template_marker_matches_version(const char *marker_path)
+{
+    char buf[128];
+    FILE *f;
+    size_t n;
+
+    f = fopen(marker_path, "rb");
+    if (!f) return false;
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r' ||
+                     buf[n - 1] == ' ' || buf[n - 1] == '\t'))
+        buf[--n] = '\0';
+    return strcmp(buf, GOXEL_VERSION_STR) == 0;
 }
 
 static int metadata_template_seed_copy_asset(int idx, const char *path,
@@ -168,12 +187,14 @@ static int metadata_template_seed_copy_asset(int idx, const char *path,
     }
     path_normalize_slashes(dst);
     LOG_I("[meta-tmpl][asset] destination: '%s'", dst);
-    f = fopen(dst, "rb");
-    if (f) { // Keep user file if already present.
-        fclose(f);
-        ctx->copied_count++;
-        LOG_I("[meta-tmpl][asset] already exists: '%s'", dst);
-        return 0;
+    if (!ctx->force_overwrite) {
+        f = fopen(dst, "rb");
+        if (f) { // Keep user file if already present.
+            fclose(f);
+            ctx->copied_count++;
+            LOG_I("[meta-tmpl][asset] already exists: '%s'", dst);
+            return 0;
+        }
     }
     data = assets_get(path, &sz);
     if (!data || sz <= 0) {
@@ -192,7 +213,8 @@ static int metadata_template_seed_copy_asset(int idx, const char *path,
     fwrite(data, (size_t)sz, 1, f);
     fclose(f);
     ctx->copied_count++;
-    LOG_I("[meta-tmpl][asset] copied: '%s' bytes=%d", dst, sz);
+    LOG_I("[meta-tmpl][asset] %s: '%s' bytes=%d",
+          ctx->force_overwrite ? "overwrote" : "copied", dst, sz);
     return 0;
 }
 
@@ -218,12 +240,14 @@ static int metadata_template_seed_copy_from_disk(const char *dir,
         return 0;
     path_normalize_slashes(dst);
     LOG_I("[meta-tmpl][disk] src='%s' dst='%s'", src, dst);
-    f = fopen(dst, "rb");
-    if (f) {
-        fclose(f);
-        ctx->copied_count++;
-        LOG_I("[meta-tmpl][disk] already exists: '%s'", dst);
-        return 0;
+    if (!ctx->force_overwrite) {
+        f = fopen(dst, "rb");
+        if (f) {
+            fclose(f);
+            ctx->copied_count++;
+            LOG_I("[meta-tmpl][disk] already exists: '%s'", dst);
+            return 0;
+        }
     }
     data = read_file(src, &size);
     if (!data || size <= 0) {
@@ -242,7 +266,8 @@ static int metadata_template_seed_copy_from_disk(const char *dir,
     fclose(f);
     free(data);
     ctx->copied_count++;
-    LOG_I("[meta-tmpl][disk] copied: '%s' bytes=%d", dst, size);
+    LOG_I("[meta-tmpl][disk] %s: '%s' bytes=%d",
+          ctx->force_overwrite ? "overwrote" : "copied", dst, size);
     return 0;
 }
 
@@ -250,7 +275,8 @@ static void metadata_templates_seed_user_dir_once(const char *dir)
 {
     char marker[1024];
     FILE *f;
-    template_seed_ctx_t ctx = {.target_dir = dir, .copied_count = 0};
+    template_seed_ctx_t ctx = {
+        .target_dir = dir, .copied_count = 0, .force_overwrite = false};
     template_json_count_ctx_t count_ctx = {0};
     int n;
 
@@ -261,13 +287,21 @@ static void metadata_templates_seed_user_dir_once(const char *dir)
     f = fopen(marker, "rb");
     if (f) {
         fclose(f);
-        LOG_I("[meta-tmpl] marker exists; checking directory contents");
-        sys_list_dir(dir, metadata_template_count_json, &count_ctx);
-        LOG_I("[meta-tmpl] json files currently in dir: %d",
-              count_ctx.json_count);
-        if (count_ctx.json_count > 0)
-            return;
-        LOG_I("[meta-tmpl] marker exists but dir empty; forcing reseed");
+        if (metadata_template_marker_matches_version(marker)) {
+            LOG_I("[meta-tmpl] marker matches version %s; checking dir",
+                  GOXEL_VERSION_STR);
+            sys_list_dir(dir, metadata_template_count_json, &count_ctx);
+            LOG_I("[meta-tmpl] json files currently in dir: %d",
+                  count_ctx.json_count);
+            if (count_ctx.json_count > 0)
+                return;
+            LOG_I("[meta-tmpl] marker ok but dir empty; forcing reseed");
+            ctx.force_overwrite = true;
+        } else {
+            LOG_I("[meta-tmpl] marker version mismatch (want %s); "
+                  "reseeding with overwrite", GOXEL_VERSION_STR);
+            ctx.force_overwrite = true;
+        }
     }
 
     LOG_I("[meta-tmpl] seeding from embedded assets");
@@ -281,16 +315,15 @@ static void metadata_templates_seed_user_dir_once(const char *dir)
         sys_list_dir("data/metadata-templates",
                      metadata_template_seed_copy_from_disk, &ctx);
     }
-    LOG_I("Metadata template seeding: target='%s' copied_or_existing=%d",
-          dir, ctx.copied_count);
+    LOG_I("Metadata template seeding: target='%s' copied_or_existing=%d "
+          "overwrite=%d", dir, ctx.copied_count, (int)ctx.force_overwrite);
     if (ctx.copied_count == 0)
         return;
     f = fopen(marker, "wb");
     if (f) {
-        static const char marker_data[] = "seeded-from-assets\n";
-        fwrite(marker_data, sizeof(marker_data) - 1, 1, f);
+        fprintf(f, "%s\n", GOXEL_VERSION_STR);
         fclose(f);
-        LOG_I("[meta-tmpl] marker written");
+        LOG_I("[meta-tmpl] marker written for version %s", GOXEL_VERSION_STR);
     } else {
         LOG_I("[meta-tmpl] marker write failed (errno=%d)", errno);
     }
