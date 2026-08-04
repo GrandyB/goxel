@@ -638,7 +638,7 @@ static int vox_export(const file_format_t *format, const image_t *image,
         return -1;
     }
     if (!use_default_palette)
-        quantization_gen_palette(volume, 255, (void*)(palette + 1));
+        quantization_gen_palette(volume, 255, (void*)(palette + 1), NULL, 0);
 
     sx = xmax - xmin;
     sy = ymax - ymin;

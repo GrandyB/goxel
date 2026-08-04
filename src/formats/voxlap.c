@@ -390,7 +390,7 @@ static int kvx_export_volume_box(const file_format_t *format,
             memcpy(palette[i], goxel.palette->entries[i].color, 4);
         }
     } else {
-        quantization_gen_palette(volume, 256, (void*)(palette));
+        quantization_gen_palette(volume, 256, (void*)(palette), NULL, 0);
     }
 
     // Iter the voxels and only keep the visible ones, plus the visible

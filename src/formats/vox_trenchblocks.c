@@ -788,10 +788,15 @@ static int vox_trenchblocks_export(const file_format_t *format,
             nb_vox++;
         }
         if (nb_vox > 0 && quant_count > 0) {
-            /* Quantize from the pre-stamp source so metadata / recent RGBs do
-             * not consume the remaining map palette slots incorrectly. */
-            quantization_gen_palette(src_volume, quant_count,
-                                     (void *)(palette + quant_first));
+            /* Fill remaining slots from the pre-stamp source.  Skip colours
+             * already reserved from the recent-colours bar (indices 17+), but
+             * do not exclude metadata 1-8: map voxels that reuse those RGBs
+             * still need a duplicate in the map palette range. */
+            quantization_gen_palette(
+                src_volume, quant_count,
+                (void *)(palette + quant_first),
+                (const uint8_t (*)[4])(palette + TB_PAL_MAP_FIRST),
+                n_recent);
         }
     }
 

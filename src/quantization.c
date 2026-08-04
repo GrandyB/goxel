@@ -126,15 +126,42 @@ static int bucket_cmp(const void *a_, const void *b_)
     return cmp(nb, na);
 }
 
-// Generate an optimal palette whith a fixed number of colors from a volume.
+static bool color_in_exclude(const uint8_t c[4],
+                             const uint8_t (*exclude)[4], int n_exclude)
+{
+    int i;
+    if (!exclude || n_exclude <= 0) return false;
+    for (i = 0; i < n_exclude; i++) {
+        if (exclude[i][3] != 255) continue;
+        if (exclude[i][0] == c[0] && exclude[i][1] == c[1] &&
+            exclude[i][2] == c[2])
+            return true;
+    }
+    return false;
+}
+
+// Generate a palette of up to `nb` colors from a volume.
 // This is based on https://en.wikipedia.org/wiki/Median_cut.
+//
+// If the volume has at most `nb` distinct opaque colours (after skipping
+// `exclude`), they are copied exactly into the first slots and the rest are
+// cleared.  Median-cut only runs when there are more unique colours than
+// slots (otherwise it would duplicate colours to fill the palette).
+//
+// `exclude` / `n_exclude`: optional opaque RGBs already reserved elsewhere
+// in the caller's palette; matching volume colours are omitted from the
+// fill.  Pass NULL / 0 when unused.
 void quantization_gen_palette(const volume_t *volume, int nb,
-                              uint8_t (*palette)[4])
+                              uint8_t (*palette)[4],
+                              const uint8_t (*exclude)[4], int n_exclude)
 {
     uint8_t v[4];
-    int i, pos[3];
+    int i, n, pos[3];
     bucket_t *buckets, b;
     volume_iterator_t iter;
+    value_t *values;
+
+    if (nb <= 0) return;
 
     buckets = calloc(nb, sizeof(*buckets));
 
@@ -145,7 +172,22 @@ void quantization_gen_palette(const volume_t *volume, int nb,
         volume_get_at(volume, &iter, pos, v);
         if (v[3] < 127) continue;
         v[3] = 255;
+        if (color_in_exclude(v, exclude, n_exclude)) continue;
         bucket_add(&buckets[0], v, 1, true);
+    }
+
+    n = utarray_len(buckets[0].values);
+    if (n <= nb) {
+        values = (value_t *)utarray_front(buckets[0].values);
+        for (i = 0; i < n; i++)
+            memcpy(palette[i], values[i].c, 4);
+        /* Clear unused slots so callers that pre-filled a default palette
+         * (e.g. MagicaVoxel) do not leave leftover colours behind. */
+        for (i = n; i < nb; i++)
+            memset(palette[i], 0, 4);
+        utarray_free(buckets[0].values);
+        free(buckets);
+        return;
     }
 
     // Split until we get nb buckets.  I do it a bit stupidly, by sorting

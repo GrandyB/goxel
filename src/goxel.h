@@ -480,9 +480,12 @@ enum {
 #define BLOCK_SIZE 16
 #define VOXEL_TEXTURE_SIZE 8
 
-// Generate an optimal palette whith a fixed number of colors from a volume.
+// Generate a palette of up to `nb` colors from a volume.
+// Exact colours if unique count <= nb; otherwise median-cut quantization.
+// `exclude` / `n_exclude`: optional opaque RGBs to omit (NULL / 0 if none).
 void quantization_gen_palette(const volume_t *volume, int nb,
-                              uint8_t (*palette)[4]);
+                              uint8_t (*palette)[4],
+                              const uint8_t (*exclude)[4], int n_exclude);
 
 // #### Goxel : core object ####
 
