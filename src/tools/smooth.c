@@ -409,33 +409,6 @@ done:
     free(out_h);
 }
 
-/* Reflect dab centres for painter XY symmetry (Z ignored for heightfield). */
-static void smooth_dab_symmetry(volume_t *volume, float pos[3],
-                                float r_x, float r_y, float strength,
-                                float noise, float noise_scale, int symmetry,
-                                const float sym_o[3])
-{
-    int i;
-    float p[3];
-    int cx, cy;
-
-    vec3_copy(pos, p);
-    cx = (int)floorf(p[0]);
-    cy = (int)floorf(p[1]);
-    smooth_dab(volume, cx, cy, r_x, r_y, strength, noise, noise_scale);
-
-    /* Mutate symmetry like volume_op so each axis combo runs once. */
-    for (i = 0; i < 2; i++) {
-        float q[3];
-        if (!(symmetry & (1 << i))) continue;
-        symmetry &= ~(1 << i);
-        vec3_copy(p, q);
-        q[i] = 2.f * sym_o[i] - q[i];
-        smooth_dab_symmetry(volume, q, r_x, r_y, strength, noise, noise_scale,
-                            symmetry, sym_o);
-    }
-}
-
 static bool check_can_skip(tool_smooth_t *sm, const cursor_t *curs)
 {
     volume_t *volume = goxel.tool_volume;
@@ -519,10 +492,9 @@ static int on_drag(gesture3d_t *gest, void *user)
 
     for (i = 0; i < nb; i++) {
         vec3_mix(sm->last_pos, curs->pos, (i + 1.0f) / nb, pos);
-        smooth_dab_symmetry(goxel.tool_volume, pos, r_x, r_y, sm->strength,
-                            sm->add_noise ? sm->noise : 0.f, sm->noise_scale,
-                            goxel.painter.symmetry,
-                            goxel.painter.symmetry_origin);
+        smooth_dab(goxel.tool_volume, (int)floorf(pos[0]), (int)floorf(pos[1]),
+                   r_x, r_y, sm->strength,
+                   sm->add_noise ? sm->noise : 0.f, sm->noise_scale);
     }
 
     sm->last_op.volume_key = volume_get_key(goxel.tool_volume);
@@ -625,7 +597,6 @@ static int gui(tool_t *tool)
                      "stroke gets a fresh seed.");
     }
 
-    tool_gui_symmetry();
     return 0;
 }
 
