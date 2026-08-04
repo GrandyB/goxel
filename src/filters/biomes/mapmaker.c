@@ -412,6 +412,68 @@ void mm_hm_smoothing(mm_heightmap_t *hm)
     free(tmp);
 }
 
+static int median9(int v[9])
+{
+    /* Insertion sort; small fixed size. */
+    int i, j;
+    for (i = 1; i < 9; i++) {
+        int key = v[i];
+        j = i - 1;
+        while (j >= 0 && v[j] > key) {
+            v[j + 1] = v[j];
+            j--;
+        }
+        v[j + 1] = key;
+    }
+    return v[4];
+}
+
+void mm_hm_despeckle_heights(mm_heightmap_t *hm, int passes)
+{
+    int *ih;
+    int *out;
+    int n, p, x, y, i;
+    if (passes <= 0)
+        return;
+    n = hm->width * hm->height;
+    ih = malloc(sizeof(int) * (size_t)n);
+    out = malloc(sizeof(int) * (size_t)n);
+    if (!ih || !out) {
+        free(ih);
+        free(out);
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        int h = (int)(hm->hmap[i] * 63.f);
+        if (h < 0)
+            h = 0;
+        if (h > 63)
+            h = 63;
+        ih[i] = h;
+    }
+    for (p = 0; p < passes; p++) {
+        for (y = 0; y < hm->height; y++) {
+            for (x = 0; x < hm->width; x++) {
+                int neigh[9];
+                int k = 0, dx, dy;
+                for (dy = -1; dy <= 1; dy++) {
+                    for (dx = -1; dx <= 1; dx++) {
+                        int xx = ((x + dx) % hm->width + hm->width) % hm->width;
+                        int yy = ((y + dy) % hm->height + hm->height) % hm->height;
+                        neigh[k++] = ih[xx + yy * hm->width];
+                    }
+                }
+                out[x + y * hm->width] = median9(neigh);
+            }
+        }
+        memcpy(ih, out, sizeof(int) * (size_t)n);
+    }
+    for (i = 0; i < n; i++)
+        hm->hmap[i] = (float)ih[i] / 63.f;
+    free(ih);
+    free(out);
+}
+
 void mm_hm_midpoint_displace(mm_heightmap_t *hm, mm_rng_t *rng,
                              double jittervalue, double spanscalingmultiplier,
                              int skip)

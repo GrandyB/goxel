@@ -55,6 +55,8 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
     s->displace_span_scale = 0.68f;
     s->displace_skip = 4;
     s->biome_jitter = true;
+    s->height_smooth_passes = 2;
+    s->height_despeckle_passes = 2;
 
     /* Grass */
     b = &s->biomes[BIOME_GRASS];
@@ -413,7 +415,16 @@ void generate_biomes_terrain(volume_t *volume, biomes_settings_t *settings)
         }
     }
 
-    mm_hm_smoothing(&hmap);
+    {
+        int p;
+        int smooth_n = settings->height_smooth_passes;
+        if (smooth_n < 1)
+            smooth_n = 1;
+        for (p = 0; p < smooth_n; p++)
+            mm_hm_smoothing(&hmap);
+    }
+    mm_hm_truncate(&hmap);
+    mm_hm_despeckle_heights(&hmap, settings->height_despeckle_passes);
     mm_hm_truncate(&hmap);
     mm_hm_rewrite_gradient_fill(&hmap, &rng, grad_ptrs, BIOMES_COUNT);
     mm_hm_rgb_noise_colors(&hmap, &rng, settings->rgb_noise_low,

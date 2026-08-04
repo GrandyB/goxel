@@ -80,6 +80,8 @@ void mm_hm_rect_noise(mm_heightmap_t *hm, mm_rng_t *rng,
 void mm_hm_rect_color(mm_heightmap_t *hm, int x, int y, int w, int h, int col);
 
 void mm_hm_smoothing(mm_heightmap_t *hm);
+/* Median-filter quantized column tops to remove single-block height flecks. */
+void mm_hm_despeckle_heights(mm_heightmap_t *hm, int passes);
 void mm_hm_midpoint_displace(mm_heightmap_t *hm, mm_rng_t *rng,
                              double jittervalue, double spanscalingmultiplier,
                              int skip);

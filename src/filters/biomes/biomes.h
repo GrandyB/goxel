@@ -39,6 +39,10 @@ typedef struct {
     float displace_span_scale;
     int displace_skip;
     bool biome_jitter;
+    /* Extra float smooth passes before truncate (random.txt used 1). */
+    int height_smooth_passes;
+    /* 3x3 median on quantized tops - kills checkerboard flecks. */
+    int height_despeckle_passes;
 
     /* Biomes: 0 grass, 1 snow, 2 hill, 3 water, 4 tundra */
     biomes_biome_settings_t biomes[BIOMES_COUNT];

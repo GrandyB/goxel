@@ -165,6 +165,17 @@ static int gui(filter_t *filter_)
             "%i", g_default_biomes.displace_skip);
         gui_checkbox("Biome edge jitter", &s->biome_jitter,
                      "Jitter biome tile borders after flood fill");
+        gui_input_int("Height smooth", &s->height_smooth_passes, 1, 16);
+        gui_tooltip_with_default(
+            "Float height blur passes before voxelize (random.txt used 1). "
+            "Raise this to soften noisy flats",
+            "%i", g_default_biomes.height_smooth_passes);
+        gui_input_int("Height despeckle", &s->height_despeckle_passes, 0, 8);
+        gui_tooltip_with_default(
+            "Median-filters integer column tops (3x3). Removes checkerboard "
+            "single-block flecks after quantizing 0-1 heights to 64 levels. "
+            "0 = off",
+            "%i", g_default_biomes.height_despeckle_passes);
     }
 
     if (gui_collapsing_header("Biomes", true)) {
