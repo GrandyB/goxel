@@ -93,7 +93,6 @@ void mm_hm_line_set(mm_heightmap_t *hm, int x, int y, int x2, int y2,
                     int radius, double height);
 void mm_hm_rewrite_gradient_fill(mm_heightmap_t *hm, mm_rng_t *rng,
                                  const int *const *zcoldefs, int n_gradients);
-void mm_hm_rgb_noise_colors(mm_heightmap_t *hm, mm_rng_t *rng, int low, int high);
 void mm_hm_smooth_colors(mm_heightmap_t *hm);
 
 /* --- Biome / BiomeMap -------------------------------------------------- */

@@ -12,14 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum {
-    BIOME_GRASS = 0,
-    BIOME_SNOW = 1,
-    BIOME_HILL = 2,
-    BIOME_WATER = 3,
-    BIOME_TUNDRA = 4,
-};
-
 static void stop_rgb(biomes_grad_stop_t *s, int pos, int r, int g, int b)
 {
     s->pos = pos;
@@ -46,9 +38,20 @@ static void stop_hsb(biomes_grad_stop_t *s, int pos, float h, float sat, float b
     s->rgb[3] = 255;
 }
 
+static void add_fixed_seed(biomes_biome_settings_t *b, int x, int y)
+{
+    int i;
+    if (b->n_fixed_seeds >= BIOMES_MAX_FIXED_SEEDS)
+        return;
+    i = b->n_fixed_seeds++;
+    b->fixed_x[i] = (int8_t)x;
+    b->fixed_y[i] = (int8_t)y;
+}
+
 void biomes_settings_set_defaults(biomes_settings_t *s)
 {
     biomes_biome_settings_t *b;
+    int i;
     memset(s, 0, sizeof(*s));
 
     s->displace_jitter = 0.3f;
@@ -58,8 +61,11 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
     s->height_smooth_passes = 2;
     s->height_despeckle_passes = 2;
 
+    s->n_biomes = 5;
+
     /* Grass */
-    b = &s->biomes[BIOME_GRASS];
+    b = &s->biomes[0];
+    snprintf(b->name, sizeof(b->name), "Grass");
     b->height = 0.97f;
     b->variation = -0.1f;
     b->noise = 0.02f;
@@ -68,9 +74,21 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
     stop_hsb(&b->stops[1], 1, 102, 73, 58);
     stop_hsb(&b->stops[2], 32, 106, 78, 71);
     stop_hsb(&b->stops[3], 64, 106, 48, 86);
+    add_fixed_seed(b, 15, 15);
+    b->random_seeds = 2;
+    b->region_x = 0;
+    b->region_y = 8;
+    b->region_w = 32;
+    b->region_h = 16;
+    b->place_trees = false;
+    b->share_gradient_from = -1;
+    b->noise_intensity = 15;
+    b->noise_saturation = 8;
+    b->noise_coverage = 100;
 
     /* Snow */
-    b = &s->biomes[BIOME_SNOW];
+    b = &s->biomes[1];
+    snprintf(b->name, sizeof(b->name), "Snow");
     b->height = 0.5f;
     b->variation = -0.4f;
     b->noise = 0.11f;
@@ -81,9 +99,21 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
     stop_hsb(&b->stops[3], 48, 160, 20, 87);
     stop_hsb(&b->stops[4], 56, 140, 18, 98);
     stop_hsb(&b->stops[5], 64, 142, 13, 100);
+    add_fixed_seed(b, 15, 7);
+    b->random_seeds = 0;
+    b->region_x = 0;
+    b->region_y = 0;
+    b->region_w = 32;
+    b->region_h = 32;
+    b->place_trees = false;
+    b->share_gradient_from = -1;
+    b->noise_intensity = 8;
+    b->noise_saturation = 4;
+    b->noise_coverage = 100;
 
     /* Hill */
-    b = &s->biomes[BIOME_HILL];
+    b = &s->biomes[2];
+    snprintf(b->name, sizeof(b->name), "Hill");
     b->height = 0.9f;
     b->variation = -0.3f;
     b->noise = 0.07f;
@@ -91,9 +121,21 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
     stop_rgb(&b->stops[0], 0, 2, 100, 86);
     stop_hsb(&b->stops[1], 1, 102, 73, 58);
     stop_hsb(&b->stops[2], 64, 17, 36, 87);
+    add_fixed_seed(b, 15, 22);
+    b->random_seeds = 1;
+    b->region_x = 0;
+    b->region_y = 8;
+    b->region_w = 32;
+    b->region_h = 16;
+    b->place_trees = true;
+    b->share_gradient_from = -1;
+    b->noise_intensity = 12;
+    b->noise_saturation = 6;
+    b->noise_coverage = 100;
 
     /* Water */
-    b = &s->biomes[BIOME_WATER];
+    b = &s->biomes[3];
+    snprintf(b->name, sizeof(b->name), "Water");
     b->height = 1.2f;
     b->variation = -0.16f;
     b->noise = 0.04f;
@@ -102,14 +144,46 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
     stop_hsb(&b->stops[1], 1, 64, 26, 70);
     stop_hsb(&b->stops[2], 16, 119, 65, 40);
     stop_hsb(&b->stops[3], 64, 125, 153, 61);
+    add_fixed_seed(b, 0, 24);
+    add_fixed_seed(b, 31, 24);
+    add_fixed_seed(b, 0, 8);
+    add_fixed_seed(b, 31, 8);
+    add_fixed_seed(b, 0, 31);
+    add_fixed_seed(b, 8, 31);
+    add_fixed_seed(b, 16, 31);
+    add_fixed_seed(b, 24, 31);
+    b->random_seeds = 1;
+    b->region_x = 8;
+    b->region_y = 8;
+    b->region_w = 16;
+    b->region_h = 16;
+    b->place_trees = false;
+    b->share_gradient_from = -1;
+    b->noise_intensity = 4;
+    b->noise_saturation = 3;
+    b->noise_coverage = 80;
 
-    /* Tundra - same shape as snow; shares gradient by default */
-    b = &s->biomes[BIOME_TUNDRA];
+    /* Tundra - shares snow gradient by default */
+    b = &s->biomes[4];
+    snprintf(b->name, sizeof(b->name), "Tundra");
     b->height = 1.14f;
     b->variation = -0.19f;
     b->noise = 0.1f;
     b->n_stops = 0;
-    s->tundra_shares_snow_gradient = true;
+    add_fixed_seed(b, 0, 0);
+    add_fixed_seed(b, 8, 0);
+    add_fixed_seed(b, 16, 0);
+    add_fixed_seed(b, 24, 0);
+    b->random_seeds = 0;
+    b->region_x = 0;
+    b->region_y = 0;
+    b->region_w = 32;
+    b->region_h = 32;
+    b->place_trees = false;
+    b->share_gradient_from = 1; /* Snow */
+    b->noise_intensity = 8;
+    b->noise_saturation = 4;
+    b->noise_coverage = 100;
 
     s->river_enabled = true;
     s->river_x_half_width = 64;
@@ -120,12 +194,9 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
     s->river_set_radius = 2;
     s->river_set_height = 2.0f;
 
-    s->color_jitter = 10.f;
-    s->rgb_noise_low = -2;
-    s->rgb_noise_high = 2;
+    s->dithering = 10.f;
     s->smooth_colors = true;
 
-    s->trees_enabled = true;
     s->trees_min_per_tile = 1;
     s->trees_max_per_tile = 17;
     s->trunk_h_min = 4;
@@ -136,7 +207,6 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
             {98, 193, 69}, {96, 229, 55}, {94, 242, 48},
             {93, 209, 57}, {92, 219, 57}, {88, 210, 66},
         };
-        int i;
         for (i = 0; i < 6; i++) {
             s->foliage_colors[i][0] = greens[i][0];
             s->foliage_colors[i][1] = greens[i][1];
@@ -178,6 +248,23 @@ static void build_gradient_from_stops(mm_gradient_t *g,
             mm_gradient_rgb(g, a->pos, sc, b->pos, ec);
         }
     }
+}
+
+/* Follow share_gradient_from; break cycles by returning the start index. */
+static int resolve_gradient_source(const biomes_settings_t *settings, int idx)
+{
+    int cur = idx;
+    int guard = 0;
+    int n = settings->n_biomes;
+    while (guard++ < n) {
+        int src = settings->biomes[cur].share_gradient_from;
+        if (src < 0 || src >= n)
+            return cur;
+        if (src == idx)
+            return idx;
+        cur = src;
+    }
+    return idx;
 }
 
 static int height_cap(void)
@@ -302,34 +389,78 @@ static void place_tree(volume_t *volume, const int start_pos[3],
     }
 }
 
+static void apply_surface_color_noise(mm_heightmap_t *hm, const int *biome_ids,
+                                      const biomes_settings_t *settings, int n_biomes)
+{
+    int idx;
+    int n = hm->width * hm->height;
+
+    for (idx = 0; idx < n; idx++) {
+        int bi = biome_ids[idx];
+        const biomes_biome_settings_t *bs;
+        int intensity, saturation, coverage;
+        float cov, nv;
+        int rgb[3];
+        int mid;
+        int x, y;
+
+        if (bi < 0 || bi >= n_biomes)
+            bi = 0;
+        bs = &settings->biomes[bi];
+        intensity = clamp(bs->noise_intensity, 0, 100);
+        saturation = clamp(bs->noise_saturation, 0, 100);
+        coverage = clamp(bs->noise_coverage, 0, 100);
+        if (intensity <= 0 || coverage <= 0)
+            continue;
+        cov = (float)coverage / 100.f;
+        x = idx % hm->width;
+        y = idx / hm->width;
+        nv = uniform_noise((float)x, (float)y, 0.f);
+        if (nv >= cov)
+            continue;
+        mid = hm->cmap[idx];
+        rgb[0] = mm_get_r(mid);
+        rgb[1] = mm_get_g(mid);
+        rgb[2] = mm_get_b(mid);
+        blend_with_noise_alpha(rgb, nv, (float)intensity, (float)saturation,
+                               rgb);
+        hm->cmap[idx] = mm_make_color(rgb[0], rgb[1], rgb[2]);
+    }
+}
+
 void generate_biomes_terrain(volume_t *volume, biomes_settings_t *settings)
 {
     mm_rng_t rng;
-    mm_gradient_t grads[BIOMES_COUNT];
-    mm_biome_t biomes[BIOMES_COUNT];
+    mm_gradient_t grads[BIOMES_MAX];
+    mm_biome_t biomes[BIOMES_MAX];
     mm_biomemap_t bmap;
     mm_heightmap_t hmap;
     mm_biome_point_t points[128];
     int n_points = 0;
-    int i, cap;
-    int grad_tables[BIOMES_COUNT][MM_GRAD_STEPS * 3];
-    const int *grad_ptrs[BIOMES_COUNT];
+    int i, j, cap, n;
+    int grad_tables[BIOMES_MAX][MM_GRAD_STEPS * 3];
+    const int *grad_ptrs[BIOMES_MAX];
     int start_pos[3];
 
     if (!volume || !settings || !goxel.image)
         return;
 
+    n = settings->n_biomes;
+    if (n < 1)
+        n = 1;
+    if (n > BIOMES_MAX)
+        n = BIOMES_MAX;
+
     mm_rng_seed(&rng, (uint32_t)settings->seed);
     cap = height_cap();
 
-    for (i = 0; i < BIOMES_COUNT; i++) {
+    for (i = 0; i < n; i++) {
         const biomes_biome_settings_t *bs = &settings->biomes[i];
-        const biomes_grad_stop_t *stops = bs->stops;
-        int n_stops = bs->n_stops;
-        if (i == BIOME_TUNDRA && settings->tundra_shares_snow_gradient) {
-            stops = settings->biomes[BIOME_SNOW].stops;
-            n_stops = settings->biomes[BIOME_SNOW].n_stops;
-        }
+        int src = resolve_gradient_source(settings, i);
+        const biomes_biome_settings_t *gs = &settings->biomes[src];
+        const biomes_grad_stop_t *stops = gs->stops;
+        int n_stops = gs->n_stops;
+
         build_gradient_from_stops(&grads[i], stops, n_stops);
         biomes[i].gradient = &grads[i];
         biomes[i].height = bs->height;
@@ -340,44 +471,32 @@ void generate_biomes_terrain(volume_t *volume, biomes_settings_t *settings)
         grad_ptrs[i] = grad_tables[i];
     }
 
-    if (!mm_biomemap_init(&bmap, biomes, BIOMES_COUNT, 32, 32))
+    if (!mm_biomemap_init(&bmap, biomes, n, BIOMES_MAP_TILES, BIOMES_MAP_TILES))
         return;
 
-    /* Fixed layout points from random.txt */
-    {
-        const struct {
-            int x, y, biome;
-        } fixed[] = {
-            {15, 7, BIOME_SNOW}, {15, 15, BIOME_GRASS}, {15, 22, BIOME_HILL},
-            {0, 24, BIOME_WATER}, {31, 24, BIOME_WATER},
-            {0, 8, BIOME_WATER}, {31, 8, BIOME_WATER},
-        };
-        for (i = 0; i < (int)(sizeof(fixed) / sizeof(fixed[0])); i++) {
-            points[n_points].x = fixed[i].x;
-            points[n_points].y = fixed[i].y;
-            points[n_points].biome = &biomes[fixed[i].biome];
+    for (i = 0; i < n; i++) {
+        const biomes_biome_settings_t *bs = &settings->biomes[i];
+        for (j = 0; j < bs->n_fixed_seeds && n_points < 128; j++) {
+            points[n_points].x = (int)bs->fixed_x[j];
+            points[n_points].y = (int)bs->fixed_y[j];
+            points[n_points].biome = &biomes[i];
             n_points++;
         }
-        for (i = 0; i < 31; i += 8) {
-            points[n_points].x = i;
-            points[n_points].y = 0;
-            points[n_points].biome = &biomes[BIOME_TUNDRA];
-            n_points++;
-            points[n_points].x = i;
-            points[n_points].y = 31;
-            points[n_points].biome = &biomes[BIOME_WATER];
-            n_points++;
+        if (bs->random_seeds > 0 && n_points < 128) {
+            n_points += mm_bm_random_points(
+                &bmap, &rng, bs->random_seeds, &biomes[i],
+                bs->region_x, bs->region_y, bs->region_w, bs->region_h,
+                &points[n_points], 128 - n_points);
         }
     }
-    n_points += mm_bm_random_points(&bmap, &rng, 2, &biomes[BIOME_GRASS],
-                                    0, 8, 32, 16, &points[n_points],
-                                    128 - n_points);
-    n_points += mm_bm_random_points(&bmap, &rng, 1, &biomes[BIOME_HILL],
-                                    0, 8, 32, 16, &points[n_points],
-                                    128 - n_points);
-    n_points += mm_bm_random_points(&bmap, &rng, 1, &biomes[BIOME_WATER],
-                                    8, 8, 16, 16, &points[n_points],
-                                    128 - n_points);
+
+    if (n_points < 1) {
+        /* Ensure flood fill has at least one seed. */
+        points[0].x = BIOMES_MAP_TILES / 2;
+        points[0].y = BIOMES_MAP_TILES / 2;
+        points[0].biome = &biomes[0];
+        n_points = 1;
+    }
 
     mm_bm_point_flood(&bmap, points, n_points);
     if (settings->biome_jitter)
@@ -390,7 +509,7 @@ void generate_biomes_terrain(volume_t *volume, biomes_settings_t *settings)
 
     mm_hm_midpoint_displace(&hmap, &rng, settings->displace_jitter,
                             settings->displace_span_scale, settings->displace_skip);
-    mm_hm_jitter_colors(&hmap, &rng, settings->color_jitter);
+    mm_hm_jitter_colors(&hmap, &rng, settings->dithering);
 
     if (settings->river_enabled) {
         int xmin = 256 - settings->river_x_half_width;
@@ -426,20 +545,29 @@ void generate_biomes_terrain(volume_t *volume, biomes_settings_t *settings)
     mm_hm_truncate(&hmap);
     mm_hm_despeckle_heights(&hmap, settings->height_despeckle_passes);
     mm_hm_truncate(&hmap);
-    mm_hm_rewrite_gradient_fill(&hmap, &rng, grad_ptrs, BIOMES_COUNT);
-    mm_hm_rgb_noise_colors(&hmap, &rng, settings->rgb_noise_low,
-                           settings->rgb_noise_high);
+    {
+        int map_n = hmap.width * hmap.height;
+        int *biome_ids = malloc(sizeof(int) * (size_t)map_n);
+        if (biome_ids)
+            memcpy(biome_ids, hmap.cmap, sizeof(int) * (size_t)map_n);
+        mm_hm_rewrite_gradient_fill(&hmap, &rng, grad_ptrs, n);
+        if (biome_ids) {
+            apply_surface_color_noise(&hmap, biome_ids, settings, n);
+            free(biome_ids);
+        }
+    }
     if (settings->smooth_colors)
         mm_hm_smooth_colors(&hmap);
 
     write_heightmap_to_volume(volume, &hmap, settings, cap);
 
-    if (settings->trees_enabled) {
+    {
         box_get_start_pos(goxel.image->box, start_pos);
         for (i = 0; i < bmap.width * bmap.height; i++) {
             int tx = i % bmap.width;
             int ty = i / bmap.width;
-            if (bmap.tmap[i] != &biomes[BIOME_HILL])
+            int bi = (int)(bmap.tmap[i] - biomes);
+            if (bi < 0 || bi >= n || !settings->biomes[bi].place_trees)
                 continue;
             {
                 int left, top, right, bottom, ct, t;

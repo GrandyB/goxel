@@ -10,10 +10,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define BIOMES_COUNT 5
+#define BIOMES_MAX 16
 #define BIOMES_MAX_GRAD_STOPS 8
+#define BIOMES_MAX_FIXED_SEEDS 8
 #define BIOMES_MAX_FOLIAGE 6
 #define BIOMES_MIN_HEIGHT 64
+#define BIOMES_MAP_TILES 32
 
 /* Gradient built as: set_step_rgb(stops[0]), then hsb segments between
  * consecutive authoring stops when use_hsb, else rgb segments. */
@@ -26,11 +28,33 @@ typedef struct {
 } biomes_grad_stop_t;
 
 typedef struct {
+    char name[32];
     float height;
     float variation;
     float noise;
     int n_stops;
     biomes_grad_stop_t stops[BIOMES_MAX_GRAD_STOPS];
+
+    /* Fixed seed points on the 32x32 biome tile map. */
+    int n_fixed_seeds;
+    int8_t fixed_x[BIOMES_MAX_FIXED_SEEDS];
+    int8_t fixed_y[BIOMES_MAX_FIXED_SEEDS];
+
+    /* Extra random seeds inside region (tile coords). */
+    int random_seeds;
+    int region_x;
+    int region_y;
+    int region_w;
+    int region_h;
+
+    bool place_trees;
+    /* -1 = own gradient; else index into settings->biomes[]. */
+    int share_gradient_from;
+
+    /* Surface colour noise after gradient paint (brush-style). */
+    int noise_intensity;
+    int noise_saturation;
+    int noise_coverage;
 } biomes_biome_settings_t;
 
 typedef struct {
@@ -44,10 +68,8 @@ typedef struct {
     /* 3x3 median on quantized tops - kills checkerboard flecks. */
     int height_despeckle_passes;
 
-    /* Biomes: 0 grass, 1 snow, 2 hill, 3 water, 4 tundra */
-    biomes_biome_settings_t biomes[BIOMES_COUNT];
-    /* Tundra shares snow gradient stops when true (random.txt). */
-    bool tundra_shares_snow_gradient;
+    int n_biomes;
+    biomes_biome_settings_t biomes[BIOMES_MAX];
 
     /* River */
     bool river_enabled;
@@ -60,13 +82,10 @@ typedef struct {
     float river_set_height;
 
     /* Color post */
-    float color_jitter;
-    int rgb_noise_low;
-    int rgb_noise_high;
+    float dithering;
     bool smooth_colors;
 
-    /* Trees */
-    bool trees_enabled;
+    /* Trees (appearance; which biomes get trees is per-biome place_trees) */
     int trees_min_per_tile;
     int trees_max_per_tile;
     int trunk_h_min;

@@ -599,23 +599,6 @@ void mm_hm_rewrite_gradient_fill(mm_heightmap_t *hm, mm_rng_t *rng,
     }
 }
 
-void mm_hm_rgb_noise_colors(mm_heightmap_t *hm, mm_rng_t *rng, int low, int high)
-{
-    int patterns[101];
-    int i, idx = 0;
-    int n = hm->width * hm->height;
-    for (i = 0; i < 101; i++)
-        patterns[i] = mm_rng_int(rng, low, high);
-    while (idx < n) {
-        int mid = hm->cmap[idx];
-        int r = lim_byte(mm_get_r(mid) + patterns[idx % 101]);
-        int g = lim_byte(mm_get_g(mid) + patterns[(idx + 1) % 101]);
-        int b = lim_byte(mm_get_b(mid) + patterns[(idx + 2) % 101]);
-        hm->cmap[idx] = mm_make_color(r, g, b);
-        idx++;
-    }
-}
-
 void mm_hm_smooth_colors(mm_heightmap_t *hm)
 {
     int x = 0, y = 0;

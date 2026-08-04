@@ -21,6 +21,7 @@
 typedef struct {
     filter_t filter;
     biomes_settings_t *settings;
+    int active_biome;
 } filter_biomes_t;
 
 static biomes_settings_t g_default_biomes;
@@ -43,6 +44,7 @@ static void reset_to_default(filter_biomes_t *filter)
     if (!filter->settings)
         return;
     memcpy(filter->settings, &g_default_biomes, sizeof(biomes_settings_t));
+    filter->active_biome = 0;
 }
 
 static void gui_tooltip_with_default(const char *tooltip, const char *default_fmt, ...)
@@ -58,10 +60,6 @@ static void gui_tooltip_with_default(const char *tooltip, const char *default_fm
     gui_tooltip_if_hovered(final_tooltip);
 }
 
-static const char *biome_names[BIOMES_COUNT] = {
-    "Grass", "Snow", "Hill", "Water", "Tundra",
-};
-
 static void sync_stop_hsb_from_rgb(biomes_grad_stop_t *st)
 {
     if (!st->is_hsb)
@@ -70,60 +68,296 @@ static void sync_stop_hsb_from_rgb(biomes_grad_stop_t *st)
                   &st->hsb[0], &st->hsb[1], &st->hsb[2]);
 }
 
-static void gui_biome_section(biomes_settings_t *s, int idx,
-                              const biomes_biome_settings_t *def)
+static void clamp_active_biome(filter_biomes_t *filter)
 {
-    biomes_biome_settings_t *b = &s->biomes[idx];
-    char label[64];
-    char id[32];
-    int i;
-
-    snprintf(label, sizeof(label), "%s biome", biome_names[idx]);
-    if (!gui_collapsing_header(label, false))
+    biomes_settings_t *s = filter->settings;
+    if (!s || s->n_biomes < 1) {
+        filter->active_biome = 0;
         return;
-
-    /* Scope all child widgets so Height/Variation/Pos etc. don't clash. */
-    snprintf(id, sizeof(id), "biome_%d", idx);
-    gui_push_id(id);
-
-    if (idx == 4) {
-        gui_checkbox("Share snow gradient", &s->tundra_shares_snow_gradient,
-                     "Use the Snow biome gradient (random.txt default)");
-        gui_tooltip_with_default("Tundra reuses snow colors when enabled",
-                                 "%s",
-                                 g_default_biomes.tundra_shares_snow_gradient
-                                     ? "on" : "off");
     }
+    if (filter->active_biome < 0)
+        filter->active_biome = 0;
+    if (filter->active_biome >= s->n_biomes)
+        filter->active_biome = s->n_biomes - 1;
+}
+
+/* After deleting index `removed`, remap share_gradient_from values. */
+static void remap_share_after_remove(biomes_settings_t *s, int removed)
+{
+    int i;
+    for (i = 0; i < s->n_biomes; i++) {
+        int src = s->biomes[i].share_gradient_from;
+        if (src == removed)
+            s->biomes[i].share_gradient_from = -1;
+        else if (src > removed)
+            s->biomes[i].share_gradient_from = src - 1;
+    }
+}
+
+static void init_new_biome(biomes_biome_settings_t *b, int index)
+{
+    memset(b, 0, sizeof(*b));
+    snprintf(b->name, sizeof(b->name), "Biome %d", index + 1);
+    b->height = 0.9f;
+    b->variation = -0.1f;
+    b->noise = 0.05f;
+    b->n_stops = 2;
+    b->stops[0].pos = 0;
+    b->stops[0].rgb[0] = 80;
+    b->stops[0].rgb[1] = 140;
+    b->stops[0].rgb[2] = 80;
+    b->stops[0].rgb[3] = 255;
+    b->stops[0].is_hsb = false;
+    b->stops[1].pos = 64;
+    b->stops[1].rgb[0] = 40;
+    b->stops[1].rgb[1] = 100;
+    b->stops[1].rgb[2] = 40;
+    b->stops[1].rgb[3] = 255;
+    b->stops[1].is_hsb = false;
+    b->n_fixed_seeds = 1;
+    b->fixed_x[0] = (int8_t)(BIOMES_MAP_TILES / 2);
+    b->fixed_y[0] = (int8_t)(BIOMES_MAP_TILES / 2);
+    b->random_seeds = 0;
+    b->region_x = 0;
+    b->region_y = 0;
+    b->region_w = BIOMES_MAP_TILES;
+    b->region_h = BIOMES_MAP_TILES;
+    b->place_trees = false;
+    b->share_gradient_from = -1;
+    b->noise_intensity = 12;
+    b->noise_saturation = 6;
+    b->noise_coverage = 100;
+}
+
+static void biome_add(filter_biomes_t *filter)
+{
+    biomes_settings_t *s = filter->settings;
+    if (!s || s->n_biomes >= BIOMES_MAX)
+        return;
+    init_new_biome(&s->biomes[s->n_biomes], s->n_biomes);
+    filter->active_biome = s->n_biomes;
+    s->n_biomes++;
+}
+
+static void biome_duplicate(filter_biomes_t *filter)
+{
+    biomes_settings_t *s = filter->settings;
+    biomes_biome_settings_t *dst;
+    char base_name[32];
+    int src;
+    if (!s || s->n_biomes < 1 || s->n_biomes >= BIOMES_MAX)
+        return;
+    clamp_active_biome(filter);
+    src = filter->active_biome;
+    snprintf(base_name, sizeof(base_name), "%s", s->biomes[src].name);
+    dst = &s->biomes[s->n_biomes];
+    *dst = s->biomes[src];
+    /* Build "… copy" without snprintf overlap / truncation warnings. */
+    {
+        size_t len = strlen(base_name);
+        if (len > 26)
+            len = 26;
+        memcpy(dst->name, base_name, len);
+        memcpy(dst->name + len, " copy", 6); /* includes NUL */
+    }
+    filter->active_biome = s->n_biomes;
+    s->n_biomes++;
+}
+
+static void biome_remove(filter_biomes_t *filter)
+{
+    biomes_settings_t *s = filter->settings;
+    int i, removed;
+    if (!s || s->n_biomes <= 1)
+        return;
+    clamp_active_biome(filter);
+    removed = filter->active_biome;
+    for (i = removed; i < s->n_biomes - 1; i++)
+        s->biomes[i] = s->biomes[i + 1];
+    s->n_biomes--;
+    memset(&s->biomes[s->n_biomes], 0, sizeof(s->biomes[0]));
+    remap_share_after_remove(s, removed);
+    if (filter->active_biome >= s->n_biomes)
+        filter->active_biome = s->n_biomes - 1;
+}
+
+static void gui_biome_list(filter_biomes_t *filter)
+{
+    biomes_settings_t *s = filter->settings;
+    int i;
+    bool can_add, can_remove;
+
+    clamp_active_biome(filter);
+
+    for (i = 0; i < s->n_biomes; i++) {
+        bool selected = (i == filter->active_biome);
+        char label[40];
+        const char *name = s->biomes[i].name[0] ? s->biomes[i].name : "(unnamed)";
+        snprintf(label, sizeof(label), "%s", name);
+        if (gui_selectable(label, &selected, NULL, -1) && selected)
+            filter->active_biome = i;
+    }
+
+    can_add = s->n_biomes < BIOMES_MAX;
+    can_remove = s->n_biomes > 1;
+
+    gui_row_begin(3);
+    gui_enabled_begin(can_add);
+    if (gui_button("Add", 1, ICON_ADD))
+        biome_add(filter);
+    gui_enabled_end();
+    gui_enabled_begin(can_add && s->n_biomes > 0);
+    if (gui_button("Duplicate", 1, 0))
+        biome_duplicate(filter);
+    gui_enabled_end();
+    gui_enabled_begin(can_remove);
+    if (gui_button("Remove", 1, ICON_REMOVE))
+        biome_remove(filter);
+    gui_enabled_end();
+    gui_row_end();
+}
+
+static void gui_fixed_seeds(biomes_biome_settings_t *b)
+{
+    int i;
+    gui_text("Fixed seeds");
+    for (i = 0; i < b->n_fixed_seeds; i++) {
+        char id[16];
+        int x = (int)b->fixed_x[i];
+        int y = (int)b->fixed_y[i];
+        snprintf(id, sizeof(id), "fs_%d", i);
+        gui_push_id(id);
+        gui_row_begin(3);
+        gui_input_int("X", &x, 0, BIOMES_MAP_TILES - 1);
+        gui_input_int("Y", &y, 0, BIOMES_MAP_TILES - 1);
+        /* Hidden label: must not collide with the "X" input above. */
+        if (gui_button("##rm_seed", 0, ICON_REMOVE)) {
+            int j;
+            for (j = i; j < b->n_fixed_seeds - 1; j++) {
+                b->fixed_x[j] = b->fixed_x[j + 1];
+                b->fixed_y[j] = b->fixed_y[j + 1];
+            }
+            b->n_fixed_seeds--;
+            gui_row_end();
+            gui_pop_id();
+            break;
+        }
+        gui_row_end();
+        b->fixed_x[i] = (int8_t)clamp(x, 0, BIOMES_MAP_TILES - 1);
+        b->fixed_y[i] = (int8_t)clamp(y, 0, BIOMES_MAP_TILES - 1);
+        gui_pop_id();
+    }
+    gui_enabled_begin(b->n_fixed_seeds < BIOMES_MAX_FIXED_SEEDS);
+    if (gui_button("Add fixed seed", -1, 0)) {
+        int i = b->n_fixed_seeds++;
+        b->fixed_x[i] = (int8_t)(BIOMES_MAP_TILES / 2);
+        b->fixed_y[i] = (int8_t)(BIOMES_MAP_TILES / 2);
+    }
+    gui_enabled_end();
+}
+
+static void gui_biome_detail(filter_biomes_t *filter)
+{
+    biomes_settings_t *s = filter->settings;
+    biomes_biome_settings_t *b;
+    biomes_biome_settings_t *def = NULL;
+    int i;
+    int share_combo;
+    const char *share_names[BIOMES_MAX + 1];
+    int share_indices[BIOMES_MAX + 1];
+    int n_share = 0;
+
+    clamp_active_biome(filter);
+    if (s->n_biomes < 1)
+        return;
+    b = &s->biomes[filter->active_biome];
+    if (filter->active_biome < g_default_biomes.n_biomes)
+        def = &g_default_biomes.biomes[filter->active_biome];
+
+    gui_input_text("Name", b->name, sizeof(b->name));
 
     gui_input_float("Height", &b->height, 0.01f, -2.f, 2.f, "%.2f");
     gui_tooltip_with_default(
         "Typical heightmap value (0-1). In AoS space higher = lower terrain",
-        "%.2f", def->height);
+        "%.2f", def ? def->height : 0.9f);
     gui_input_float("Variation", &b->variation, 0.01f, -2.f, 2.f, "%.2f");
     gui_tooltip_with_default("Random offset added to height per tile",
-                             "%.2f", def->variation);
+                             "%.2f", def ? def->variation : -0.1f);
     gui_input_float("Noise", &b->noise, 0.01f, 0.f, 1.f, "%.2f");
     gui_tooltip_with_default("Per-tile height jitter amplitude",
-                             "%.2f", def->noise);
+                             "%.2f", def ? def->noise : 0.05f);
 
-    if (idx == 4 && s->tundra_shares_snow_gradient) {
-        gui_pop_id();
-        return;
+    gui_checkbox("Place trees", &b->place_trees,
+                 "Spawn trees on tiles of this biome");
+
+    /* Share gradient combo: None + other biomes */
+    share_names[0] = "None (own)";
+    share_indices[0] = -1;
+    n_share = 1;
+    for (i = 0; i < s->n_biomes; i++) {
+        if (i == filter->active_biome)
+            continue;
+        share_names[n_share] = s->biomes[i].name[0] ? s->biomes[i].name
+                                                    : "(unnamed)";
+        share_indices[n_share] = i;
+        n_share++;
+    }
+    share_combo = 0;
+    for (i = 0; i < n_share; i++) {
+        if (share_indices[i] == b->share_gradient_from) {
+            share_combo = i;
+            break;
+        }
+    }
+    if (gui_combo("Share gradient", &share_combo, share_names, n_share))
+        b->share_gradient_from = share_indices[share_combo];
+    gui_tooltip_if_hovered(
+        "Reuse another biome's color gradient (classic Tundra uses Snow)");
+
+    if (gui_collapsing_header("Color noise", true)) {
+        gui_input_int("Intensity", &b->noise_intensity, 0, 100);
+        gui_tooltip_with_default(
+            "How strongly colour variation mixes in after gradient paint. "
+            "0 = flat gradient",
+            "%i", def ? def->noise_intensity : 12);
+        gui_input_int("Saturation", &b->noise_saturation, 0, 100);
+        gui_tooltip_with_default(
+            "How colourful the variation is. 0 = lightness-only mottling",
+            "%i", def ? def->noise_saturation : 6);
+        gui_input_int("Coverage", &b->noise_coverage, 0, 100);
+        gui_tooltip_with_default(
+            "Fraction of this biome's surface pixels that receive noise",
+            "%i", def ? def->noise_coverage : 100);
     }
 
-    for (i = 0; i < b->n_stops; i++) {
-        char clabel[32];
-        char stop_id[16];
-        snprintf(stop_id, sizeof(stop_id), "stop_%d", i);
-        gui_push_id(stop_id);
-        snprintf(clabel, sizeof(clabel), "Stop %d @%d", i, b->stops[i].pos);
-        if (gui_color_small(clabel, b->stops[i].rgb))
-            sync_stop_hsb_from_rgb(&b->stops[i]);
-        gui_input_int("Pos", &b->stops[i].pos, 0, 64);
-        gui_pop_id();
+    if (gui_collapsing_header("Placement", true)) {
+        gui_fixed_seeds(b);
+        gui_input_int("Random seeds", &b->random_seeds, 0, 32);
+        gui_tooltip_if_hovered(
+            "Extra random flood-fill seeds inside the region below");
+        gui_input_int("Region X", &b->region_x, 0, BIOMES_MAP_TILES - 1);
+        gui_input_int("Region Y", &b->region_y, 0, BIOMES_MAP_TILES - 1);
+        gui_input_int("Region W", &b->region_w, 1, BIOMES_MAP_TILES);
+        gui_input_int("Region H", &b->region_h, 1, BIOMES_MAP_TILES);
     }
 
-    gui_pop_id();
+    if (b->share_gradient_from < 0 ||
+        b->share_gradient_from >= s->n_biomes) {
+        if (gui_collapsing_header("Gradient", true)) {
+            for (i = 0; i < b->n_stops; i++) {
+                char clabel[32];
+                char stop_id[16];
+                snprintf(stop_id, sizeof(stop_id), "stop_%d", i);
+                gui_push_id(stop_id);
+                snprintf(clabel, sizeof(clabel), "Stop %d @%d", i,
+                         b->stops[i].pos);
+                if (gui_color_small(clabel, b->stops[i].rgb))
+                    sync_stop_hsb_from_rgb(&b->stops[i]);
+                gui_input_int("Pos", &b->stops[i].pos, 0, 64);
+                gui_pop_id();
+            }
+        }
+    }
 }
 
 static int gui(filter_t *filter_)
@@ -134,7 +368,8 @@ static int gui(filter_t *filter_)
     int i;
     const char *help_text =
         "Biomes: Triplefox random map via James Hofmann mapmaker.\n"
-        "Hover fields for details. Reset restores random.txt defaults.";
+        "Add/remove biomes in the list. Hover fields for details. "
+        "Reset restores random.txt defaults.";
 
     ensure_defaults();
     if (!filter->settings)
@@ -179,8 +414,9 @@ static int gui(filter_t *filter_)
     }
 
     if (gui_section_begin("Biomes", GUI_SECTION_COLLAPSABLE_CLOSED)) {
-        for (i = 0; i < BIOMES_COUNT; i++)
-            gui_biome_section(s, i, &g_default_biomes.biomes[i]);
+        gui_biome_list(filter);
+        gui_separator();
+        gui_biome_detail(filter);
     }
     gui_section_end();
 
@@ -205,22 +441,17 @@ static int gui(filter_t *filter_)
     }
 
     if (gui_collapsing_header("Colors", false)) {
-        gui_input_float("Color jitter", &s->color_jitter, 1.f, 0.f, 64.f,
-                        "%.0f");
+        gui_input_float("Dithering", &s->dithering, 1.f, 0.f, 64.f, "%.0f");
         gui_tooltip_with_default(
-            "Jitter biome-id colors before gradient paint (pixels)",
-            "%.0f", g_default_biomes.color_jitter);
-        gui_input_int("RGB noise low", &s->rgb_noise_low, -32, 32);
-        gui_input_int("RGB noise high", &s->rgb_noise_high, -32, 32);
+            "Spatially dither biome ids before gradient paint (pixels)",
+            "%.0f", g_default_biomes.dithering);
         gui_checkbox("Smooth colors", &s->smooth_colors,
                      "Average neighboring surface colors");
     }
 
     if (gui_collapsing_header("Trees", false)) {
-        gui_checkbox("Place trees", &s->trees_enabled,
-                     "Spawn trees on hill biome tiles (random.txt)");
-        gui_input_int("Min per hill tile", &s->trees_min_per_tile, 0, 64);
-        gui_input_int("Max per hill tile", &s->trees_max_per_tile, 0, 64);
+        gui_input_int("Min per tile", &s->trees_min_per_tile, 0, 64);
+        gui_input_int("Max per tile", &s->trees_max_per_tile, 0, 64);
         gui_input_int("Trunk h min", &s->trunk_h_min, 1, 16);
         gui_input_int("Trunk h max", &s->trunk_h_max, 1, 16);
         gui_color_small("Trunk", s->trunk_color);
