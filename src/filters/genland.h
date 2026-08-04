@@ -17,6 +17,7 @@ typedef struct {
     float amp_octave_mult;
     float river_width;
     float river_phase;
+    float river_meander;
     int num_rivers;
     float amplitude;
     float base_height;

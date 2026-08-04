@@ -284,7 +284,7 @@ extern "C" void generate_tomland_terrain(volume_t *volume, genland_settings_t *s
                 baseSamples[octaveIndex] = (tempValue * - settings->amplitude) + settings->base_height;
                 // Modulate height using sine to simulate river effect (.02 approximates river width)
                 if (settings->num_rivers >= 1 && settings->river_width != 0) {
-                    tempValue = sin(pixelX * ((2 * PI * settings->num_rivers) / VSID) + riverNoise * 4 + (((1 - settings->river_phase) * 2 * PI) + (1.5 * PI)))
+                    tempValue = sin(pixelX * ((2 * PI * settings->num_rivers) / VSID) + riverNoise * settings->river_meander + (((1 - settings->river_phase) * 2 * PI) + (1.5 * PI)))
                     * (0.5 + settings->river_width) + (0.5 - settings->river_width);
 
                     if (tempValue > 1)

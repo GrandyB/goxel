@@ -39,6 +39,7 @@ static const genland_settings_t default_genland_settings = {
     .amp_octave_mult = 0.4,
     .river_phase = 0.75,
     .river_width = 0.02,
+    .river_meander = 4.0,
     .num_rivers = 1,
     .amplitude = 20.0,
     .base_height = 28.0,
@@ -86,7 +87,7 @@ static int gui(filter_t *filter_)
     const char *help_text = "Genland by Tom Dobrowolski.\n"
         "Hover over each field to get some information about how it affects the end terrain";
     goxel_set_help_text(help_text);
-
+    gui_label_size_push(120);
     if (gui_collapsing_header("Hint", false))
     {
         gui_text_wrapped(help_text);
@@ -119,6 +120,12 @@ static int gui(filter_t *filter_)
 
     gui_input_float("River phase", &filter->settings->river_phase, 0.01, 0, 1, "%.2f");
     gui_tooltip_with_default("Where the rivers begin, 0 = far left, 1 = far right", "%.2f", default_genland_settings.river_phase);
+
+    gui_input_float("River meander", &filter->settings->river_meander, 0.1, 0, 20, "%.1f");
+    gui_tooltip_with_default(
+        "How strongly river noise warps the river path sideways. "
+        "0 = straight channels, higher = more winding",
+        "%.1f", default_genland_settings.river_meander);
 
     gui_input_float("Terrain noise", &filter->settings->noise_terrain, 0.1, 0, 100, "%.1f");
     gui_input_float("River noise", &filter->settings->noise_river, 0.1, 0, 100, "%.1f");
@@ -211,6 +218,7 @@ static int gui(filter_t *filter_)
                 dimensions[0], dimensions[1], dimensions[2]);
         }
     }
+    gui_label_size_pop();
     return 0;
 }
 
