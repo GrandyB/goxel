@@ -136,10 +136,18 @@ static layer_t *copy_as_new_layer(image_t *img, layer_t *layer,
 
 static int gui(tool_t *tool_)
 {
+    layer_t *layer = goxel.image ? goxel.image->active_layer : NULL;
+    volume_t *volume;
+
     tool_gui_mask_mode();
 
+    if (!layer) {
+        gui_text("No layer selected.");
+        return 0;
+    }
+
+    volume = layer->volume;
     gui_group_begin(NULL);
-    volume_t *volume = goxel.image->active_layer->volume;
     if (!volume_is_empty(goxel.mask)) {
         gui_group_begin(NULL);
         if (gui_button("Reset", 1, 0)) {
@@ -157,13 +165,11 @@ static int gui(tool_t *tool_)
     }
     if (gui_button("Cut as new layer", 1, 0)) {
         image_history_push(goxel.image);
-        cut_as_new_layer(goxel.image, goxel.image->active_layer,
-                         goxel.mask);
+        cut_as_new_layer(goxel.image, layer, goxel.mask);
     }
     if (gui_button("Copy as new layer", 1, 0)) {
         image_history_push(goxel.image);
-        copy_as_new_layer(goxel.image, goxel.image->active_layer,
-                          goxel.mask);
+        copy_as_new_layer(goxel.image, layer, goxel.mask);
     }
     gui_group_end();
 

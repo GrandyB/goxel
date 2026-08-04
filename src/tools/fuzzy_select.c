@@ -347,6 +347,11 @@ static int gui(tool_t *tool_)
     if (volume_is_empty(goxel.mask))
         return 0;
 
+    if (!goxel.image || !goxel.image->active_layer) {
+        gui_text("No layer selected.");
+        return 0;
+    }
+
     volume_t *volume = goxel.image->active_layer->volume;
 
     gui_group_begin(NULL);
