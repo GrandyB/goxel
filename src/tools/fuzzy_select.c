@@ -22,6 +22,7 @@ typedef struct {
     tool_t tool;
     int threshold;
     int expand_distance;
+    int hollow_thickness;
     float paint_smoothness;
     float paint_dithering;
     bool global;
@@ -150,6 +151,69 @@ static layer_t *copy_as_new_layer(image_t *img, layer_t *layer,
     new_layer = image_duplicate_layer(img, layer);
     volume_merge(new_layer->volume, mask, MODE_INTERSECT, NULL);
     return new_layer;
+}
+
+/*
+ * Hollow the selection: either delete interior voxels from the active layer
+ * (leaving a shell of `thickness`), or replace the mask with the interior.
+ */
+static void hollow_selection(int thickness, bool mask_mode)
+{
+    volume_t *interior;
+    volume_t *volume;
+    volume_iterator_t iter;
+    volume_accessor_t acc, src_acc;
+    int pos[3], p[3], dx, dy, dz;
+    bool near_outside;
+    static const uint8_t white[4] = {255, 255, 255, 255};
+
+    if (thickness < 1 || !goxel.mask || volume_is_empty(goxel.mask))
+        return;
+    if (!mask_mode && (!goxel.image || !goxel.image->active_layer))
+        return;
+
+    interior = volume_new();
+    acc = volume_get_accessor(interior);
+    src_acc = volume_get_accessor(goxel.mask);
+    iter = volume_get_iterator(goxel.mask,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        if (!volume_get_alpha_at(goxel.mask, &src_acc, pos))
+            continue;
+        near_outside = false;
+        for (dx = -thickness; dx <= thickness && !near_outside; dx++) {
+            for (dy = -thickness; dy <= thickness && !near_outside; dy++) {
+                for (dz = -thickness; dz <= thickness; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0)
+                        continue;
+                    p[0] = pos[0] + dx;
+                    p[1] = pos[1] + dy;
+                    p[2] = pos[2] + dz;
+                    if (!volume_get_alpha_at(goxel.mask, &src_acc, p)) {
+                        near_outside = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!near_outside)
+            volume_set_at(interior, &acc, pos, white);
+    }
+
+    if (mask_mode) {
+        volume_delete(goxel.mask);
+        goxel.mask = interior;
+        return;
+    }
+
+    volume = goxel.image->active_layer->volume;
+    if (!volume_is_empty(interior)) {
+        image_history_push(goxel.image);
+        volume_merge(volume, interior, MODE_SUB, NULL);
+    }
+    volume_delete(interior);
+    volume_delete(goxel.mask);
+    goxel.mask = volume_new();
 }
 
 /* Grow goxel.mask by Chebyshev distance, clamped to the image box. */
@@ -418,12 +482,27 @@ static int gui(tool_t *tool_)
         }
     }
 
-    if (tool->expand_distance < 1)
-        tool->expand_distance = 1;
-    if (gui_collapsing_header("Expand selection", false)) {
+    if (tool->hollow_thickness < 1)
+        tool->hollow_thickness = 1;
+    if (gui_collapsing_header("Hollow", false)) {
+        gui_input_int("Thickness", &tool->hollow_thickness, 1, 100);
+        if (gui_button("Hollow##hollowbutton", -1, 0))
+            hollow_selection(tool->hollow_thickness, false);
+    
+        gui_tooltip_if_hovered("Removes the blocks inside the selection");
+    }
+
+    if (tool->expand_distance < 1) tool->expand_distance = 1;
+    if (gui_collapsing_header("Expand/shrink selection", false)) {
         gui_input_int("Distance", &tool->expand_distance, 1, 128);
-        if (gui_button("Expand", -1, 0))
+        gui_row_begin(2);
+        if (gui_button("Shrink", 0.5, 0))
+            hollow_selection(tool->expand_distance, true);
+        gui_tooltip_if_hovered("Decreases the selection inwards by a distance");
+        if (gui_button("Expand", 0.5, 0))
             expand_selection_mask(tool->expand_distance);
+        gui_tooltip_if_hovered("Increases the selection outwards by a distance");
+        gui_row_end();
     }
     return 0;
 }
