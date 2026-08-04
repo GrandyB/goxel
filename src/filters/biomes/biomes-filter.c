@@ -253,7 +253,7 @@ static void gui_fixed_seeds(biomes_biome_settings_t *b)
         gui_pop_id();
     }
     gui_enabled_begin(b->n_fixed_seeds < BIOMES_MAX_FIXED_SEEDS);
-    if (gui_button("Add fixed seed", -1, 0)) {
+    if (gui_button("Add fixed seed", -1, ICON_ADD)) {
         int i = b->n_fixed_seeds++;
         b->fixed_x[i] = (int8_t)(BIOMES_MAP_TILES / 2);
         b->fixed_y[i] = (int8_t)(BIOMES_MAP_TILES / 2);
