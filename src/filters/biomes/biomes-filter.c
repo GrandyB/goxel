@@ -226,15 +226,17 @@ static void gui_fixed_seeds(biomes_biome_settings_t *b)
         "spread-out points make bigger, more predictable regions");
     for (i = 0; i < b->n_fixed_seeds; i++) {
         char id[16];
-        int x = (int)b->fixed_x[i];
-        int y = (int)b->fixed_y[i];
+        float x = (float)b->fixed_x[i];
+        float y = (float)b->fixed_y[i];
         snprintf(id, sizeof(id), "fs_%d", i);
         gui_push_id(id);
+        /* Stacked ints are designed for gui_row_begin; gui_input_int is not. */
         gui_row_begin(3);
-        gui_input_int("X", &x, 0, BIOMES_MAP_TILES - 1);
-        gui_input_int("Y", &y, 0, BIOMES_MAP_TILES - 1);
-        /* Hidden label: must not collide with the "X" input above. */
-        if (gui_button("##rm_seed", 0, ICON_REMOVE)) {
+        gui_input_float_stack("X", &x, 1.f, 0.f, (float)(BIOMES_MAP_TILES - 1),
+                              "%.0f");
+        gui_input_float_stack("Y", &y, 1.f, 0.f, (float)(BIOMES_MAP_TILES - 1),
+                              "%.0f");
+        if (gui_button("Remove", 1, ICON_REMOVE)) {
             int j;
             for (j = i; j < b->n_fixed_seeds - 1; j++) {
                 b->fixed_x[j] = b->fixed_x[j + 1];
@@ -246,8 +248,8 @@ static void gui_fixed_seeds(biomes_biome_settings_t *b)
             break;
         }
         gui_row_end();
-        b->fixed_x[i] = (int8_t)clamp(x, 0, BIOMES_MAP_TILES - 1);
-        b->fixed_y[i] = (int8_t)clamp(y, 0, BIOMES_MAP_TILES - 1);
+        b->fixed_x[i] = (int8_t)clamp((int)x, 0, BIOMES_MAP_TILES - 1);
+        b->fixed_y[i] = (int8_t)clamp((int)y, 0, BIOMES_MAP_TILES - 1);
         gui_pop_id();
     }
     gui_enabled_begin(b->n_fixed_seeds < BIOMES_MAX_FIXED_SEEDS);
