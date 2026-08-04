@@ -221,6 +221,9 @@ static void gui_fixed_seeds(biomes_biome_settings_t *b)
 {
     int i;
     gui_text("Fixed seeds");
+    gui_tooltip_if_hovered(
+        "Guaranteed spots where this biome always starts. More points or "
+        "spread-out points make bigger, more predictable regions");
     for (i = 0; i < b->n_fixed_seeds; i++) {
         char id[16];
         int x = (int)b->fixed_x[i];
@@ -278,17 +281,22 @@ static void gui_biome_detail(filter_biomes_t *filter)
 
     gui_input_float("Height", &b->height, 0.01f, -2.f, 2.f, "%.2f");
     gui_tooltip_with_default(
-        "Typical heightmap value (0-1). In AoS space higher = lower terrain",
+        "Base ground level for this biome. Higher values make land sit lower "
+        "(valleys / water); lower values make peaks and highlands",
         "%.2f", def ? def->height : 0.9f);
     gui_input_float("Variation", &b->variation, 0.01f, -2.f, 2.f, "%.2f");
-    gui_tooltip_with_default("Random offset added to height per tile",
-                             "%.2f", def ? def->variation : -0.1f);
+    gui_tooltip_with_default(
+        "How much base height wanders from tile to tile. More negative means "
+        "more uneven high and low patches across the biome",
+        "%.2f", def ? def->variation : -0.1f);
     gui_input_float("Noise", &b->noise, 0.01f, 0.f, 1.f, "%.2f");
-    gui_tooltip_with_default("Per-tile height jitter amplitude",
-                             "%.2f", def ? def->noise : 0.05f);
+    gui_tooltip_with_default(
+        "Fine bumpy detail within each tile. Raise for rougher ground; "
+        "lower for flatter plateaus",
+        "%.2f", def ? def->noise : 0.05f);
 
     gui_checkbox("Place trees", &b->place_trees,
-                 "Spawn trees on tiles of this biome");
+                 "Grow trees on this biome's land");
 
     /* Share gradient combo: None + other biomes */
     share_names[0] = "None (own)";
@@ -312,21 +320,24 @@ static void gui_biome_detail(filter_biomes_t *filter)
     if (gui_combo("Share gradient", &share_combo, share_names, n_share))
         b->share_gradient_from = share_indices[share_combo];
     gui_tooltip_if_hovered(
-        "Reuse another biome's color gradient (classic Tundra uses Snow)");
+        "Paint this biome with another biome's colours so two regions look "
+        "like the same surface (e.g. Tundra matching Snow)");
 
     if (gui_collapsing_header("Color noise", true)) {
         gui_input_int("Intensity", &b->noise_intensity, 0, 100);
         gui_tooltip_with_default(
-            "How strongly colour variation mixes in after gradient paint. "
-            "0 = flat gradient",
+            "How mottled the surface looks. 0 = flat solid colour; higher = "
+            "stronger speckles and blotches",
             "%i", def ? def->noise_intensity : 12);
         gui_input_int("Saturation", &b->noise_saturation, 0, 100);
         gui_tooltip_with_default(
-            "How colourful the variation is. 0 = lightness-only mottling",
+            "Whether mottling shifts colour or only lightness. 0 = greyish "
+            "dirty patches; higher = colourful flecks",
             "%i", def ? def->noise_saturation : 6);
         gui_input_int("Coverage", &b->noise_coverage, 0, 100);
         gui_tooltip_with_default(
-            "Fraction of this biome's surface pixels that receive noise",
+            "How much of the surface gets mottled. Lower leaves bigger clean "
+            "patches; 100 covers nearly everything",
             "%i", def ? def->noise_coverage : 100);
     }
 
@@ -334,11 +345,20 @@ static void gui_biome_detail(filter_biomes_t *filter)
         gui_fixed_seeds(b);
         gui_input_int("Random seeds", &b->random_seeds, 0, 32);
         gui_tooltip_if_hovered(
-            "Extra random flood-fill seeds inside the region below");
+            "Extra starting points in the region below so this biome claims "
+            "more of the map. Raise for larger or more irregular blobs");
         gui_input_int("Region X", &b->region_x, 0, BIOMES_MAP_TILES - 1);
+        gui_tooltip_if_hovered(
+            "Left edge of where those random starting points can appear");
         gui_input_int("Region Y", &b->region_y, 0, BIOMES_MAP_TILES - 1);
+        gui_tooltip_if_hovered(
+            "Top edge of where those random starting points can appear");
         gui_input_int("Region W", &b->region_w, 1, BIOMES_MAP_TILES);
+        gui_tooltip_if_hovered(
+            "Width of the random-seed area. Narrower keeps the biome clustered");
         gui_input_int("Region H", &b->region_h, 1, BIOMES_MAP_TILES);
+        gui_tooltip_if_hovered(
+            "Height of the random-seed area. Narrower keeps the biome clustered");
     }
 
     if (b->share_gradient_from < 0 ||
@@ -353,7 +373,11 @@ static void gui_biome_detail(filter_biomes_t *filter)
                          b->stops[i].pos);
                 if (gui_color_small(clabel, b->stops[i].rgb))
                     sync_stop_hsb_from_rgb(&b->stops[i]);
+                gui_tooltip_if_hovered("Colour used at this depth on the surface");
                 gui_input_int("Pos", &b->stops[i].pos, 0, 64);
+                gui_tooltip_if_hovered(
+                    "How deep this colour appears (0 near the top of the "
+                    "column, higher = further down)");
                 gui_pop_id();
             }
         }
@@ -367,9 +391,9 @@ static int gui(filter_t *filter_)
     layer_t *layer;
     int i;
     const char *help_text =
-        "Biomes: Triplefox random map via James Hofmann mapmaker.\n"
-        "Add/remove biomes in the list. Hover fields for details. "
-        "Reset restores random.txt defaults.";
+        "Build a random biome map. Add or remove biomes in the list, tweak "
+        "each one, then Generate. Hover fields to see what they change. "
+        "Reset restores the classic defaults.";
 
     ensure_defaults();
     if (!filter->settings)
@@ -387,29 +411,33 @@ static int gui(filter_t *filter_)
     if (gui_collapsing_header("Terrain", false)) {
         gui_input_float("Displace jitter", &s->displace_jitter, 0.01f, 0.f, 2.f,
                         "%.2f");
-        gui_tooltip_with_default("Midpoint-displace noise strength",
-                                 "%.2f", g_default_biomes.displace_jitter);
+        gui_tooltip_with_default(
+            "Overall hilliness. Raise for wilder mountains and cliffs; "
+            "lower for gentler rolling ground",
+            "%.2f", g_default_biomes.displace_jitter);
         gui_input_float("Span scale", &s->displace_span_scale, 0.01f, 0.f, 2.f,
                         "%.2f");
         gui_tooltip_with_default(
-            "How fast displace amplitude falls each octave",
+            "How much fine detail rides on top of big slopes. Higher keeps "
+            "small bumps prominent; lower looks smoother at close range",
             "%.2f", g_default_biomes.displace_span_scale);
         gui_input_int("Displace skip", &s->displace_skip, 0, 8);
         gui_tooltip_with_default(
-            "Skip coarse displace iterations (higher = smoother bases)",
+            "Skip the largest landscape folds. Higher = fewer huge ridges, "
+            "more mid-sized hills",
             "%i", g_default_biomes.displace_skip);
         gui_checkbox("Biome edge jitter", &s->biome_jitter,
-                     "Jitter biome tile borders after flood fill");
+                     "Fray biome borders so they look organic instead of "
+                     "straight grid edges");
         gui_input_int("Height smooth", &s->height_smooth_passes, 1, 16);
         gui_tooltip_with_default(
-            "Float height blur passes before voxelize (random.txt used 1). "
-            "Raise this to soften noisy flats",
+            "Softens ground after shaping. Raise if flats look noisy or "
+            "stair-steppy; too high washes out hills",
             "%i", g_default_biomes.height_smooth_passes);
         gui_input_int("Height despeckle", &s->height_despeckle_passes, 0, 8);
         gui_tooltip_with_default(
-            "Median-filters integer column tops (3x3). Removes checkerboard "
-            "single-block flecks after quantizing 0-1 heights to 64 levels. "
-            "0 = off",
+            "Removes lone one-block spikes and pits on otherwise flat ground. "
+            "0 leaves flecks alone",
             "%i", g_default_biomes.height_despeckle_passes);
     }
 
@@ -421,39 +449,70 @@ static int gui(filter_t *filter_)
     gui_section_end();
 
     if (gui_collapsing_header("River", false)) {
-        gui_checkbox("Enable river", &s->river_enabled, NULL);
+        gui_checkbox("Enable river", &s->river_enabled,
+                     "Carve a winding river down the middle of the map");
         gui_input_int("Corridor half-width", &s->river_x_half_width, 0, 256);
-        gui_tooltip_with_default("River stays within 256 +/- this many blocks",
-                                 "%i", g_default_biomes.river_x_half_width);
+        gui_tooltip_with_default(
+            "How far left/right of centre the river is allowed to wander. "
+            "Smaller keeps it near the middle",
+            "%i", g_default_biomes.river_x_half_width);
         gui_input_int("Y increment", &s->river_y_increment, 1, 64);
+        gui_tooltip_with_default(
+            "Step size along the river path. Smaller = smoother bends; "
+            "larger = chunkier zigzags",
+            "%i", g_default_biomes.river_y_increment);
         gui_input_int("X increment", &s->river_x_increment, 1, 64);
+        gui_tooltip_with_default(
+            "How sharply each step can dodge left or right. Raise for a "
+            "more snaking river",
+            "%i", g_default_biomes.river_x_increment);
         gui_input_int("Add radius", &s->river_add_radius, 0, 32);
+        gui_tooltip_with_default(
+            "Width of the soft banks around the river",
+            "%i", g_default_biomes.river_add_radius);
         gui_input_float("Add depth", &s->river_add_depth, 0.001f, 0.f, 1.f,
                         "%.3f");
-        gui_tooltip_with_default("Height added along a wide river stroke",
-                                 "%.3f", g_default_biomes.river_add_depth);
+        gui_tooltip_with_default(
+            "How much the banks sink. Higher digs a wider, deeper floodplain",
+            "%.3f", g_default_biomes.river_add_depth);
         gui_input_int("Set radius", &s->river_set_radius, 0, 32);
+        gui_tooltip_with_default(
+            "Width of the hard river channel cut down the centre",
+            "%i", g_default_biomes.river_set_radius);
         gui_input_float("Set height", &s->river_set_height, 0.1f, 0.f, 4.f,
                         "%.1f");
         gui_tooltip_with_default(
-            "Forces water height along the channel (then truncated to 0-1)",
+            "Depth of that channel. Higher makes a deeper trench of water",
             "%.1f", g_default_biomes.river_set_height);
     }
 
     if (gui_collapsing_header("Colors", false)) {
         gui_input_float("Dithering", &s->dithering, 1.f, 0.f, 64.f, "%.0f");
         gui_tooltip_with_default(
-            "Spatially dither biome ids before gradient paint (pixels)",
+            "Blurs biome borders in colour. Raise to scatter neighbouring "
+            "biome colours into each other; 0 keeps hard colour edges",
             "%.0f", g_default_biomes.dithering);
         gui_checkbox("Smooth colors", &s->smooth_colors,
-                     "Average neighboring surface colors");
+                     "Blend neighbouring block colours so speckles look softer");
     }
 
     if (gui_collapsing_header("Trees", false)) {
         gui_input_int("Min per tile", &s->trees_min_per_tile, 0, 64);
+        gui_tooltip_with_default(
+            "Fewest trees in each tile that has Place trees on",
+            "%i", g_default_biomes.trees_min_per_tile);
         gui_input_int("Max per tile", &s->trees_max_per_tile, 0, 64);
+        gui_tooltip_with_default(
+            "Most trees in each of those tiles. Raise for denser woodland",
+            "%i", g_default_biomes.trees_max_per_tile);
         gui_input_int("Trunk h min", &s->trunk_h_min, 1, 16);
+        gui_tooltip_with_default(
+            "Shortest tree trunks",
+            "%i", g_default_biomes.trunk_h_min);
         gui_input_int("Trunk h max", &s->trunk_h_max, 1, 16);
+        gui_tooltip_with_default(
+            "Tallest tree trunks",
+            "%i", g_default_biomes.trunk_h_max);
         gui_color_small("Trunk", s->trunk_color);
         for (i = 0; i < s->foliage_count && i < BIOMES_MAX_FOLIAGE; i++) {
             char fl[32];
@@ -490,8 +549,10 @@ static int gui(filter_t *filter_)
 
     gui_separator();
     gui_input_int("Seed", &s->seed, 0, RAND_MAX);
-    gui_tooltip_with_default("Reproducible generation seed", "%i",
-                             g_default_biomes.seed);
+    gui_tooltip_with_default(
+        "Same seed gives the same layout. Change it (or Randomize) for a "
+        "different map with the same settings",
+        "%i", g_default_biomes.seed);
     if (gui_button("Randomize seed", -1, 0)) {
         srand((unsigned)time(NULL));
         s->seed = rand();
