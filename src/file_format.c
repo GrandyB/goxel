@@ -44,15 +44,23 @@ static int file_format_name_cmp(file_format_t *a, file_format_t *b)
 
 void file_format_register(file_format_t *format)
 {
+    file_format_t *f;
+
+    /* One doubly-linked list only. Formats used to also be linked into
+     * file_formats_import_to_volume / file_formats_export_to_volume via the
+     * same next/prev, which corrupted walks (e.g. kvx vanishing from placer
+     * because it also has export_volume_func). Those heads are convenience
+     * pointers to the first matching format in file_formats. */
     DL_APPEND(file_formats, format);
     DL_SORT(file_formats, file_format_name_cmp);
-    if (format->import_volume_func) {
-        DL_APPEND(file_formats_import_to_volume, format);
-        DL_SORT(file_formats_import_to_volume, file_format_name_cmp);
-    }
-    if (format->export_volume_func) {
-        DL_APPEND(file_formats_export_to_volume, format);
-        DL_SORT(file_formats_export_to_volume, file_format_name_cmp);
+
+    file_formats_import_to_volume = NULL;
+    file_formats_export_to_volume = NULL;
+    DL_FOREACH(file_formats, f) {
+        if (!file_formats_import_to_volume && f->import_volume_func)
+            file_formats_import_to_volume = f;
+        if (!file_formats_export_to_volume && f->export_volume_func)
+            file_formats_export_to_volume = f;
     }
 }
 

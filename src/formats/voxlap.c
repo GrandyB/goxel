@@ -553,8 +553,10 @@ static int kvx_export(const file_format_t *format, const image_t *image,
     return kvx_export_volume_box(format, volume, box, path);
 }
 
-static int kv6_export(const file_format_t *format, const image_t *image,
-                      const char *path)
+static int kv6_export_volume_box(const file_format_t *format,
+                                 const volume_t *volume,
+                                 const float box_[4][4],
+                                 const char *path)
 {
     FILE *file;
     volume_iterator_t iter;
@@ -568,13 +570,10 @@ static int kv6_export(const file_format_t *format, const image_t *image,
     uint16_t *xyoffsets;
     size_t blklen;
     float pivot[3];
-    const volume_t *volume = goxel_get_layers_volume(image);
-
     UT_icd voxel_icd = {sizeof(voxel_t), NULL, NULL, NULL};
     (void)format;
 
-    mat4_copy(image->box, box);
-    if (box_is_null(box)) volume_get_box(volume, true, box);
+    mat4_copy(box_, box);
 
     size[0] = box[0][0] * 2;
     size[1] = box[1][1] * 2;
@@ -692,6 +691,25 @@ static int kv6_export(const file_format_t *format, const image_t *image,
     return 0;
 }
 
+static int kv6_export_volume(const file_format_t *format,
+                             const volume_t *volume, const char *path)
+{
+    float box[4][4];
+    volume_get_box(volume, true, box);
+    return kv6_export_volume_box(format, volume, box, path);
+}
+
+static int kv6_export(const file_format_t *format, const image_t *image,
+                      const char *path)
+{
+    float box[4][4];
+    const volume_t *volume = goxel_get_layers_volume(image);
+
+    mat4_copy(image->box, box);
+    if (box_is_null(box)) volume_get_box(volume, true, box);
+    return kv6_export_volume_box(format, volume, box, path);
+}
+
 FILE_FORMAT_REGISTER(kv6,
     .name = "kv6",
     .exts = {"*.kv6"},
@@ -699,6 +717,7 @@ FILE_FORMAT_REGISTER(kv6,
     .import_func = kv6_import,
     .import_volume_func = kv6_import_to_volume,
     .export_func = kv6_export,
+    .export_volume_func = kv6_export_volume,
 )
 
 FILE_FORMAT_REGISTER(kvx,

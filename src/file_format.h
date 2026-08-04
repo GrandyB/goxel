@@ -52,8 +52,10 @@ void file_format_iter(const char *mode, void *user,
 // Get using the name defined in the file format itself
 const file_format_t *file_format_by_name(const char *name);
 
-// The global list of registered file formats.
+// The global list of registered file formats (single linked list via next/prev).
 extern file_format_t *file_formats;
+/* First format in file_formats with import_volume_func / export_volume_func.
+ * Not separate lists — do not walk these with ->next expecting a filtered set. */
 extern file_format_t *file_formats_import_to_volume;
 extern file_format_t *file_formats_export_to_volume;
 

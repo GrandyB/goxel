@@ -1371,7 +1371,7 @@ static int gui(tool_t *tool)
 
     if(gui_section_begin("Import as", true)) {
         char label[128];
-        if (!ff_import_current) ff_import_current = file_formats_import_to_volume; // First one.
+        if (!ff_import_current) ff_import_current = file_formats_import_to_volume;
 
         make_label(ff_import_current, label, sizeof(label));
         if (gui_combo_begin("Import as", label)) {
@@ -1402,7 +1402,7 @@ static int gui(tool_t *tool)
 
     if (gui_section_begin("Export as", GUI_SECTION_COLLAPSABLE_CLOSED)) {
         char label[128];
-        if (!ff_export_current) ff_export_current = file_formats_export_to_volume; // First one.
+        if (!ff_export_current) ff_export_current = file_formats_export_to_volume;
 
         make_label(ff_export_current, label, sizeof(label));
         if (gui_combo_begin("Export as", label)) {
