@@ -149,7 +149,7 @@ static int gui(filter_t *filter_)
     if (gui_collapsing_header("Hint", false))
         gui_text_wrapped(help_text);
 
-    if (gui_collapsing_header("Terrain", true)) {
+    if (gui_collapsing_header("Terrain", false)) {
         gui_input_float("Displace jitter", &s->displace_jitter, 0.01f, 0.f, 2.f,
                         "%.2f");
         gui_tooltip_with_default("Midpoint-displace noise strength",
@@ -178,12 +178,13 @@ static int gui(filter_t *filter_)
             "%i", g_default_biomes.height_despeckle_passes);
     }
 
-    if (gui_collapsing_header("Biomes", true)) {
+    if (gui_section_begin("Biomes", GUI_SECTION_COLLAPSABLE_CLOSED)) {
         for (i = 0; i < BIOMES_COUNT; i++)
             gui_biome_section(s, i, &g_default_biomes.biomes[i]);
     }
+    gui_section_end();
 
-    if (gui_collapsing_header("River", true)) {
+    if (gui_collapsing_header("River", false)) {
         gui_checkbox("Enable river", &s->river_enabled, NULL);
         gui_input_int("Corridor half-width", &s->river_x_half_width, 0, 256);
         gui_tooltip_with_default("River stays within 256 +/- this many blocks",
@@ -215,7 +216,7 @@ static int gui(filter_t *filter_)
                      "Average neighboring surface colors");
     }
 
-    if (gui_collapsing_header("Trees", true)) {
+    if (gui_collapsing_header("Trees", false)) {
         gui_checkbox("Place trees", &s->trees_enabled,
                      "Spawn trees on hill biome tiles (random.txt)");
         gui_input_int("Min per hill tile", &s->trees_min_per_tile, 0, 64);
