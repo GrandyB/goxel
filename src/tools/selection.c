@@ -475,10 +475,18 @@ static int gui(tool_t *tool)
     int x, y, z, w, h, d;
     float (*box)[4][4] = &goxel.selection;
 
-    if(gui_button("Select entire layer", -1, 0)) {
-        float box[4][4];
-        volume_get_box(goxel.image->active_layer->volume, true, box);
-        mat4_copy(box, goxel.selection);
+    {
+        bool has_layer = goxel.image && goxel.image->active_layer &&
+                         goxel.image->active_layer->volume;
+        gui_enabled_begin(has_layer);
+        if (gui_button("Select entire layer", -1, 0)) {
+            float box[4][4];
+            volume_get_box(goxel.image->active_layer->volume, true, box);
+            mat4_copy(box, goxel.selection);
+        }
+        gui_enabled_end();
+        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                      "Select a layer first.");
     }
 
     if (box_is_null(*box)) return 0;
@@ -608,26 +616,34 @@ static int gui(tool_t *tool)
         if (ff_export_current->export_gui)
             ff_export_current->export_gui(ff_export_current);
 
-        if (gui_button("Export box selection", -1, 0)) {
-            const char *path;
-            volume_t *copy;
-            painter_t painter;
+        {
+            bool has_layer = goxel.image && goxel.image->active_layer &&
+                             goxel.image->active_layer->volume;
+            gui_enabled_begin(has_layer);
+            if (gui_button("Export box selection", -1, 0)) {
+                const char *path;
+                volume_t *copy;
+                painter_t painter;
 
-            path = sys_get_save_path("", ff_export_current->exts,
-                                    ff_export_current->exts_desc);
-            if (path) {
-                // Always use the box selection only - never the fuzzy mask.
-                copy = volume_copy(goxel.image->active_layer->volume);
-                painter = (painter_t) {
-                    .shape = &shape_cube,
-                    .mode = MODE_INTERSECT,
-                    .color = {255, 255, 255, 255},
-                };
-                volume_op(copy, &painter, *box);
-                ff_export_current->export_volume_func(
-                        ff_export_current, copy, path);
-                volume_delete(copy);
+                path = sys_get_save_path("", ff_export_current->exts,
+                                        ff_export_current->exts_desc);
+                if (path) {
+                    // Always use the box selection only - never the fuzzy mask.
+                    copy = volume_copy(goxel.image->active_layer->volume);
+                    painter = (painter_t) {
+                        .shape = &shape_cube,
+                        .mode = MODE_INTERSECT,
+                        .color = {255, 255, 255, 255},
+                    };
+                    volume_op(copy, &painter, *box);
+                    ff_export_current->export_volume_func(
+                            ff_export_current, copy, path);
+                    volume_delete(copy);
+                }
             }
+            gui_enabled_end();
+            gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                          "Select a layer first.");
         }
     }
     gui_section_end();
