@@ -209,3 +209,44 @@ void quantization_gen_palette(const volume_t *volume, int nb,
     }
     free(buckets);
 }
+
+int quantization_nearest(const uint8_t c[4],
+                         const uint8_t (*palette)[4], int n)
+{
+    const uint8_t *p;
+    int i, dist, best = -1, best_dist = 1024;
+
+    for (i = 0; i < n; i++) {
+        p = palette[i];
+        if (p[3] != 255) continue;
+        dist = abs((int)p[0] - (int)c[0]) +
+               abs((int)p[1] - (int)c[1]) +
+               abs((int)p[2] - (int)c[2]);
+        if (dist == 0) return i;
+        if (dist < best_dist) {
+            best_dist = dist;
+            best = i;
+        }
+    }
+    return best;
+}
+
+void quantization_remap_volume(volume_t *volume,
+                               const uint8_t (*palette)[4], int n)
+{
+    volume_iterator_t iter;
+    int pos[3], idx;
+    uint8_t v[4];
+
+    if (!volume || !palette || n <= 0) return;
+
+    iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(volume, &iter, pos, v);
+        if (v[3] < 127) continue;
+        idx = quantization_nearest(v, palette, n);
+        if (idx < 0) continue;
+        memcpy(v, palette[idx], 4);
+        volume_set_at(volume, &iter, pos, v);
+    }
+}
