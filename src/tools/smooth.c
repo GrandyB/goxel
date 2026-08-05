@@ -57,86 +57,13 @@ typedef struct {
     } gestures;
 } tool_smooth_t;
 
-/* ---- 2D Perlin (world-space; seed may refresh per stroke) ---- */
-
-static unsigned char g_smooth_perm[512];
-static unsigned g_smooth_perm_seed = 0;
-static bool g_smooth_perm_inited = false;
-
+/* Shared 2D Perlin: utils/noise.h (perlin2 / perlin2_init_seed). */
 #define SMOOTH_NOISE_SEED_FIXED 0x51a007u
-
-static void smooth_noise_init_seed(unsigned seed)
-{
-    int i, j, k;
-    unsigned char p[256];
-    unsigned s = seed ? seed : 1u;
-
-    if (g_smooth_perm_inited && g_smooth_perm_seed == seed)
-        return;
-
-    for (i = 0; i < 256; i++)
-        p[i] = (unsigned char)i;
-    for (i = 255; i > 0; i--) {
-        s = s * 1664525u + 1013904223u;
-        j = (int)(s % (unsigned)(i + 1));
-        k = p[i];
-        p[i] = p[j];
-        p[j] = (unsigned char)k;
-    }
-    for (i = 0; i < 256; i++) {
-        g_smooth_perm[i] = p[i];
-        g_smooth_perm[i + 256] = p[i];
-    }
-    g_smooth_perm_seed = seed;
-    g_smooth_perm_inited = true;
-}
 
 static void smooth_noise_init(void)
 {
-    if (!g_smooth_perm_inited)
-        smooth_noise_init_seed(SMOOTH_NOISE_SEED_FIXED);
-}
-
-static float smooth_fade(float t)
-{
-    return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
-}
-
-static float smooth_grad2(int h, float x, float y)
-{
-    switch (h & 7) {
-    case 0: return x + y;
-    case 1: return -x + y;
-    case 2: return x - y;
-    case 3: return -x - y;
-    case 4: return x;
-    case 5: return -x;
-    case 6: return y;
-    default: return -y;
-    }
-}
-
-/* Classic Perlin in ~[-1, 1]. */
-static float smooth_perlin2(float x, float y)
-{
-    int x0 = (int)floorf(x);
-    int y0 = (int)floorf(y);
-    float fx = x - (float)x0;
-    float fy = y - (float)y0;
-    int xi = x0 & 255;
-    int yi = y0 & 255;
-    float u = smooth_fade(fx);
-    float v = smooth_fade(fy);
-    int aa = g_smooth_perm[g_smooth_perm[xi] + yi];
-    int ab = g_smooth_perm[g_smooth_perm[xi] + yi + 1];
-    int ba = g_smooth_perm[g_smooth_perm[xi + 1] + yi];
-    int bb = g_smooth_perm[g_smooth_perm[xi + 1] + yi + 1];
-    float x1 = smooth_grad2(aa, fx, fy) +
-               (smooth_grad2(ba, fx - 1.0f, fy) - smooth_grad2(aa, fx, fy)) * u;
-    float x2 = smooth_grad2(ab, fx, fy - 1.0f) +
-               (smooth_grad2(bb, fx - 1.0f, fy - 1.0f) -
-                smooth_grad2(ab, fx, fy - 1.0f)) * u;
-    return x1 + (x2 - x1) * v;
+    /* Only seed if never inited — do not clobber a stroke-specific seed. */
+    perlin2_ensure_seeded(SMOOTH_NOISE_SEED_FIXED);
 }
 
 static void ensure_defaults(tool_smooth_t *sm)
@@ -151,7 +78,7 @@ static void ensure_defaults(tool_smooth_t *sm)
     sm->empty_column = SMOOTH_EMPTY_CREATE_WITHIN;
     sm->stroke_seed = SMOOTH_NOISE_SEED_FIXED;
     sm->defaults_inited = true;
-    smooth_noise_init_seed(SMOOTH_NOISE_SEED_FIXED);
+    perlin2_init_seed(SMOOTH_NOISE_SEED_FIXED);
 }
 
 static void get_brush_box(const float p[3], float r_x, float r_y, float r_z,
@@ -379,10 +306,10 @@ static void smooth_dab_2d(volume_t *volume, int cx, int cy,
             if (namp > 0.f) {
                 float px = (float)x * freq_x;
                 float py = (float)y * freq_y;
-                float nx_w = smooth_perlin2(px, py);
-                float ny_w = smooth_perlin2(px + 19.7f, py + 7.3f);
-                float ns = smooth_perlin2(px + 41.1f, py + 23.9f);
-                float nr = smooth_perlin2(px + 3.1f, py + 61.4f);
+                float nx_w = perlin2(px, py);
+                float ny_w = perlin2(px + 19.7f, py + 7.3f);
+                float ns = perlin2(px + 41.1f, py + 23.9f);
+                float nr = perlin2(px + 3.1f, py + 61.4f);
 
                 /* Stronger warp so neighbourhood choice clearly differs. */
                 kox = nx_w * namp * sx * 1.75f;
@@ -598,7 +525,7 @@ static int smooth_dab_3d(volume_t *volume, int cx, int cy, int cz,
                 if (namp > 0.f) {
                     float px = (float)x * freq_x;
                     float py = (float)y * freq_y;
-                    float ns = smooth_perlin2(px + 41.1f, py + 23.9f);
+                    float ns = perlin2(px + 41.1f, py + 23.9f);
                     n_str = (1.f - namp) +
                             namp * (0.1f + 0.9f * (0.5f + 0.5f * ns));
                 }
@@ -780,13 +707,13 @@ static int on_drag(gesture3d_t *gest, void *user)
         if (sm->add_noise) {
             if (sm->lock_noise) {
                 /* Keep the same field across strokes. */
-                smooth_noise_init_seed(SMOOTH_NOISE_SEED_FIXED);
+                perlin2_init_seed(SMOOTH_NOISE_SEED_FIXED);
             } else {
                 /* Fresh field for this stroke; stable for the whole drag. */
                 sm->stroke_seed = sm->stroke_seed * 1664525u + 1013904223u;
                 if (!sm->stroke_seed)
                     sm->stroke_seed = 1u;
-                smooth_noise_init_seed(sm->stroke_seed);
+                perlin2_init_seed(sm->stroke_seed);
             }
         }
     }

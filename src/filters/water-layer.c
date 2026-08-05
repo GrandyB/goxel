@@ -216,89 +216,7 @@ static void load_preset(filter_water_layer_t *filter, int index)
     filter->preset_index = index;
 }
 
-/* ---- Gradient noise + FBM ------------------------------------------------ */
-
-static unsigned char g_perm[512];
-
-static void noise_init(int seed)
-{
-    int i, j, k;
-    unsigned char p[256];
-
-    srand((unsigned)seed);
-    for (i = 0; i < 256; i++)
-        p[i] = (unsigned char)i;
-    for (i = 255; i > 0; i--) {
-        j = rand() % (i + 1);
-        k = p[i];
-        p[i] = p[j];
-        p[j] = (unsigned char)k;
-    }
-    for (i = 0; i < 256; i++) {
-        g_perm[i] = p[i];
-        g_perm[i + 256] = p[i];
-    }
-}
-
-static float fade(float t)
-{
-    return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
-}
-
-static float grad2(int h, float x, float y)
-{
-    switch (h & 7) {
-    case 0: return x + y;
-    case 1: return -x + y;
-    case 2: return x - y;
-    case 3: return -x - y;
-    case 4: return x;
-    case 5: return -x;
-    case 6: return y;
-    default: return -y;
-    }
-}
-
-static float perlin2(float x, float y)
-{
-    int x0 = (int)floorf(x);
-    int y0 = (int)floorf(y);
-    float fx = x - (float)x0;
-    float fy = y - (float)y0;
-    int xi = x0 & 255;
-    int yi = y0 & 255;
-    float u = fade(fx);
-    float v = fade(fy);
-    int aa = g_perm[g_perm[xi] + yi];
-    int ab = g_perm[g_perm[xi] + yi + 1];
-    int ba = g_perm[g_perm[xi + 1] + yi];
-    int bb = g_perm[g_perm[xi + 1] + yi + 1];
-    float x1 = grad2(aa, fx, fy) +
-               (grad2(ba, fx - 1.0f, fy) - grad2(aa, fx, fy)) * u;
-    float x2 = grad2(ab, fx, fy - 1.0f) +
-               (grad2(bb, fx - 1.0f, fy - 1.0f) - grad2(ab, fx, fy - 1.0f)) * u;
-    return x1 + (x2 - x1) * v; /* roughly [-1, 1] */
-}
-
-static float fbm2(float x, float y, int octaves, float persistence, float lacunarity)
-{
-    float sum = 0.0f;
-    float amp = 1.0f;
-    float freq = 1.0f;
-    float norm = 0.0f;
-    int i;
-    int oct = clamp(octaves, 1, 8);
-
-    for (i = 0; i < oct; i++) {
-        sum += amp * perlin2(x * freq, y * freq);
-        norm += amp;
-        amp *= persistence;
-        freq *= lacunarity;
-    }
-    if (norm <= 1e-6f)
-        return 0.0f;
-    return sum / norm;
-}
+/* Gradient noise + FBM: shared utils/noise.h (perlin2 / fbm2). */
 
 /*
  * Height field in [0, 1]:
@@ -539,7 +457,7 @@ static void generate_water_layer(volume_t *volume,
     if (dimensions[0] <= 0 || dimensions[1] <= 0 || dimensions[2] <= 0)
         return;
 
-    noise_init(settings->seed);
+    perlin2_init_seed((unsigned)settings->seed);
     bottom_z = start_pos[2];
     above_z = bottom_z + 1;
     width = dimensions[0];
