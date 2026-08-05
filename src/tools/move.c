@@ -88,7 +88,19 @@ static void center_origin(layer_t *layer)
 
 int degX = 0, degY = 0, degZ = 0;
 static bool move_scale_custom = false;
+static bool move_scale_custom_all_axes = true;
 static float move_scale_custom_pct = 100.f;
+static float move_scale_custom_pct_x = 100.f;
+static float move_scale_custom_pct_y = 100.f;
+static float move_scale_custom_pct_z = 100.f;
+
+static float move_scale_from_pct(float pct)
+{
+    float s = pct / 100.f;
+    if (s < 1e-6f)
+        s = 1e-6f;
+    return s;
+}
 
 static int gui(tool_t *tool)
 {
@@ -170,15 +182,45 @@ static int gui(tool_t *tool)
 
     if (gui_checkbox("Custom", &move_scale_custom,
                      "Apply a custom, possibly destructive, scaling")) {
-        if (move_scale_custom)
+        if (move_scale_custom) {
             move_scale_custom_pct = 100.f;
+            move_scale_custom_pct_x = 100.f;
+            move_scale_custom_pct_y = 100.f;
+            move_scale_custom_pct_z = 100.f;
+        }
     }
     if (move_scale_custom) {
-        gui_input_float("%", &move_scale_custom_pct, 1.f, 0.f, 100.f, "%.2f");
+        if (gui_checkbox("All axes", &move_scale_custom_all_axes,
+                         "Use the same scale on X, Y, and Z")) {
+            if (move_scale_custom_all_axes) {
+                move_scale_custom_pct = 100.f;
+            } else {
+                move_scale_custom_pct_x = 100.f;
+                move_scale_custom_pct_y = 100.f;
+                move_scale_custom_pct_z = 100.f;
+            }
+        }
+        if (move_scale_custom_all_axes) {
+            gui_input_float("%", &move_scale_custom_pct, -1.f, 0.f, 500.f,
+                            "%.2f");
+        } else {
+            gui_input_float("X %", &move_scale_custom_pct_x, -1.f, 0.f, 500.f,
+                            "%.2f");
+            gui_input_float("Y %", &move_scale_custom_pct_y, -1.f, 0.f, 500.f,
+                            "%.2f");
+            gui_input_float("Z %", &move_scale_custom_pct_z, -1.f, 0.f, 500.f,
+                            "%.2f");
+        }
         if (gui_button("Apply", -1, 0)) {
-            float m = move_scale_custom_pct / 100.f;
-            if (m > 1e-6f)
-                mat4_iscale(mat, m, m, m);
+            float sx, sy, sz;
+            if (move_scale_custom_all_axes) {
+                sx = sy = sz = move_scale_from_pct(move_scale_custom_pct);
+            } else {
+                sx = move_scale_from_pct(move_scale_custom_pct_x);
+                sy = move_scale_from_pct(move_scale_custom_pct_y);
+                sz = move_scale_from_pct(move_scale_custom_pct_z);
+            }
+            mat4_iscale(mat, sx, sy, sz);
         }
     }
     gui_group_end();
