@@ -93,7 +93,11 @@ void gui_top_bar(void)
         gui_row_begin(0); {
             gui_action_button(ACTION_layer_clear, NULL, 0);
             gui_mode_select();
-            gui_color("##color", goxel.painter.color);
+            if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE &&
+                goxel.brush_palette_count > 0)
+                gui_palette_mode_swatch("##color");
+            else
+                gui_color("##color", goxel.painter.color);
         } gui_row_end();
     } gui_row_end();
 }
@@ -154,6 +158,8 @@ void gui_map_colors_bar(void)
         }
         gui_tooltip_if_hovered(tip);
         if (click == 1) {
+            goxel_brush_palette_clear();
+            goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
             image_recent_color_apply_to_goxel_painter(
                     goxel.image, i, gui_pick_rgb_keep_alpha());
         } else if (click == 2) {

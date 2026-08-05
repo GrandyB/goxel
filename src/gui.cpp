@@ -184,6 +184,10 @@ typedef struct gui_t {
 
     int     is_row;
     float   item_size;
+    /* Raw mods from inputs_t (set before ImGui::NewFrame). Prefer these over
+     * io.KeyShift/KeyCtrl - NewFrame key remapping can drop them. */
+    bool    shift_down;
+    bool    ctrl_down;
 
     struct {
         const char *title;
@@ -853,14 +857,20 @@ static void gui_iter(const inputs_t *inputs)
 
         for (i = 0; i < ARRAY_SIZE(inputs->keys); i++)
             io.KeysDown[i] = inputs->keys[i];
-        io.KeyShift = inputs->keys[KEY_LEFT_SHIFT] ||
-                      inputs->keys[KEY_RIGHT_SHIFT];
-        io.KeyCtrl = inputs->keys[KEY_CONTROL];
+        /* Stash before NewFrame; io.KeyShift can be remapped away. */
+        gui->shift_down = inputs->keys[KEY_LEFT_SHIFT] ||
+                          inputs->keys[KEY_RIGHT_SHIFT];
+        gui->ctrl_down = inputs->keys[KEY_CONTROL];
+        io.KeyShift = gui->shift_down;
+        io.KeyCtrl = gui->ctrl_down;
         for (i = 0; i < ARRAY_SIZE(inputs->chars); i++) {
             if (!inputs->chars[i]) break;
             io.AddInputCharacter(inputs->chars[i]);
         }
         memset((void*)inputs->chars, 0, sizeof(inputs->chars));
+    } else {
+        gui->shift_down = false;
+        gui->ctrl_down = false;
     }
 
 
@@ -1089,6 +1099,8 @@ bool gui_tabsheet_begin(const char *id, const char **labels, int count,
     ImGuiStorage *storage;
     ImGuiID sel_key;
     int prev;
+    int want;
+    int reported;
     bool force_select;
 
     if (!id || !labels || !current || count < 1)
@@ -1118,22 +1130,38 @@ bool gui_tabsheet_begin(const char *id, const char **labels, int count,
         return false;
     }
 
-    /* Force ImGui's selection only when the bound value changed externally. */
+    /* Force ImGui's selection when the bound value changed externally (e.g.
+     * Shift+click enters Palette mode while the Color tab is still selected).
+     * Keep applying SetSelected and refuse to write *current from a stale tab
+     * until ImGui reports the wanted tab - otherwise one frame of Color wins,
+     * brush exits Palette mode, and the UI flickers back. */
     storage = ImGui::GetStateStorage();
     sel_key = ImGui::GetID("tabsheet_sel");
-    prev = storage->GetInt(sel_key, *current);
-    force_select = (prev != *current);
+    want = *current;
+    prev = storage->GetInt(sel_key, want);
+    force_select = (prev != want);
 
+    reported = -1;
     for (i = 0; i < count; i++) {
         ImGuiTabItemFlags flags = 0;
-        if (force_select && *current == i)
+        if (force_select && want == i)
             flags |= ImGuiTabItemFlags_SetSelected;
         if (ImGui::BeginTabItem(labels[i] ? labels[i] : "", NULL, flags)) {
-            *current = i;
+            reported = i;
             ImGui::EndTabItem();
         }
     }
-    storage->SetInt(sel_key, *current);
+
+    if (force_select) {
+        *current = want;
+        /* Only mark synced once ImGui agrees; else force again next frame. */
+        if (reported == want)
+            storage->SetInt(sel_key, want);
+    } else {
+        if (reported >= 0)
+            *current = reported;
+        storage->SetInt(sel_key, *current);
+    }
 
     ImGui::EndTabBar();
     ImGui::PopStyleVar(2);
@@ -2447,6 +2475,52 @@ bool gui_color(const char *label, uint8_t color[4])
     ImGui::PopID();
     return ret;
 }
+
+void gui_palette_mode_swatch(const char *label)
+{
+    ImDrawList *draw_list = ImGui::GetWindowDrawList();
+    ImVec2 size(ICON_HEIGHT, ICON_HEIGHT);
+    ImVec2 p0, p1, center;
+    ImVec2 uv0, uv1;
+    const float icon_half = 12.f;
+    /* Hue stops across the square for a rainbow fill. */
+    static const ImU32 stops[] = {
+        IM_COL32(255, 0, 0, 255),
+        IM_COL32(255, 165, 0, 255),
+        IM_COL32(255, 255, 0, 255),
+        IM_COL32(0, 200, 0, 255),
+        IM_COL32(0, 180, 255, 255),
+        IM_COL32(80, 0, 255, 255),
+        IM_COL32(200, 0, 200, 255),
+    };
+    const int nstops = (int)(sizeof(stops) / sizeof(stops[0]));
+    int i;
+
+    ImGui::PushID(label ? label : "##palette_mode");
+    ImGui::InvisibleButton("##rainbow", size);
+    p0 = ImGui::GetItemRectMin();
+    p1 = ImGui::GetItemRectMax();
+    for (i = 0; i < nstops - 1; i++) {
+        float t0 = (float)i / (float)(nstops - 1);
+        float t1 = (float)(i + 1) / (float)(nstops - 1);
+        ImVec2 a(p0.x + (p1.x - p0.x) * t0, p0.y);
+        ImVec2 b(p0.x + (p1.x - p0.x) * t1, p1.y);
+        draw_list->AddRectFilled(a, b, stops[i]);
+    }
+    draw_list->AddRect(p0, p1, IM_COL32(0, 0, 0, 255), 0, 0, 1.f);
+    center = ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
+    uv0 = get_icon_uv(ICON_PALETTE);
+    uv1 = uv0 + ImVec2(1.f / 8.f, 1.f / 8.f);
+    /* Soft dark disc behind icon for contrast on bright stripes. */
+    draw_list->AddCircleFilled(center, icon_half + 2.f, IM_COL32(0, 0, 0, 140));
+    draw_list->AddImage((intptr_t)g_tex_icons->tex,
+                        center - ImVec2(icon_half, icon_half),
+                        center + ImVec2(icon_half, icon_half),
+                        uv0, uv1, IM_COL32(255, 255, 255, 255));
+    if (ImGui::IsItemHovered())
+        gui_tooltip("Palette brush (multi-colour)");
+    ImGui::PopID();
+}
 bool gui_color_small_conditional_label(const char *label, uint8_t color[4], bool show_label)
 {
     bool ret;
@@ -2776,6 +2850,11 @@ bool gui_combo_item(const char *label, bool is_selected)
     if (is_selected)
         ImGui::SetItemDefaultFocus();
     return ret;
+}
+
+void gui_combo_separator(void)
+{
+    ImGui::Separator();
 }
 
 void gui_input_text_multiline_highlight(int line)
@@ -3512,7 +3591,7 @@ bool gui_icons_grid(int nb, const gui_icon_info_t *icons, int *current)
         } else {
             snprintf(label, sizeof(label), "%s", icon->label);
         }
-        v = (i == *current);
+        v = (current && *current >= 0 && i == *current);
         if (!is_colors_grid) {
             size = ICON_HEIGHT;
             clicked = gui_selectable_icon(label, &v, icon->icon);
@@ -3548,6 +3627,65 @@ bool gui_icons_grid(int nb, const gui_icon_info_t *icons, int *current)
     return ret;
 }
 
+int gui_color_swatches_grid(int nb, const gui_icon_info_t *icons,
+                            const bool *multi_selected, int *current)
+{
+    const gui_icon_info_t *icon;
+    int i;
+    int ret = 0;
+    float last_button_x;
+    float next_button_x;
+    float max_x;
+    float size = ITEM_HEIGHT;
+    float spacing = 8;
+    const ImGuiStyle &style = ImGui::GetStyle();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    bool highlight;
+    bool shift = gui && gui->shift_down && !(gui && gui->ctrl_down);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing, spacing));
+    max_x = ImGui::GetWindowPos().x + ImGui::GetContentRegionAvail().x;
+    max_x += 16;
+
+    for (i = 0; i < nb; i++) {
+        icon = &icons[i];
+        ImGui::PushID(i);
+        if (multi_selected)
+            highlight = multi_selected[i];
+        else
+            highlight = (current && *current >= 0 && i == *current);
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(
+                icon->color[0] / 255.f, icon->color[1] / 255.f,
+                icon->color[2] / 255.f, icon->color[3] / 255.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(
+                icon->color[0] / 255.f, icon->color[1] / 255.f,
+                icon->color[2] / 255.f, icon->color[3] / 255.f));
+        ImGui::Button("", ImVec2(size, size));
+        ImGui::PopStyleColor(2);
+        /* IsItemClicked: reliable with modifiers; Button() alone can miss them. */
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+            *current = i;
+            ret = shift ? 2 : 1;
+        }
+        if (icon->label && icon->label[0] && ImGui::IsItemHovered())
+            gui_tooltip(icon->label);
+        if (highlight) {
+            ImVec2 c1 = ImGui::GetItemRectMin() - ImVec2(1, 1);
+            ImVec2 c2 = ImGui::GetItemRectMax() + ImVec2(1, 1);
+            draw_list->AddRect(c1, c2, 0xFF000000, 0, 0, 2);
+            draw_list->AddRect(c1, c2, 0xFFFFFFFF, 0, 0, 1);
+        }
+        last_button_x = ImGui::GetItemRectMax().x;
+        next_button_x = last_button_x + style.ItemSpacing.x + size;
+        if (i + 1 < nb && next_button_x < max_x)
+            ImGui::SameLine();
+        ImGui::PopID();
+    }
+    ImGui::PopStyleVar(1);
+    return ret;
+}
+
 bool gui_want_capture_mouse(void)
 {
     gui_init();
@@ -3565,8 +3703,7 @@ bool gui_want_capture_keyboard(void)
 bool gui_pick_rgb_keep_alpha(void)
 {
     gui_init();
-    const ImGuiIO &io = ImGui::GetIO();
-    return io.KeyCtrl && io.KeyShift;
+    return gui->ctrl_down && gui->shift_down;
 }
 
 typedef struct list_item list_item_t;

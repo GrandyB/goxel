@@ -730,12 +730,9 @@ void goxel_init(void)
     script_init();
     goxel_brush_textures_reload();
 
-    // Load and set default palette.
+    // Load and set default palette (In-use colours is prepended first).
     palette_load_all(&goxel.palettes);
-    DL_FOREACH(goxel.palettes, goxel.palette) {
-        if (strcmp(goxel.palette->name, "DB32") == 0)
-            break;
-    }
+    goxel.palette = palette_find_by_name(goxel.palettes, PALETTE_IN_USE_NAME);
     goxel.palette = goxel.palette ?: goxel.palettes;
 
     goxel_add_gesture(GESTURE_DRAG, GESTURE_LMB, on_drag);
@@ -780,6 +777,8 @@ void goxel_reset(void)
     goxel.brush_auto_plane = false;
     goxel.brush_surface_paint = false;
     goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
+    goxel_brush_palette_clear();
+    goxel_brush_palette_reroll_seed();
     if (goxel.brush_texture_index >= goxel.brush_textures_count)
         goxel.brush_texture_index = 0;
     goxel.brush_texture_hue = 0.f;
@@ -840,6 +839,8 @@ void goxel_reset(void)
     #ifdef AFTER_RESET_FUNC
     AFTER_RESET_FUNC();
     #endif
+
+    palette_in_use_update_if_needed();
 }
 
 void goxel_release(void)
@@ -980,6 +981,8 @@ int goxel_iter(const inputs_t *inputs)
 
     sound_iter();
     update_window_title();
+
+    palette_in_use_update_if_needed();
 
     goxel.frame_count++;
 

@@ -69,6 +69,7 @@
 #include "utils/vec.h"
 
 #include "brush_textures.h"
+#include "brush_palette.h"
 
 #include <float.h>
 #include <stdarg.h>
@@ -576,7 +577,7 @@ typedef struct goxel
     bool       brush_auto_plane;
     /* Brush paint mode: project onto exposed surface shell from +Z. */
     bool       brush_surface_paint;
-    /* Brush source: solid color or tiled texture sampling. */
+    /* Brush source: solid color, tiled texture, or multi-colour palette. */
     int        brush_source_mode;
     int        brush_texture_index;
     brush_texture_t *brush_textures;
@@ -587,6 +588,11 @@ typedef struct goxel
     float      brush_texture_hue;
     float      brush_texture_saturation;
     float      brush_texture_lightness;
+    /* Multi-colour (Palette) brush: selected colours from any palette. */
+    uint8_t    brush_palette_colors[BRUSH_PALETTE_MAX][4];
+    int        brush_palette_count;
+    /* Seed for per-voxel palette picks; advances after each committed stroke. */
+    uint32_t   brush_palette_stroke_seed;
     bool       pathtrace; // Render pathtraced mode.
 
     // Some state for the tool iter functions.

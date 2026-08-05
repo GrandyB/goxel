@@ -195,6 +195,12 @@ typedef struct gui_icon_info
 } gui_icon_info_t;
 
 bool gui_icons_grid(int nb, const gui_icon_info_t *icons, int *current);
+/* Color swatch grid with optional multi-select highlights.
+ * multi_selected[i] true => draw selection (nullable = use *current only).
+ * *current may be -1 for no single selection when multi_selected is NULL.
+ * Returns 0=none, 1=plain click, 2=Shift(+no Ctrl) click. Sets *current. */
+int gui_color_swatches_grid(int nb, const gui_icon_info_t *icons,
+                            const bool *multi_selected, int *current);
 float gui_label_size_get(void);
 void gui_label_size_push(float v);
 void gui_label_size_pop(void);
@@ -221,6 +227,8 @@ bool gui_selectable_toggle(const char *name, int *v, int set_v,
 bool gui_selectable_icon(const char *name, bool *v, int icon);
 bool gui_condensed_selectable_icon(const char *name, bool *v, int icon);
 bool gui_color(const char *label, uint8_t color[4]);
+/* Non-editable rainbow swatch with palette icon (multi-colour brush mode). */
+void gui_palette_mode_swatch(const char *label);
 bool gui_color_small(const char *label, uint8_t color[4]);
 bool gui_color_small_no_label(const char *id, uint8_t color[4]);
 bool gui_color_inline(const char *label, uint8_t color[4]);
@@ -240,6 +248,7 @@ void gui_input_text_multiline_highlight(int line);
 bool gui_combo(const char *label, int *v, const char **names, int nb);
 bool gui_combo_begin(const char *label, const char *preview);
 bool gui_combo_item(const char *label, bool selected);
+void gui_combo_separator(void);
 void gui_combo_end(void);
 
 void gui_enabled_begin(bool enabled);

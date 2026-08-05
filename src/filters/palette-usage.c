@@ -391,6 +391,9 @@ static int gui(filter_t *filter_)
         if (!goxel.palette) {
             snprintf(filter->save_error, sizeof(filter->save_error),
                      "No palette is selected.");
+        } else if (palette_is_readonly(goxel.palette)) {
+            snprintf(filter->save_error, sizeof(filter->save_error),
+                     "Cannot add colours to the In-use colours palette.");
         } else if (!filter->analysis_valid || filter->sorted_count == 0) {
             snprintf(filter->save_error, sizeof(filter->save_error),
                      "Run Analyse first (no colours to add).");

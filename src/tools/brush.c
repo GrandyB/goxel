@@ -49,6 +49,7 @@ typedef struct {
         float      brush_texture_hue;
         float      brush_texture_saturation;
         float      brush_texture_lightness;
+        uint32_t   brush_palette_fp;
     } last_op;
     /* Active layer before this stroke; used to add map-color history on commit. */
     uint64_t   layer_key_at_stroke_start;
@@ -65,6 +66,7 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
 {
     volume_t *volume = goxel.tool_volume;
     const bool pressed = curs->flags & CURSOR_PRESSED;
+
     if (    pressed == brush->last_op.pressed &&
             mode == brush->last_op.mode &&
             brush->last_op.volume_key == volume_get_key(volume) &&
@@ -82,6 +84,8 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
                 goxel.brush_texture_saturation &&
             brush->last_op.brush_texture_lightness ==
                 goxel.brush_texture_lightness &&
+            brush->last_op.brush_palette_fp ==
+                goxel_brush_palette_fingerprint() &&
             vec3_equal(curs->pos, brush->last_op.pos) &&
             /* Drag locks alignment at begin; only hover tracks live normal. */
             (!goxel.brush_block_face_alignment || pressed ||
@@ -102,6 +106,7 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
     brush->last_op.brush_texture_hue = goxel.brush_texture_hue;
     brush->last_op.brush_texture_saturation = goxel.brush_texture_saturation;
     brush->last_op.brush_texture_lightness = goxel.brush_texture_lightness;
+    brush->last_op.brush_palette_fp = goxel_brush_palette_fingerprint();
     vec3_copy(curs->pos, brush->last_op.pos);
     vec3_copy(curs->normal, brush->last_op.normal);
     return false;
@@ -357,6 +362,8 @@ static int on_drag(gesture3d_t *gest, void *user)
             int m = goxel.painter.mode;
             if (m == MODE_OVER || m == MODE_PAINT)
                 image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+            if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE)
+                goxel_brush_palette_reroll_seed();
         }
         volume_set(brush->volume_orig, goxel.tool_volume);
         volume_delete(goxel.tool_volume);
@@ -514,9 +521,15 @@ static int gui(tool_t *tool)
 
     gui_dummy(0, 8);
     {
-        static const char *source_tabs[] = {"Color", "Texture"};
-        if (gui_tabsheet_begin("##brush_source", source_tabs, 2,
+        static const char *source_tabs[] = {"Color", "Texture", "Palette"};
+        int prev_mode = goxel.brush_source_mode;
+        if (gui_tabsheet_begin("##brush_source", source_tabs, 3,
                                &goxel.brush_source_mode)) {
+            if (prev_mode == BRUSH_SOURCE_PALETTE &&
+                goxel.brush_source_mode != BRUSH_SOURCE_PALETTE) {
+                goxel_brush_palette_exit_to_mode(goxel.brush_source_mode);
+            }
+
             if (goxel.brush_source_mode == BRUSH_SOURCE_COLOR) {
                 tool_gui_color(false);
                 gui_section_end();
@@ -584,6 +597,38 @@ static int gui(tool_t *tool)
                         cur->saturation = 100.f;
                         cur->lightness = 0.f;
                         cur->opacity = 255;
+                    }
+                }
+                gui_section_end();
+            }
+
+            if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE) {
+                if (gui_section_begin("Palette", true)) {
+                    if (goxel.brush_palette_count <= 0) {
+                        gui_text("Shift+click colours in the Palette panel to "
+                                 "paint with multiple colours.");
+                    } else {
+                        gui_text("%d colours selected (Shift+click to toggle).",
+                                 goxel.brush_palette_count);
+                        {
+                            gui_icon_info_t *pgrid;
+                            int pi, pidx = -1;
+                            pgrid = calloc((size_t)goxel.brush_palette_count,
+                                           sizeof(*pgrid));
+                            for (pi = 0; pi < goxel.brush_palette_count; pi++) {
+                                pgrid[pi] = (gui_icon_info_t){
+                                    .label = "",
+                                    .icon = 0,
+                                    .color = {
+                                        VEC4_SPLIT(
+                                            goxel.brush_palette_colors[pi])},
+                                };
+                            }
+                            gui_color_swatches_grid(
+                                    goxel.brush_palette_count, pgrid, NULL,
+                                    &pidx);
+                            free(pgrid);
+                        }
                     }
                 }
                 gui_section_end();

@@ -674,11 +674,18 @@ void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
                         goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE &&
                         brush_sample_texture_color(pos, paint_voxel)) {
                     paint_voxel[3] = ((int)paint_voxel[3] * (int)painter->color[3]) / 255;
+                } else if (goxel.tool && goxel.tool->id == TOOL_BRUSH &&
+                           goxel.brush_source_mode == BRUSH_SOURCE_PALETTE &&
+                           goxel_brush_palette_sample_at(pos, paint_voxel)) {
+                    if (painter->mode == MODE_PAINT)
+                        paint_voxel[3] = ((int)paint_voxel[3] *
+                                          (int)painter->color[3]) / 255;
                 } else if (painter->color_inherit) {
                     get_color_beneath(&inherit_ctx, pos, paint_voxel);
                 }
                 if (!(goxel.tool && goxel.tool->id == TOOL_BRUSH &&
-                      goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE)) {
+                      (goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE ||
+                       goxel.brush_source_mode == BRUSH_SOURCE_PALETTE))) {
                     vec3_set(global_p,
                              (float)noise_tex_coord(pos[0]),
                              (float)noise_tex_coord(pos[1]),
@@ -733,6 +740,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         float     brush_texture_hue;
         float     brush_texture_saturation;
         float     brush_texture_lightness;
+        uint32_t  brush_palette_fp;
     } key;
     memset(&key, 0, sizeof(key));
     key.id = volume_get_key(volume);
@@ -743,6 +751,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     key.brush_texture_hue = goxel.brush_texture_hue;
     key.brush_texture_saturation = goxel.brush_texture_saturation;
     key.brush_texture_lightness = goxel.brush_texture_lightness;
+    key.brush_palette_fp = goxel_brush_palette_fingerprint();
     cached = cache_get(cache, &key, sizeof(key));
     if (cached) {
         volume_set(volume, cached);
@@ -854,34 +863,19 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
                 brush_sample_texture_color(vp, col)) {
             // Apply shared brush opacity to sampled texture alpha.
             col[3] = ((int)col[3] * (int)painter->color[3]) / 255;
+        } else if (goxel.tool && goxel.tool->id == TOOL_BRUSH &&
+                   goxel.brush_source_mode == BRUSH_SOURCE_PALETTE &&
+                   goxel_brush_palette_sample_at(vp, col)) {
+            if (painter->mode == MODE_PAINT)
+                col[3] = ((int)col[3] * (int)painter->color[3]) / 255;
         } else if (painter->color_inherit) {
             get_color_beneath(&inherit_ctx, vp, col);
         }
 
-        // Apply noise
-        // if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
-        //     //uint8_t noise_col[4];
-        //     float noise_value = uniform_noise(global_p[0], global_p[1], global_p[2]);
-        //     //generate_random_color(noise_value, painter->noise_intensity/100f, painter->noise_saturation/100f, noise_col);
-
-        //     //LOG_D("Noise: %f", noise_value);
-
-        //     // Apply coverage: skip voxels outside the noise coverage range
-        //     if (noise_value > (float)painter->noise_coverage / 100.0f) {
-        //         //LOG_D("Skipped");
-        //     } else {
-        //         // Adjust noise intensity and saturation
-        //         float noise_factor = (float)painter->noise_intensity / 100.0f * noise_value;
-        //         //LOG_D("Noise factor: %f", noise_factor);
-        //         col[0] = (uint8_t)clamp(col[0] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
-        //         col[1] = (uint8_t)clamp(col[1] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
-        //         col[2] = (uint8_t)clamp(col[2] + noise_factor * painter->noise_saturation, 0.0f, 255.0f);
-        //         //col[3] = (uint8_t)clamp(col[3] * (1.0f - noise_factor), 0.0f, 255.0f);
-        //     }
-        // }
-        // Texture mode should not inherit hidden color-noise settings.
+        // Texture / palette mode should not inherit hidden color-noise settings.
         if (!(goxel.tool && goxel.tool->id == TOOL_BRUSH &&
-              goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE)) {
+              (goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE ||
+               goxel.brush_source_mode == BRUSH_SOURCE_PALETTE))) {
             apply_noise_if_applicable(painter, global_p, col);
         }
         

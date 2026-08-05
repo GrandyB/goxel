@@ -37,10 +37,26 @@ struct palette {
     int     size;
     int     allocated;
     palette_entry_t *entries;
+    /* Built-in / protected (e.g. "In-use colours"): no save, delete, rename. */
+    bool    readonly;
 };
+
+#define PALETTE_IN_USE_NAME "In-use colours"
 
 // Load all the available palettes into a list.
 void palette_load_all(palette_t **list);
+
+bool palette_is_readonly(const palette_t *p);
+palette_t *palette_find_by_name(palette_t *list, const char *name);
+/* Write a unique display name based on `base` (e.g. "Palette", "Palette 2"). */
+void palette_make_unique_name(const palette_t *list, const char *base,
+                              char *out, int out_size);
+
+/*
+ * Rebuild the readonly "In-use colours" palette from all volume layers when
+ * the scene content stamp changes. No-op if the stamp matches the last build.
+ */
+void palette_in_use_update_if_needed(void);
 
 /*
  * Free every palette in *list, reload from disk/assets, then optionally find
@@ -65,12 +81,13 @@ palette_t *palette_reload_all(palette_t **list, const char *prefer_name);
 int palette_search(const palette_t *palette, const uint8_t col[4],
                    bool exact);
 
+/* No-op on readonly palettes (use palette_in_use_update_if_needed to rebuild). */
 void palette_insert(palette_t *p, const uint8_t col[4], const char *name);
 
-/* Remove one entry by index; shifts later entries down. */
+/* Remove one entry by index; shifts later entries down. No-op if readonly. */
 void palette_remove_at(palette_t *p, int idx);
 
-/* Remove all entries; keeps the entries buffer allocated for reuse. */
+/* Remove all entries; keeps the entries buffer allocated for reuse. No-op if readonly. */
 void palette_clear(palette_t *p);
 
 void palette_free(palette_t *p);
@@ -84,12 +101,13 @@ bool palette_name_in_use(const palette_t *list, const char *name,
  * Write palette as GIMP .gpl under sys_get_user_dir()/palettes/.
  * Returns 0 on success, -1 if no user dir, -2 on I/O error.
  */
+/* Returns -2 for readonly palettes (never written to disk). */
 int palette_save_user_gpl(const palette_t *p);
 
 /*
  * Remove the palette's .gpl under sys_get_user_dir()/palettes/ using the same
  * basename rule as palette_save_user_gpl. Missing file is OK.
- * Returns 0 on success or nothing to remove, -2 if deletion failed.
+ * Returns 0 on success or nothing to remove, -2 if deletion failed / readonly.
  */
 int palette_delete_user_gpl(const palette_t *p);
 

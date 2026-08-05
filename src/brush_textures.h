@@ -28,6 +28,7 @@
 enum {
     BRUSH_SOURCE_COLOR = 0,
     BRUSH_SOURCE_TEXTURE = 1,
+    BRUSH_SOURCE_PALETTE = 2,
 };
 
 typedef struct brush_texture brush_texture_t;

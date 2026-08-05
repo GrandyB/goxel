@@ -20,6 +20,44 @@
 
 #include <errno.h>
 
+bool palette_is_readonly(const palette_t *p)
+{
+    return p && p->readonly;
+}
+
+palette_t *palette_find_by_name(palette_t *list, const char *name)
+{
+    palette_t *p;
+
+    if (!name || !name[0])
+        return NULL;
+    DL_FOREACH(list, p) {
+        if (strcmp(p->name, name) == 0)
+            return p;
+    }
+    return NULL;
+}
+
+void palette_make_unique_name(const palette_t *list, const char *base,
+                              char *out, int out_size)
+{
+    int i;
+
+    if (!out || out_size <= 0)
+        return;
+    if (!base || !base[0])
+        base = "Palette";
+    snprintf(out, out_size, "%s", base);
+    if (!palette_name_in_use(list, out, NULL))
+        return;
+    for (i = 2; i < 10000; i++) {
+        snprintf(out, out_size, "%s %d", base, i);
+        if (!palette_name_in_use(list, out, NULL))
+            return;
+    }
+    snprintf(out, out_size, "%s %d", base, (int)(uintptr_t)out & 0xffff);
+}
+
 /*
  * Function: palette_search
  * Search a given color in a palette
@@ -48,6 +86,7 @@ int palette_search(const palette_t *palette, const uint8_t col[4],
 void palette_insert(palette_t *p, const uint8_t col[4], const char *name)
 {
     palette_entry_t *e;
+    if (!p || p->readonly) return;
     if (palette_search(p, col, true) != -1) return;
     if (p->allocated <= p->size) {
         p->allocated += 64;
@@ -63,7 +102,7 @@ void palette_insert(palette_t *p, const uint8_t col[4], const char *name)
 
 void palette_remove_at(palette_t *p, int idx)
 {
-    if (!p || idx < 0 || idx >= p->size)
+    if (!p || p->readonly || idx < 0 || idx >= p->size)
         return;
     memmove(p->entries + idx, p->entries + idx + 1,
             (size_t)(p->size - idx - 1) * sizeof(*p->entries));
@@ -72,7 +111,7 @@ void palette_remove_at(palette_t *p, int idx)
 
 void palette_clear(palette_t *p)
 {
-    if (!p)
+    if (!p || p->readonly)
         return;
     p->size = 0;
 }
@@ -94,6 +133,7 @@ palette_t *palette_clone(const palette_t *src, const char *new_name)
     d->columns = src->columns;
     d->size = src->size;
     d->allocated = src->size;
+    d->readonly = false;
     if (src->size > 0) {
         d->entries = malloc(d->allocated * sizeof(*d->entries));
         memcpy(d->entries, src->entries, src->size * sizeof(*d->entries));
@@ -110,11 +150,22 @@ palette_t *palette_new_empty(const char *name)
     p->size = 0;
     p->allocated = 0;
     p->entries = NULL;
+    p->readonly = false;
+    return p;
+}
+
+static palette_t *palette_new_in_use(void)
+{
+    palette_t *p = palette_new_empty(PALETTE_IN_USE_NAME);
+    p->readonly = true;
+    p->columns = 8;
     return p;
 }
 
 void palette_list_remove(palette_t **list_head, palette_t *p)
 {
+    if (!p || p->readonly)
+        return;
     DL_DELETE(*list_head, p);
     palette_free(p);
 }
@@ -179,7 +230,7 @@ int palette_save_user_gpl(const palette_t *p)
     FILE *f;
     int i, cols, err;
 
-    if (!p)
+    if (!p || p->readonly)
         return -2;
     root = sys_get_user_dir();
     if (!root || !root[0])
@@ -256,7 +307,7 @@ int palette_delete_user_gpl_named(const char *palette_display_name)
 
 int palette_delete_user_gpl(const palette_t *p)
 {
-    if (!p)
+    if (!p || p->readonly)
         return -2;
     return palette_delete_user_gpl_named(p->name);
 }
@@ -364,7 +415,8 @@ static int on_system_palette(int i, const char *path, void *user)
 
     pal = calloc(1, sizeof(*pal));
     pal->size = parse_gpl(data, pal->name, &pal->columns, NULL);
-    if (pal->name[0] && palette_name_in_use(*list, pal->name, NULL)) {
+    if (pal->name[0] && (palette_name_in_use(*list, pal->name, NULL) ||
+                         strcmp(pal->name, PALETTE_IN_USE_NAME) == 0)) {
         free(pal);
         return 0;
     }
@@ -480,6 +532,14 @@ static int on_palette2(const char *dir, const char *name, void *user)
 
     if (err < 0) {
         LOG_E("Cannot parse palette %s", path);
+        free(pal->entries);
+        free(pal);
+        goto end;
+    }
+
+    if (pal->name[0] && (strcmp(pal->name, PALETTE_IN_USE_NAME) == 0 ||
+                         palette_name_in_use(*list, pal->name, NULL))) {
+        free(pal->entries);
         free(pal);
         goto end;
     }
@@ -495,6 +555,10 @@ end:
 void palette_load_all(palette_t **list)
 {
     char *dir;
+    palette_t *in_use;
+
+    in_use = palette_new_in_use();
+    DL_APPEND(*list, in_use);
 
     if (sys_get_user_dir()) {
         palette_seed_bundled_if_needed();
@@ -504,6 +568,152 @@ void palette_load_all(palette_t **list)
     } else {
         assets_list("data/palettes/", list, on_system_palette);
     }
+}
+
+typedef struct {
+    int rgba_key;
+    uint8_t color[4];
+    int count;
+    UT_hash_handle hh;
+} in_use_color_hash_t;
+
+typedef struct {
+    uint8_t color[4];
+    int count;
+} in_use_color_entry_t;
+
+static int pack_rgba_in_use(const uint8_t c[4])
+{
+    return (int)((uint32_t)c[0] | ((uint32_t)c[1] << 8) |
+                 ((uint32_t)c[2] << 16) | ((uint32_t)c[3] << 24));
+}
+
+static int in_use_color_cmp(const void *a, const void *b)
+{
+    const in_use_color_entry_t *x = a;
+    const in_use_color_entry_t *y = b;
+    int kx, ky;
+
+    if (x->count != y->count)
+        return y->count - x->count;
+    kx = pack_rgba_in_use(x->color);
+    ky = pack_rgba_in_use(y->color);
+    if (kx < ky)
+        return -1;
+    if (kx > ky)
+        return 1;
+    return 0;
+}
+
+static uint64_t palette_in_use_content_stamp(void)
+{
+    layer_t *layer;
+    uint64_t stamp = 0;
+    int i = 0;
+
+    if (!goxel.image)
+        return 0;
+    DL_FOREACH(goxel.image->layers, layer) {
+        i++;
+        stamp ^= ((uint64_t)(uintptr_t)layer) * 0x9e3779b97f4a7c15ULL;
+        stamp ^= ((uint64_t)i) << 32;
+        if (layer->volume)
+            stamp ^= volume_get_key(layer->volume) + (uint64_t)i * 0x100000001b3ULL;
+        stamp ^= (uint64_t)(layer->visible ? 1 : 0) << (i & 31);
+        stamp ^= (uint64_t)layer->name[0] << ((i * 3) & 31);
+    }
+    stamp ^= (uint64_t)i * 0xcbf29ce484222325ULL;
+    return stamp;
+}
+
+static void palette_in_use_rebuild(palette_t *p)
+{
+    layer_t *layer;
+    volume_iterator_t iter;
+    int pos[3];
+    uint8_t v[4];
+    in_use_color_hash_t *colors = NULL, *el, *tmp;
+    in_use_color_entry_t *sorted = NULL;
+    int key, n, i;
+
+    if (!p || !p->readonly)
+        return;
+
+    p->size = 0;
+
+    if (!goxel.image)
+        return;
+
+    DL_FOREACH(goxel.image->layers, layer) {
+        if (!layer_is_volume(layer) || !layer->volume)
+            continue;
+        iter = volume_get_iterator(layer->volume,
+                                   VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+        while (volume_iter(&iter, pos)) {
+            volume_get_at(layer->volume, &iter, pos, v);
+            if (v[3] == 0)
+                continue;
+            key = pack_rgba_in_use(v);
+            HASH_FIND_INT(colors, &key, el);
+            if (!el) {
+                el = calloc(1, sizeof(*el));
+                el->rgba_key = key;
+                memcpy(el->color, v, 4);
+                el->count = 1;
+                HASH_ADD_INT(colors, rgba_key, el);
+            } else {
+                el->count++;
+            }
+        }
+    }
+
+    n = HASH_COUNT(colors);
+    if (n <= 0) {
+        HASH_ITER(hh, colors, el, tmp) {
+            HASH_DEL(colors, el);
+            free(el);
+        }
+        return;
+    }
+
+    sorted = calloc((size_t)n, sizeof(*sorted));
+    i = 0;
+    HASH_ITER(hh, colors, el, tmp) {
+        memcpy(sorted[i].color, el->color, 4);
+        sorted[i].count = el->count;
+        i++;
+        HASH_DEL(colors, el);
+        free(el);
+    }
+
+    qsort(sorted, (size_t)n, sizeof(*sorted), in_use_color_cmp);
+
+    if (p->allocated < n) {
+        p->allocated = n;
+        p->entries = realloc(p->entries, (size_t)p->allocated * sizeof(*p->entries));
+    }
+    for (i = 0; i < n; i++) {
+        memset(&p->entries[i], 0, sizeof(p->entries[i]));
+        memcpy(p->entries[i].color, sorted[i].color, 4);
+    }
+    p->size = n;
+    free(sorted);
+}
+
+void palette_in_use_update_if_needed(void)
+{
+    static uint64_t last_stamp = (uint64_t)-1;
+    palette_t *p;
+    uint64_t stamp;
+
+    p = palette_find_by_name(goxel.palettes, PALETTE_IN_USE_NAME);
+    if (!p)
+        return;
+    stamp = palette_in_use_content_stamp();
+    if (stamp == last_stamp)
+        return;
+    last_stamp = stamp;
+    palette_in_use_rebuild(p);
 }
 
 palette_t *palette_reload_all(palette_t **list, const char *prefer_name)

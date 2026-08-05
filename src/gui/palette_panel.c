@@ -29,47 +29,86 @@ static void sync_name_field(const palette_t *cur, palette_t **synced,
 
 static void palette_persist_or_alert(void)
 {
+    if (palette_is_readonly(goxel.palette))
+        return;
     if (palette_save_user_gpl(goxel.palette) != 0) {
         gui_alert("Palette",
                   "Could not save the palette to your palettes folder.");
     }
 }
 
+static void palette_panel_new_user(char *name_buf, int name_buf_size,
+                                   palette_t **name_sync_palette)
+{
+    palette_t *fresh;
+    char unique[128];
+
+    if (palette_is_readonly(goxel.palette)) {
+        palette_make_unique_name(goxel.palettes, "Palette", unique,
+                                 (int)sizeof(unique));
+        snprintf(name_buf, name_buf_size, "%s", unique);
+    } else if (name_buf[0] == '\0') {
+        gui_alert("Palette", "Enter a name for the new palette.");
+        return;
+    } else if (palette_name_in_use(goxel.palettes, name_buf, NULL)) {
+        gui_alert("Palette", "A palette with that name already exists.");
+        return;
+    }
+
+    fresh = palette_new_empty(name_buf);
+    DL_APPEND(goxel.palettes, fresh);
+    goxel.palette = fresh;
+    *name_sync_palette = NULL;
+    sync_name_field(goxel.palette, name_sync_palette, name_buf, name_buf_size);
+    palette_persist_or_alert();
+}
+
 void gui_palette_panel(void)
 {
     int nb, i;
-    int pl_combo;
     int swatch_idx;
+    int click;
+    bool readonly;
+    bool in_palette_mode;
     const palette_t *p;
-    const char **names;
-    gui_icon_info_t *grid;
+    const palette_t *it;
+    gui_icon_info_t *grid = NULL;
+    bool *multi_sel = NULL;
     static char name_buf[128];
     static palette_t *name_sync_palette;
+    const char *preview;
+
+    if (!goxel.palette)
+        return;
 
     sync_name_field(goxel.palette, &name_sync_palette, name_buf,
                     (int)sizeof(name_buf));
+    readonly = palette_is_readonly(goxel.palette);
+    in_palette_mode = (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE &&
+                       goxel.brush_palette_count > 0);
 
-    DL_COUNT(goxel.palettes, p, nb);
-    names = (const char **)calloc(nb, sizeof(*names));
-
-    pl_combo = 0;
-    i = 0;
-    DL_FOREACH(goxel.palettes, p) {
-        if (p == goxel.palette)
-            pl_combo = i;
-        names[i++] = p->name;
-    }
+    DL_COUNT(goxel.palettes, it, nb);
+    preview = goxel.palette->name;
 
     gui_row_begin(2);
-    if (gui_combo("##palettes", &pl_combo, names, nb)) {
-        goxel.palette = goxel.palettes;
-        for (i = 0; i < pl_combo; i++)
-            goxel.palette = goxel.palette->next;
-        name_sync_palette = NULL;
-        sync_name_field(goxel.palette, &name_sync_palette, name_buf,
-                        (int)sizeof(name_buf));
+    if (gui_combo_begin("##palettes", preview)) {
+        i = 0;
+        DL_FOREACH(goxel.palettes, it) {
+            if (i == 1 && nb > 1 &&
+                strcmp(goxel.palettes->name, PALETTE_IN_USE_NAME) == 0)
+                gui_combo_separator();
+            if (gui_combo_item(it->name, it == goxel.palette)) {
+                goxel.palette = (palette_t *)it;
+                name_sync_palette = NULL;
+                sync_name_field(goxel.palette, &name_sync_palette, name_buf,
+                                (int)sizeof(name_buf));
+            }
+            i++;
+        }
+        gui_combo_end();
     }
     gui_same_line();
+    gui_enabled_begin(!readonly);
     if (gui_button("Delete palette", -1, 0)) {
         palette_t *victim = goxel.palette;
         palette_t *next_sel;
@@ -77,7 +116,9 @@ void gui_palette_panel(void)
         int pal_count;
 
         DL_COUNT(goxel.palettes, cnt_it, pal_count);
-        if (pal_count <= 1) {
+        if (palette_is_readonly(victim)) {
+            gui_alert("Palette", "Cannot delete this palette.");
+        } else if (pal_count <= 1) {
             gui_alert("Palette", "Cannot delete the last palette.");
         } else {
             next_sel = victim->next ? victim->next : victim->prev;
@@ -94,14 +135,37 @@ void gui_palette_panel(void)
             }
         }
     }
+    gui_enabled_end();
     gui_tooltip_if_hovered("Remove this palette from the list and delete its "
                            ".gpl file from your palettes folder.");
     gui_row_end();
-    free(names);
 
-    gui_input_text("##palette_name", name_buf, sizeof(name_buf));
+    if (readonly) {
+        char count_buf[32];
+        float count_w, name_w;
+        int n = goxel.palette->size;
+
+        if (n < 0)
+            n = 0;
+        snprintf(count_buf, sizeof(count_buf), "(%d)", n);
+        count_w = gui_calc_text_width(count_buf);
+        name_w = gui_content_avail_x() - count_w - 8.f;
+        if (name_w < 40.f)
+            name_w = 40.f;
+        gui_enabled_begin(false);
+        gui_input_text_row("##palette_name", name_buf, (int)sizeof(name_buf),
+                           name_w, 0.f);
+        gui_enabled_end();
+        gui_same_line();
+        gui_text("%s", count_buf);
+        gui_tooltip_if_hovered(
+                "Number of unique colours currently used in the scene.");
+    } else {
+        gui_input_text("##palette_name", name_buf, sizeof(name_buf));
+    }
 
     gui_row_begin(3);
+    gui_enabled_begin(!readonly);
     if (gui_button("Rename", -1, 0)) {
         if (name_buf[0] == '\0') {
             gui_alert("Palette", "Enter a palette name.");
@@ -125,6 +189,8 @@ void gui_palette_panel(void)
             }
         }
     }
+    gui_enabled_end();
+    gui_enabled_begin(!readonly);
     if (gui_button("Copy", -1, 0)) {
         palette_t *copy;
 
@@ -142,22 +208,11 @@ void gui_palette_panel(void)
             palette_persist_or_alert();
         }
     }
+    gui_enabled_end();
+    /* New stays enabled on the readonly In-use palette. */
     if (gui_button("New", -1, 0)) {
-        palette_t *fresh;
-
-        if (name_buf[0] == '\0') {
-            gui_alert("Palette", "Enter a name for the new palette.");
-        } else if (palette_name_in_use(goxel.palettes, name_buf, NULL)) {
-            gui_alert("Palette", "A palette with that name already exists.");
-        } else {
-            fresh = palette_new_empty(name_buf);
-            DL_APPEND(goxel.palettes, fresh);
-            goxel.palette = fresh;
-            name_sync_palette = NULL;
-            sync_name_field(goxel.palette, &name_sync_palette, name_buf,
-                            (int)sizeof(name_buf));
-            palette_persist_or_alert();
-        }
+        palette_panel_new_user(name_buf, (int)sizeof(name_buf),
+                               &name_sync_palette);
     }
     gui_row_end();
 
@@ -168,19 +223,14 @@ void gui_palette_panel(void)
         if (psz < 0)
             psz = 0;
 
-        swatch_idx = 0;
-        if (psz > 0) {
+        swatch_idx = -1;
+        if (psz > 0 && !in_palette_mode) {
             swatch_idx = palette_search(p, goxel.painter.color, true);
-            if (swatch_idx < 0)
-                swatch_idx = 0;
-        } else {
-            swatch_idx = -1;
         }
 
-        {
-            size_t n = (size_t)(unsigned)psz;
-
-            grid = n ? calloc(n, sizeof(*grid)) : NULL;
+        if (psz > 0) {
+            grid = calloc((size_t)psz, sizeof(*grid));
+            multi_sel = calloc((size_t)psz, sizeof(*multi_sel));
         }
         for (i = 0; i < psz; i++) {
             grid[i] = (gui_icon_info_t) {
@@ -188,10 +238,19 @@ void gui_palette_panel(void)
                 .icon = 0,
                 .color = {VEC4_SPLIT(p->entries[i].color)},
             };
-            if (memcmp(goxel.painter.color, p->entries[i].color, 4) == 0)
+            if (in_palette_mode)
+                multi_sel[i] = goxel_brush_palette_contains(p->entries[i].color);
+            else if (memcmp(goxel.painter.color, p->entries[i].color, 4) == 0)
                 swatch_idx = i;
         }
-        if (gui_icons_grid(psz, grid, &swatch_idx)) {
+        click = gui_color_swatches_grid(psz, grid,
+                                        in_palette_mode ? multi_sel : NULL,
+                                        &swatch_idx);
+        if (click == 2 && swatch_idx >= 0 && swatch_idx < psz) {
+            goxel_brush_palette_shift_click(p->entries[swatch_idx].color);
+        } else if (click == 1 && swatch_idx >= 0 && swatch_idx < psz) {
+            goxel_brush_palette_clear();
+            goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
             if (gui_pick_rgb_keep_alpha()) {
                 painter_color_apply_rgb_keep_alpha(
                         goxel.painter.color, p->entries[swatch_idx].color);
@@ -200,9 +259,11 @@ void gui_palette_panel(void)
             }
         }
         free(grid);
+        free(multi_sel);
     }
 
     gui_row_begin(2);
+    gui_enabled_begin(!readonly);
     if (gui_button("Add current color", -1, 0)) {
         int n_before = goxel.palette->size;
 
@@ -215,6 +276,9 @@ void gui_palette_panel(void)
 
         if (goxel.palette->size <= 0) {
             gui_alert("Palette", "This palette has no colors to remove.");
+        } else if (in_palette_mode) {
+            gui_alert("Palette",
+                      "Exit multi-colour mode before removing a swatch.");
         } else if (swatch_idx < 0 || swatch_idx >= goxel.palette->size) {
             gui_alert("Palette", "No swatch is selected.");
         } else {
@@ -231,17 +295,20 @@ void gui_palette_panel(void)
             palette_persist_or_alert();
         }
     }
+    gui_enabled_end();
     gui_tooltip_if_hovered("Remove the highlighted color swatch from the "
                            "current palette.");
     gui_row_end();
 
     gui_row_begin(1);
+    gui_enabled_begin(!readonly);
     if (gui_button("Clear all colours", -1, 0)) {
         if (goxel.palette->size > 0) {
             palette_clear(goxel.palette);
             palette_persist_or_alert();
         }
     }
+    gui_enabled_end();
     gui_tooltip_if_hovered("Remove every color swatch from the current "
                            "palette.");
     gui_row_end();
