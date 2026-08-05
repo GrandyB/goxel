@@ -10,6 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+enum {
+    SMOOTH_EMPTY_CANNOT_AFFECT = 0,
+    SMOOTH_EMPTY_CAN_GROW = 1,
+};
+
 typedef struct {
     tool_t tool;
 
@@ -21,6 +26,8 @@ typedef struct {
     float noise_scale; /* Spatial frequency multiplier (1 = ~1 cell per diameter). */
     /* When true, keep a fixed Perlin seed across strokes. */
     bool lock_noise;
+    /* SMOOTH_EMPTY_*: how empty XY columns participate as dab targets. */
+    int empty_column;
     unsigned stroke_seed;
     bool defaults_inited;
 
@@ -34,6 +41,7 @@ typedef struct {
         float    noise;
         float    noise_scale;
         bool     lock_noise;
+        int      empty_column;
     } last_op;
 
     struct {
@@ -129,9 +137,10 @@ static void ensure_defaults(tool_smooth_t *sm)
     if (sm->defaults_inited) return;
     sm->strength = 0.85f;
     sm->add_noise = true;
-    sm->noise = 0.7f;
+    sm->noise = 0.5f;
     sm->noise_scale = 2.f;
     sm->lock_noise = false;
+    sm->empty_column = SMOOTH_EMPTY_CAN_GROW;
     sm->stroke_seed = SMOOTH_NOISE_SEED_FIXED;
     sm->defaults_inited = true;
     smooth_noise_init_seed(SMOOTH_NOISE_SEED_FIXED);
@@ -184,19 +193,35 @@ static int column_top_z(const volume_t *volume, volume_accessor_t *acc,
     return INT_MIN;
 }
 
+/*
+ * Raise/lower a solid column top, or (when old_z is INT_MIN and grow_color is
+ * set) fill an empty column from fill_lo through new_z.
+ */
 static void set_column_top(volume_t *volume, volume_accessor_t *acc,
-                           int x, int y, int old_z, int new_z)
+                           int x, int y, int old_z, int new_z,
+                           int fill_lo, const uint8_t *grow_color)
 {
     int pos[3];
     uint8_t color[4];
     uint8_t empty[4] = {0, 0, 0, 0};
     int z;
 
-    if (new_z == old_z || old_z == INT_MIN)
-        return;
-
     pos[0] = x;
     pos[1] = y;
+
+    if (old_z == INT_MIN) {
+        if (!grow_color || !grow_color[3] || new_z < fill_lo)
+            return;
+        for (z = fill_lo; z <= new_z; z++) {
+            pos[2] = z;
+            volume_set_at(volume, acc, pos, grow_color);
+        }
+        return;
+    }
+
+    if (new_z == old_z)
+        return;
+
     pos[2] = old_z;
     volume_get_at(volume, acc, pos, color);
     if (!color[3])
@@ -221,14 +246,16 @@ static void set_column_top(volume_t *volume, volume_accessor_t *acc,
  * noise (0..1): world-space Perlin warps the kernel, modulates blend strength,
  * and reintroduces coherent residual detail.
  * noise_scale: multiplies Perlin frequency (1 = ~one cell per brush diameter).
+ * empty_column: SMOOTH_EMPTY_* — whether empty XY targets may be filled.
  */
 static void smooth_dab(volume_t *volume, int cx, int cy,
                        float r_x, float r_y, float strength, float noise,
-                       float noise_scale)
+                       float noise_scale, int empty_column)
 {
     int margin, gw, gh, x0, y0;
     int *heights = NULL;
     int *out_h = NULL;
+    uint8_t *grow_colors = NULL; /* RGBA per cell; used when growing into empty. */
     int x, y, ix, iy, nx, ny;
     int z_scan_lo, z_scan_hi, z_clamp_lo, z_clamp_hi;
     float box[4][4];
@@ -264,7 +291,8 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
 
     heights = malloc((size_t)gw * (size_t)gh * sizeof(*heights));
     out_h = malloc((size_t)gw * (size_t)gh * sizeof(*out_h));
-    if (!heights || !out_h)
+    grow_colors = calloc((size_t)gw * (size_t)gh, 4);
+    if (!heights || !out_h || !grow_colors)
         goto done;
 
     for (iy = 0; iy < gw * gh; iy++) {
@@ -315,12 +343,14 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
         for (ix = 0; ix < gw; ix++) {
             float dx, dy, d2, falloff, wsum, hsum, avg, t;
             float kox, koy, n_str, n_res, blended;
+            float best_w;
             int h0, krad_x, krad_y;
+            int best_jx, best_jy;
 
             x = x0 + ix;
             h0 = heights[iy * gw + ix];
             out_h[iy * gw + ix] = h0;
-            if (h0 == INT_MIN)
+            if (h0 == INT_MIN && empty_column != SMOOTH_EMPTY_CAN_GROW)
                 continue;
 
             dx = (float)(x - cx);
@@ -356,32 +386,75 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
 
             wsum = 0.f;
             hsum = 0.f;
+            best_w = -1.f;
+            best_jx = -1;
+            best_jy = -1;
             krad_x = (int)ceilf(2.f * sx + fabsf(kox));
             krad_y = (int)ceilf(2.f * sy + fabsf(koy));
-            for (ny = -krad_y; ny <= krad_y; ny++) {
-                int jy = iy + ny;
-                if (jy < 0 || jy >= gh) continue;
-                for (nx = -krad_x; nx <= krad_x; nx++) {
-                    int jx = ix + nx;
-                    int hn;
-                    float wx, wy, w;
-                    if (jx < 0 || jx >= gw) continue;
-                    hn = heights[jy * gw + jx];
-                    if (hn == INT_MIN) continue;
-                    wx = (float)nx - kox;
-                    wy = (float)ny - koy;
-                    w = smooth_fast_exp(
-                        -(wx * wx * inv_2sx2 + wy * wy * inv_2sy2));
-                    wsum += w;
-                    hsum += w * (float)hn;
+            {
+                float w_solid = 0.f, hsum_solid = 0.f, w_empty = 0.f;
+
+                for (ny = -krad_y; ny <= krad_y; ny++) {
+                    int jy = iy + ny;
+                    if (jy < 0 || jy >= gh) continue;
+                    for (nx = -krad_x; nx <= krad_x; nx++) {
+                        int jx = ix + nx;
+                        int hn;
+                        float wx, wy, w;
+                        if (jx < 0 || jx >= gw) continue;
+                        hn = heights[jy * gw + jx];
+                        wx = (float)nx - kox;
+                        wy = (float)ny - koy;
+                        w = smooth_fast_exp(
+                            -(wx * wx * inv_2sx2 + wy * wy * inv_2sy2));
+                        if (hn == INT_MIN) {
+                            /* Grow mode: ignore empty. Cannot be affected:
+                             * accumulate empty weight to pull toward floor. */
+                            if (empty_column == SMOOTH_EMPTY_CANNOT_AFFECT)
+                                w_empty += w;
+                            continue;
+                        }
+                        w_solid += w;
+                        hsum_solid += w * (float)hn;
+                        if (h0 == INT_MIN && w > best_w) {
+                            best_w = w;
+                            best_jx = jx;
+                            best_jy = jy;
+                        }
+                    }
+                }
+
+                if (empty_column == SMOOTH_EMPTY_CANNOT_AFFECT &&
+                    w_empty > 0.f) {
+                    float empty_frac, avg_solid;
+                    /* ~50% empty neighbourhood → full floor target so cliff
+                     * rims can fall all the way down (plain avg stalls mid). */
+                    empty_frac = w_empty / (w_empty + w_solid);
+                    if (empty_frac > 0.5f)
+                        empty_frac = 1.f;
+                    else
+                        empty_frac *= 2.f;
+                    avg_solid = (w_solid > 0.f) ? (hsum_solid / w_solid)
+                                                : (float)z_clamp_lo;
+                    avg = avg_solid * (1.f - empty_frac) +
+                          (float)z_clamp_lo * empty_frac;
+                    wsum = w_solid + w_empty;
+                } else {
+                    wsum = w_solid;
+                    hsum = hsum_solid;
+                    if (wsum <= 0.f)
+                        continue;
+                    avg = hsum / wsum;
                 }
             }
             if (wsum <= 0.f)
                 continue;
 
-            avg = hsum / wsum;
             t = strength * falloff * n_str;
-            blended = (float)h0 + (avg - (float)h0) * t;
+            if (h0 == INT_MIN)
+                blended = (float)z_clamp_lo + (avg - (float)z_clamp_lo) * t;
+            else
+                blended = (float)h0 + (avg - (float)h0) * t;
             /* Residual scales with brush size and Noise. */
             if (namp > 0.f)
                 blended += n_res * namp * falloff * res_amp;
@@ -390,6 +463,35 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
                 out_h[iy * gw + ix] = z_clamp_lo;
             if (out_h[iy * gw + ix] > z_clamp_hi)
                 out_h[iy * gw + ix] = z_clamp_hi;
+
+            if (h0 == INT_MIN) {
+                uint8_t *gc = grow_colors + (iy * gw + ix) * 4;
+                if (best_jx >= 0) {
+                    int pos[3];
+                    pos[0] = x0 + best_jx;
+                    pos[1] = y0 + best_jy;
+                    pos[2] = heights[best_jy * gw + best_jx];
+                    volume_get_at(volume, &acc, pos, gc);
+                }
+                if (!gc[3]) {
+                    /* Fallback: first solid neighbour in the sample grid. */
+                    int fy, fx;
+                    for (fy = 0; fy < gh && !gc[3]; fy++) {
+                        for (fx = 0; fx < gw; fx++) {
+                            int hn = heights[fy * gw + fx];
+                            int pos[3];
+                            if (hn == INT_MIN) continue;
+                            pos[0] = x0 + fx;
+                            pos[1] = y0 + fy;
+                            pos[2] = hn;
+                            volume_get_at(volume, &acc, pos, gc);
+                            if (gc[3]) break;
+                        }
+                    }
+                }
+                if (!gc[3])
+                    out_h[iy * gw + ix] = INT_MIN;
+            }
         }
     }
 
@@ -400,13 +502,16 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
             if (out_h[iy * gw + ix] == heights[iy * gw + ix])
                 continue;
             set_column_top(volume, &acc, x, y,
-                           heights[iy * gw + ix], out_h[iy * gw + ix]);
+                           heights[iy * gw + ix], out_h[iy * gw + ix],
+                           z_clamp_lo,
+                           grow_colors + (iy * gw + ix) * 4);
         }
     }
 
 done:
     free(heights);
     free(out_h);
+    free(grow_colors);
 }
 
 static bool check_can_skip(tool_smooth_t *sm, const cursor_t *curs)
@@ -423,6 +528,7 @@ static bool check_can_skip(tool_smooth_t *sm, const cursor_t *curs)
         sm->last_op.noise == sm->noise &&
         sm->last_op.noise_scale == sm->noise_scale &&
         sm->last_op.lock_noise == sm->lock_noise &&
+        sm->last_op.empty_column == sm->empty_column &&
         vec3_equal(curs->pos, sm->last_op.pos)) {
         return true;
     }
@@ -434,6 +540,7 @@ static bool check_can_skip(tool_smooth_t *sm, const cursor_t *curs)
     sm->last_op.noise = sm->noise;
     sm->last_op.noise_scale = sm->noise_scale;
     sm->last_op.lock_noise = sm->lock_noise;
+    sm->last_op.empty_column = sm->empty_column;
     vec3_copy(curs->pos, sm->last_op.pos);
     if (volume)
         sm->last_op.volume_key = volume_get_key(volume);
@@ -494,7 +601,8 @@ static int on_drag(gesture3d_t *gest, void *user)
         vec3_mix(sm->last_pos, curs->pos, (i + 1.0f) / nb, pos);
         smooth_dab(goxel.tool_volume, (int)floorf(pos[0]), (int)floorf(pos[1]),
                    r_x, r_y, sm->strength,
-                   sm->add_noise ? sm->noise : 0.f, sm->noise_scale);
+                   sm->add_noise ? sm->noise : 0.f, sm->noise_scale,
+                   sm->empty_column);
     }
 
     sm->last_op.volume_key = volume_get_key(goxel.tool_volume);
@@ -573,6 +681,13 @@ static int gui(tool_t *tool)
         sm->strength = clamp(strength, 0.05f, 1.f);
     gui_tooltip_if_hovered(
         "How far each dab moves column tops toward the local Gaussian average");
+
+    gui_combo("Empty cols", &sm->empty_column, (const char*[]) {
+              "Cannot be affected", "Can be grown into"}, 2);
+    gui_tooltip_if_hovered(
+        "Cannot be affected: empty columns stay empty, but solid tops can "
+        "smooth down toward the floor. Can be grown into: empty columns fill "
+        "from the floor up toward the neighbour average");
 
     gui_checkbox("Add noise", &sm->add_noise,
                  "Enable Perlin noise on top of Gaussian smoothing");
