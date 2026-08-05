@@ -433,7 +433,7 @@ enum {
     X(ICON_ARROW_BACK,              2, 2, 0),
     X(ICON_ARROW_FORWARD,           3, 2, 0),
     X(ICON_LINK,                    4, 2, 0),
-    X(ICON_MENU,                    5, 2, 0),
+    X(ICON_MERGE,                    5, 2, 0),
     X(ICON_DELETE,                  6, 2, 0),
     X(ICON_TOOL_PROCEDURAL,         7, 2, 0),
 
@@ -487,6 +487,15 @@ enum {
 void quantization_gen_palette(const volume_t *volume, int nb,
                               uint8_t (*palette)[4],
                               const uint8_t (*exclude)[4], int n_exclude);
+
+// Nearest opaque palette index by Manhattan RGB distance.  Skips slots with
+// alpha != 255.  Returns -1 if no usable slot.
+int quantization_nearest(const uint8_t c[4],
+                         const uint8_t (*palette)[4], int n);
+
+// Remap every opaque voxel in `volume` to the nearest palette colour.
+void quantization_remap_volume(volume_t *volume,
+                               const uint8_t (*palette)[4], int n);
 
 // #### Goxel : core object ####
 
