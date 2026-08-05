@@ -82,8 +82,8 @@ static void reset_defaults(filter_explosions_t *filter)
     filter->max_depth = 4;
     filter->min_strength = 40;
     filter->max_strength = 70;
-    filter->min_scorch = 60;
-    filter->max_scorch = 85;
+    filter->min_scorch = 40;
+    filter->max_scorch = 60;
     filter->min_debris = 25;
     filter->max_debris = 40;
     filter->color_bleed = 55;
