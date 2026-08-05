@@ -1,6 +1,6 @@
 /* Goxel 3D voxels editor
  *
- * Terrain heightfield Gaussian smooth brush.
+ * Smooth brush: 2D top-surface heightfield, or 3D volume morphology.
  */
 
 #include "goxel.h"
@@ -11,8 +11,13 @@
 #include <string.h>
 
 enum {
-    SMOOTH_EMPTY_CANNOT_AFFECT = 0,
-    SMOOTH_EMPTY_CAN_GROW = 1,
+    SMOOTH_MODE_2D = 0, /* Absolute column-top heightfield. */
+    SMOOTH_MODE_3D = 1, /* Morphological smooth inside X/Y/Z ellipsoid. */
+};
+
+enum {
+    SMOOTH_EMPTY_CREATE_WITHIN = 0, /* Empty XY may fill toward neighbour avg. */
+    SMOOTH_EMPTY_HARD_CUT = 1,      /* Empty stays empty; solids can fall. */
 };
 
 typedef struct {
@@ -20,13 +25,14 @@ typedef struct {
 
     volume_t *volume_orig;
     float last_pos[3];
+    int mode; /* SMOOTH_MODE_* */
     float strength; /* 0..1 how far each dab moves toward the local average. */
     bool add_noise; /* Master switch for Perlin; hides noise fields when off. */
     float noise;    /* 0..1 Perlin warp / strength mod / residual detail. */
     float noise_scale; /* Spatial frequency multiplier (1 = ~1 cell per diameter). */
     /* When true, keep a fixed Perlin seed across strokes. */
     bool lock_noise;
-    /* SMOOTH_EMPTY_*: how empty XY columns participate as dab targets. */
+    /* SMOOTH_EMPTY_*: how empty XY columns participate as dab targets (2D). */
     int empty_column;
     unsigned stroke_seed;
     bool defaults_inited;
@@ -35,7 +41,8 @@ typedef struct {
         float    pos[3];
         bool     pressed;
         uint64_t volume_key;
-        float    radius_x, radius_y;
+        int      mode;
+        float    radius_x, radius_y, radius_z;
         float    strength;
         bool     add_noise;
         float    noise;
@@ -135,21 +142,23 @@ static float smooth_perlin2(float x, float y)
 static void ensure_defaults(tool_smooth_t *sm)
 {
     if (sm->defaults_inited) return;
+    sm->mode = SMOOTH_MODE_2D;
     sm->strength = 0.85f;
     sm->add_noise = true;
     sm->noise = 0.5f;
     sm->noise_scale = 2.f;
     sm->lock_noise = false;
-    sm->empty_column = SMOOTH_EMPTY_CAN_GROW;
+    sm->empty_column = SMOOTH_EMPTY_CREATE_WITHIN;
     sm->stroke_seed = SMOOTH_NOISE_SEED_FIXED;
     sm->defaults_inited = true;
     smooth_noise_init_seed(SMOOTH_NOISE_SEED_FIXED);
 }
 
-static void get_brush_box(const float p[3], float r_x, float r_y, float out[4][4])
+static void get_brush_box(const float p[3], float r_x, float r_y, float r_z,
+                          float out[4][4])
 {
     float box[4][4];
-    bbox_from_extents(box, p, r_x, r_y, 0.5f);
+    bbox_from_extents(box, p, r_x, r_y, r_z);
     box_swap_axis(box, 2, 0, 1, box);
     mat4_copy(box, out);
 }
@@ -241,16 +250,16 @@ static void set_column_top(volume_t *volume, volume_accessor_t *acc,
 }
 
 /*
- * Gaussian-smooth column tops under an elliptical brush centred on (cx, cy).
+ * Gaussian-smooth absolute column tops under an elliptical XY brush.
  * Neighbourhood and falloff both scale with brush radii.
  * noise (0..1): world-space Perlin warps the kernel, modulates blend strength,
  * and reintroduces coherent residual detail.
  * noise_scale: multiplies Perlin frequency (1 = ~one cell per brush diameter).
- * empty_column: SMOOTH_EMPTY_* — whether empty XY targets may be filled.
+ * empty_column: SMOOTH_EMPTY_* - whether empty XY targets may be filled.
  */
-static void smooth_dab(volume_t *volume, int cx, int cy,
-                       float r_x, float r_y, float strength, float noise,
-                       float noise_scale, int empty_column)
+static void smooth_dab_2d(volume_t *volume, int cx, int cy,
+                          float r_x, float r_y, float strength, float noise,
+                          float noise_scale, int empty_column)
 {
     int margin, gw, gh, x0, y0;
     int *heights = NULL;
@@ -350,7 +359,7 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
             x = x0 + ix;
             h0 = heights[iy * gw + ix];
             out_h[iy * gw + ix] = h0;
-            if (h0 == INT_MIN && empty_column != SMOOTH_EMPTY_CAN_GROW)
+            if (h0 == INT_MIN && empty_column != SMOOTH_EMPTY_CREATE_WITHIN)
                 continue;
 
             dx = (float)(x - cx);
@@ -408,9 +417,9 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
                         w = smooth_fast_exp(
                             -(wx * wx * inv_2sx2 + wy * wy * inv_2sy2));
                         if (hn == INT_MIN) {
-                            /* Grow mode: ignore empty. Cannot be affected:
+                            /* Create within: ignore empty. Hard cut:
                              * accumulate empty weight to pull toward floor. */
-                            if (empty_column == SMOOTH_EMPTY_CANNOT_AFFECT)
+                            if (empty_column == SMOOTH_EMPTY_HARD_CUT)
                                 w_empty += w;
                             continue;
                         }
@@ -424,7 +433,7 @@ static void smooth_dab(volume_t *volume, int cx, int cy,
                     }
                 }
 
-                if (empty_column == SMOOTH_EMPTY_CANNOT_AFFECT &&
+                if (empty_column == SMOOTH_EMPTY_HARD_CUT &&
                     w_empty > 0.f) {
                     float empty_frac, avg_solid;
                     /* ~50% empty neighbourhood → full floor target so cliff
@@ -514,6 +523,200 @@ done:
     free(grow_colors);
 }
 
+/*
+ * Morphological smooth inside an X/Y/Z ellipsoid centred on (cx, cy, cz).
+ * Two-pass: sample neighbour occupancy from the current volume, then apply
+ * fills/erases so neighbourhoods stay stable for the dab.
+ * Noise (when > 0) modulates strength via world-XY Perlin (no height residual).
+ * Returns number of voxels changed.
+ */
+static int smooth_dab_3d(volume_t *volume, int cx, int cy, int cz,
+                         float r_x, float r_y, float r_z,
+                         float strength, float noise, float noise_scale)
+{
+    int x0, y0, z0, gw, gh, gd;
+    int x, y, z, ix, iy, iz, nx, ny, nz;
+    int *ops = NULL; /* 0=keep, 1=fill, 2=clear */
+    uint8_t *fill_colors = NULL;
+    float rx2, ry2, rz2;
+    float namp, nscale, freq_x, freq_y;
+    int changed = 0;
+    uint8_t empty[4] = {0, 0, 0, 0};
+
+    if (r_x < 0.5f) r_x = 0.5f;
+    if (r_y < 0.5f) r_y = 0.5f;
+    if (r_z < 0.5f) r_z = 0.5f;
+    strength = clamp(strength, 0.f, 1.f);
+    namp = clamp(noise, 0.f, 1.f);
+    nscale = clamp(noise_scale, 0.05f, 16.f);
+    if (strength <= 0.f)
+        return 0;
+
+    smooth_noise_init();
+    freq_x = nscale / max(2.f, r_x * 2.f);
+    freq_y = nscale / max(2.f, r_y * 2.f);
+
+    x0 = cx - (int)ceilf(r_x);
+    y0 = cy - (int)ceilf(r_y);
+    z0 = cz - (int)ceilf(r_z);
+    gw = 2 * (int)ceilf(r_x) + 1;
+    gh = 2 * (int)ceilf(r_y) + 1;
+    gd = 2 * (int)ceilf(r_z) + 1;
+    if (gw < 1 || gh < 1 || gd < 1)
+        return 0;
+
+    ops = calloc((size_t)gw * (size_t)gh * (size_t)gd, sizeof(*ops));
+    fill_colors = calloc((size_t)gw * (size_t)gh * (size_t)gd, 4);
+    if (!ops || !fill_colors)
+        goto done;
+
+    rx2 = r_x * r_x;
+    ry2 = r_y * r_y;
+    rz2 = r_z * r_z;
+
+    for (iz = 0; iz < gd; iz++) {
+        z = z0 + iz;
+        for (iy = 0; iy < gh; iy++) {
+            y = y0 + iy;
+            for (ix = 0; ix < gw; ix++) {
+                float dx, dy, dz, d2, falloff, dens, t, n_str;
+                int idx, solid_n, total_n, is_solid, want_solid;
+                int pos[3];
+                uint8_t c[4], best_c[4];
+                int best_dist, dist;
+
+                x = x0 + ix;
+                dx = (float)(x - cx);
+                dy = (float)(y - cy);
+                dz = (float)(z - cz);
+                d2 = (dx * dx) / rx2 + (dy * dy) / ry2 + (dz * dz) / rz2;
+                if (d2 > 1.f)
+                    continue;
+
+                falloff = smooth_fast_exp(-2.f * d2);
+                n_str = 1.f;
+                if (namp > 0.f) {
+                    float px = (float)x * freq_x;
+                    float py = (float)y * freq_y;
+                    float ns = smooth_perlin2(px + 41.1f, py + 23.9f);
+                    n_str = (1.f - namp) +
+                            namp * (0.1f + 0.9f * (0.5f + 0.5f * ns));
+                }
+                t = strength * falloff * n_str;
+                /*
+                 * Soft gate via falloff / strength / noise. Do NOT use
+                 * occupancy blend crossing 0.5 - that formula can never flip
+                 * when t < 0.5, which is common with default noise.
+                 */
+                if (t < 0.2f)
+                    continue;
+
+                pos[0] = x;
+                pos[1] = y;
+                pos[2] = z;
+                /* NULL accessor: brush AABB walks tiles irregularly. */
+                volume_get_at(volume, NULL, pos, c);
+                is_solid = c[3] != 0;
+
+                solid_n = 0;
+                total_n = 0;
+                best_c[3] = 0;
+                best_dist = INT_MAX;
+                for (nz = -1; nz <= 1; nz++) {
+                    for (ny = -1; ny <= 1; ny++) {
+                        for (nx = -1; nx <= 1; nx++) {
+                            uint8_t nc[4];
+                            int npos[3];
+                            if (nx == 0 && ny == 0 && nz == 0)
+                                continue;
+                            npos[0] = x + nx;
+                            npos[1] = y + ny;
+                            npos[2] = z + nz;
+                            volume_get_at(volume, NULL, npos, nc);
+                            total_n++;
+                            if (!nc[3])
+                                continue;
+                            solid_n++;
+                            dist = abs(nx) + abs(ny) + abs(nz);
+                            if (dist < best_dist) {
+                                best_dist = dist;
+                                memcpy(best_c, nc, 4);
+                            }
+                        }
+                    }
+                }
+                dens = (total_n > 0) ? ((float)solid_n / (float)total_n) : 0.f;
+                want_solid = dens >= 0.5f;
+                if (is_solid == want_solid)
+                    continue;
+
+                idx = (iz * gh + iy) * gw + ix;
+                if (is_solid && !want_solid) {
+                    ops[idx] = 2; /* clear */
+                } else if (!is_solid && want_solid) {
+                    if (!best_c[3]) {
+                        int fx, fy, fz;
+                        for (fz = 0; fz < gd && !best_c[3]; fz++) {
+                            for (fy = 0; fy < gh && !best_c[3]; fy++) {
+                                for (fx = 0; fx < gw; fx++) {
+                                    float fdx, fdy, fdz, fd2;
+                                    int fpos[3];
+                                    uint8_t fc[4];
+                                    fdx = (float)((x0 + fx) - cx);
+                                    fdy = (float)((y0 + fy) - cy);
+                                    fdz = (float)((z0 + fz) - cz);
+                                    fd2 = (fdx * fdx) / rx2 +
+                                          (fdy * fdy) / ry2 +
+                                          (fdz * fdz) / rz2;
+                                    if (fd2 > 1.f) continue;
+                                    fpos[0] = x0 + fx;
+                                    fpos[1] = y0 + fy;
+                                    fpos[2] = z0 + fz;
+                                    volume_get_at(volume, NULL, fpos, fc);
+                                    if (fc[3]) {
+                                        memcpy(best_c, fc, 4);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (best_c[3]) {
+                        ops[idx] = 1; /* fill */
+                        memcpy(fill_colors + idx * 4, best_c, 4);
+                    }
+                }
+            }
+        }
+    }
+
+    for (iz = 0; iz < gd; iz++) {
+        z = z0 + iz;
+        for (iy = 0; iy < gh; iy++) {
+            y = y0 + iy;
+            for (ix = 0; ix < gw; ix++) {
+                int idx = (iz * gh + iy) * gw + ix;
+                int pos[3];
+                if (!ops[idx])
+                    continue;
+                pos[0] = x0 + ix;
+                pos[1] = y0 + iy;
+                pos[2] = z;
+                if (ops[idx] == 2)
+                    volume_set_at(volume, NULL, pos, empty);
+                else
+                    volume_set_at(volume, NULL, pos, fill_colors + idx * 4);
+                changed++;
+            }
+        }
+    }
+
+done:
+    free(ops);
+    free(fill_colors);
+    return changed;
+}
+
 static bool check_can_skip(tool_smooth_t *sm, const cursor_t *curs)
 {
     volume_t *volume = goxel.tool_volume;
@@ -521,8 +724,10 @@ static bool check_can_skip(tool_smooth_t *sm, const cursor_t *curs)
     if (volume &&
         pressed == sm->last_op.pressed &&
         sm->last_op.volume_key == volume_get_key(volume) &&
+        sm->last_op.mode == sm->mode &&
         sm->last_op.radius_x == goxel.smooth_radius_x &&
         sm->last_op.radius_y == goxel.smooth_radius_y &&
+        sm->last_op.radius_z == goxel.smooth_radius_z &&
         sm->last_op.strength == sm->strength &&
         sm->last_op.add_noise == sm->add_noise &&
         sm->last_op.noise == sm->noise &&
@@ -533,8 +738,10 @@ static bool check_can_skip(tool_smooth_t *sm, const cursor_t *curs)
         return true;
     }
     sm->last_op.pressed = pressed;
+    sm->last_op.mode = sm->mode;
     sm->last_op.radius_x = goxel.smooth_radius_x;
     sm->last_op.radius_y = goxel.smooth_radius_y;
+    sm->last_op.radius_z = goxel.smooth_radius_z;
     sm->last_op.strength = sm->strength;
     sm->last_op.add_noise = sm->add_noise;
     sm->last_op.noise = sm->noise;
@@ -553,6 +760,7 @@ static int on_drag(gesture3d_t *gest, void *user)
     cursor_t *curs = gest->cursor;
     float r_x = goxel.smooth_radius_x;
     float r_y = goxel.smooth_radius_y;
+    float r_z = goxel.smooth_radius_z;
     float spacing;
     float pos[3];
     int nb, i;
@@ -586,7 +794,10 @@ static int on_drag(gesture3d_t *gest, void *user)
     if (gest->state == GESTURE_UPDATE && check_can_skip(sm, curs))
         return 0;
 
-    spacing = max(0.7f, min(r_x, r_y) * 0.5f);
+    if (sm->mode == SMOOTH_MODE_3D)
+        spacing = max(0.7f, min(r_x, min(r_y, r_z)) * 0.5f);
+    else
+        spacing = max(0.7f, min(r_x, r_y) * 0.5f);
     nb = (int)ceil(vec3_dist(curs->pos, sm->last_pos) / spacing);
     nb = max(nb, 1);
 
@@ -597,12 +808,27 @@ static int on_drag(gesture3d_t *gest, void *user)
                    : goxel.image->active_layer->volume);
     }
 
-    for (i = 0; i < nb; i++) {
-        vec3_mix(sm->last_pos, curs->pos, (i + 1.0f) / nb, pos);
-        smooth_dab(goxel.tool_volume, (int)floorf(pos[0]), (int)floorf(pos[1]),
-                   r_x, r_y, sm->strength,
-                   sm->add_noise ? sm->noise : 0.f, sm->noise_scale,
-                   sm->empty_column);
+    {
+        int flips = 0;
+        for (i = 0; i < nb; i++) {
+            vec3_mix(sm->last_pos, curs->pos, (i + 1.0f) / nb, pos);
+            if (sm->mode == SMOOTH_MODE_3D) {
+                flips += smooth_dab_3d(
+                    goxel.tool_volume,
+                    (int)floorf(pos[0]), (int)floorf(pos[1]),
+                    (int)floorf(pos[2]),
+                    r_x, r_y, r_z, sm->strength,
+                    sm->add_noise ? sm->noise : 0.f, sm->noise_scale);
+            } else {
+                smooth_dab_2d(goxel.tool_volume,
+                              (int)floorf(pos[0]), (int)floorf(pos[1]),
+                              r_x, r_y, sm->strength,
+                              sm->add_noise ? sm->noise : 0.f, sm->noise_scale,
+                              sm->empty_column);
+            }
+        }
+        if (sm->mode == SMOOTH_MODE_3D)
+            goxel_set_help_text("3D smooth: %d voxels changed", flips);
     }
 
     sm->last_op.volume_key = volume_get_key(goxel.tool_volume);
@@ -622,8 +848,9 @@ static int on_hover(gesture3d_t *gest, void *user)
     tool_smooth_t *sm = USER_GET(user, 0);
     cursor_t *curs = gest->cursor;
     float box[4][4];
+    float r_z;
 
-    (void)sm;
+    ensure_defaults(sm);
     if (gest->state == GESTURE_END || !curs->snaped) {
         if (!(curs->flags & CURSOR_PRESSED)) {
             volume_delete(goxel.tool_volume);
@@ -632,7 +859,9 @@ static int on_hover(gesture3d_t *gest, void *user)
         return 0;
     }
 
-    get_brush_box(curs->pos, goxel.smooth_radius_x, goxel.smooth_radius_y, box);
+    r_z = (sm->mode == SMOOTH_MODE_3D) ? goxel.smooth_radius_z : 0.5f;
+    get_brush_box(curs->pos, goxel.smooth_radius_x, goxel.smooth_radius_y,
+                  r_z, box);
     render_box(&goxel.rend, box, NULL, EFFECT_WIREFRAME);
     return 0;
 }
@@ -646,8 +875,15 @@ static int iter(tool_t *tool, const painter_t *painter,
     (void)painter;
     (void)viewport;
     ensure_defaults(sm);
-    goxel_set_help_text(
-        "Drag to smooth terrain heights (Gaussian average of column tops).");
+    if (sm->mode == SMOOTH_MODE_3D) {
+        goxel_set_help_text(
+            "Drag to smooth voxels inside the 3D brush "
+            "(local solid/air majority).");
+    } else {
+        goxel_set_help_text(
+            "Drag to smooth terrain heights "
+            "(Gaussian average of column tops).");
+    }
 
     curs->snap_mask |= SNAP_ROUNDED;
     curs->snap_offset = -0.5;
@@ -674,30 +910,54 @@ static int gui(tool_t *tool)
     float strength, noise, noise_scale;
 
     ensure_defaults(sm);
-    tool_gui_radius_xy_values(&goxel.smooth_radius_x, &goxel.smooth_radius_y);
+
+    gui_combo("Mode", &sm->mode, (const char*[]) {
+              "2D (top surface)", "3D (volume)"}, 2);
+    gui_tooltip_if_hovered(
+        "2D: smooth absolute column tops (terrain). "
+        "3D: morphologically smooth voxels inside the brush ellipsoid "
+        "(tunnel floors, etc.)");
+
+    if (sm->mode == SMOOTH_MODE_3D) {
+        tool_gui_radius_xyz_values(&goxel.smooth_radius_x,
+                                   &goxel.smooth_radius_y,
+                                   &goxel.smooth_radius_z);
+    } else {
+        tool_gui_radius_xy_values(&goxel.smooth_radius_x,
+                                  &goxel.smooth_radius_y);
+    }
 
     strength = sm->strength;
     if (gui_input_float("Strength", &strength, 0.05f, 0.05f, 1.f, "%.2f"))
         sm->strength = clamp(strength, 0.05f, 1.f);
     gui_tooltip_if_hovered(
-        "How far each dab moves column tops toward the local Gaussian average");
+        sm->mode == SMOOTH_MODE_3D
+            ? "How strongly each dab flips voxels toward the local majority"
+            : "How far each dab moves column tops toward the local Gaussian "
+              "average");
 
-    gui_combo("Empty cols", &sm->empty_column, (const char*[]) {
-              "Cannot be affected", "Can be grown into"}, 2);
-    gui_tooltip_if_hovered(
-        "Cannot be affected: empty columns stay empty, but solid tops can "
-        "smooth down toward the floor. Can be grown into: empty columns fill "
-        "from the floor up toward the neighbour average");
+    if (sm->mode == SMOOTH_MODE_2D) {
+        gui_combo("Empty cols", &sm->empty_column, (const char*[]) {
+                  "Create within", "Hard cut"}, 2);
+        gui_tooltip_if_hovered(
+            "Create within: empty columns fill from the floor up toward the "
+            "neighbour average. Hard cut: empty columns stay empty, but solid "
+            "tops can smooth down toward the floor");
+    }
 
     gui_checkbox("Add noise", &sm->add_noise,
-                 "Enable Perlin noise on top of Gaussian smoothing");
+                 sm->mode == SMOOTH_MODE_3D
+                     ? "Enable Perlin modulation of morphological strength"
+                     : "Enable Perlin noise on top of Gaussian smoothing");
     if (sm->add_noise) {
         noise = sm->noise;
         if (gui_input_float("Noise", &noise, 0.05f, 0.f, 1.f, "%.2f"))
             sm->noise = clamp(noise, 0.f, 1.f);
         gui_tooltip_if_hovered(
-            "Perlin amount: warps the kernel, varies strength in patches, and "
-            "adds brush-sized height detail");
+            sm->mode == SMOOTH_MODE_3D
+                ? "Perlin amount: varies morphological strength in patches"
+                : "Perlin amount: warps the kernel, varies strength in patches, "
+                  "and adds brush-sized height detail");
 
         noise_scale = sm->noise_scale;
         if (gui_input_float("Noise scale", &noise_scale, 0.05f, 0.05f, 8.f,

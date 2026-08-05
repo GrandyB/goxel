@@ -575,9 +575,10 @@ typedef struct goxel
     float      radius_x;
     float      radius_y;
     float      radius_z;
-    /* Smooth tool: independent XY size (not shared with brush/laser/etc.). */
+    /* Smooth tool: independent size (not shared with brush/laser/etc.). */
     float      smooth_radius_x;
     float      smooth_radius_y;
+    float      smooth_radius_z; /* Used in Smooth 3D (volume) mode. */
     /* Brush: shape lowest Z sits on cursor instead of center (Z-up). */
     bool       brush_origin_at_base;
     /* Brush: align local Z axis to snapped block face normal. */
