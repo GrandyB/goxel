@@ -31,7 +31,8 @@
  * active (plan) layer has blocks.
  *
  * 1. Collect plan voxels on the active layer; collapse to one per XY.
- * 2. Project each column onto the top solid of the target terrain layer.
+ * 2. With Position using layer heights: from each plan Z, drop to the nearest
+ *    occupied voxel beneath on the target terrain layer. Otherwise keep plan Z.
  * 3. Assign each blast a random radius / depth / strength in the UI min-max.
  * 4. Carve a smoothstep-lip bowl below the epicentre plus an upper hemisphere
  *    so blocks above the plan are cleared too (soft AA / dither edges, soft
@@ -70,6 +71,7 @@ typedef struct {
     int anti_alias;
     float dithering;
     int seed;
+    bool use_layer_heights; /* true: drop to terrain; false: blast at plan Z */
     /* Layer id, not a pointer: undo/redo swaps image snapshots. */
     int target_layer_id;
 } filter_explosions_t;
@@ -90,6 +92,7 @@ static void reset_defaults(filter_explosions_t *filter)
     filter->anti_alias = 5;
     filter->dithering = 0.8f;
     filter->seed = 0;
+    filter->use_layer_heights = true;
     filter->target_layer_id = 0;
 }
 
@@ -248,46 +251,26 @@ static bool collect_plan_voxels(const volume_t *vol, explosion_center_t **out,
     return true;
 }
 
-/*
- * Collapse the plan to one seed per XY column and project onto the highest
- * occupied voxel of the target layer (blast centre sits on that surface).
- */
-static void project_plan_voxels(explosion_center_t *plan, int *nplan,
-                                const volume_t *surface)
+/* Collapse to one seed per XY, keeping the lowest plan Z in each column. */
+static void collapse_plan_xy(explosion_center_t *plan, int *nplan)
 {
-    int bbox[2][3];
     int i, j, n = 0;
-    uint8_t c[4];
-
-    if (!volume_get_bbox(surface, bbox, true)) {
-        *nplan = 0;
-        return;
-    }
 
     for (i = 0; i < *nplan; i++) {
-        int pos[3] = {plan[i].x, plan[i].y, 0};
-        bool duplicate = false;
+        bool found = false;
 
         for (j = 0; j < n; j++) {
             if (plan[j].x == plan[i].x && plan[j].y == plan[i].y) {
-                duplicate = true;
+                if (plan[i].z < plan[j].z)
+                    plan[j].z = plan[i].z;
+                found = true;
                 break;
             }
         }
-        if (duplicate)
+        if (found)
             continue;
 
-        for (pos[2] = bbox[1][2] - 1; pos[2] >= bbox[0][2]; pos[2]--) {
-            volume_get_at(surface, NULL, pos, c);
-            if (c[3])
-                break;
-        }
-        if (pos[2] < bbox[0][2])
-            continue;
-
-        plan[n].x = pos[0];
-        plan[n].y = pos[1];
-        plan[n].z = pos[2];
+        plan[n] = plan[i];
         plan[n].radius = 0.f;
         plan[n].depth = 0.f;
         plan[n].strength = 0.f;
@@ -296,6 +279,50 @@ static void project_plan_voxels(explosion_center_t *plan, int *nplan,
         n++;
     }
     *nplan = n;
+}
+
+/*
+ * Drop each plan seed to the nearest occupied voxel at or below its Z on
+ * the target layer. Blast centre sits on that solid. Columns with no solid
+ * beneath are removed.
+ */
+static void project_plan_voxels(explosion_center_t *plan, int *nplan,
+                                const volume_t *surface)
+{
+    int bbox[2][3];
+    int i, kept = 0;
+    uint8_t c[4];
+
+    if (!volume_get_bbox(surface, bbox, true)) {
+        *nplan = 0;
+        return;
+    }
+
+    for (i = 0; i < *nplan; i++) {
+        int pos[3] = {plan[i].x, plan[i].y, plan[i].z};
+        int z_min = bbox[0][2];
+
+        if (pos[2] > bbox[1][2] - 1)
+            pos[2] = bbox[1][2] - 1;
+        for (; pos[2] >= z_min; pos[2]--) {
+            volume_get_at(surface, NULL, pos, c);
+            if (c[3])
+                break;
+        }
+        if (pos[2] < z_min)
+            continue;
+
+        plan[kept].x = pos[0];
+        plan[kept].y = pos[1];
+        plan[kept].z = pos[2];
+        plan[kept].radius = 0.f;
+        plan[kept].depth = 0.f;
+        plan[kept].strength = 0.f;
+        plan[kept].scorch = 0.f;
+        plan[kept].debris = 0.f;
+        kept++;
+    }
+    *nplan = kept;
 }
 
 /* Roll per-blast size / strength / scorch / debris inside min-max ranges. */
@@ -714,12 +741,15 @@ static void apply_explosions(filter_explosions_t *filter, layer_t *plan_layer)
         free(plan);
         return;
     }
-    project_plan_voxels(plan, &nplan, target->volume);
-    if (nplan == 0) {
-        gui_alert("Plan - Explosions",
-                  "No plan columns intersect the selected layer.");
-        free(plan);
-        return;
+    collapse_plan_xy(plan, &nplan);
+    if (filter->use_layer_heights) {
+        project_plan_voxels(plan, &nplan, target->volume);
+        if (nplan == 0) {
+            gui_alert("Plan - Explosions",
+                      "No plan columns intersect the selected layer.");
+            free(plan);
+            return;
+        }
     }
 
     assign_blast_params(plan, nplan, filter);
@@ -1060,9 +1090,11 @@ static int gui(filter_t *filter_)
     layer_t *layer = goxel.image ? goxel.image->active_layer : NULL;
     layer_t *target_layer;
     const char *help_text =
-        "Uses blocks on the active layer as blast centres.  Each plan column "
-        "is projected onto the chosen terrain layer, then a bowl crater plus "
-        "upper hemisphere is carved - clearing blocks above the plan.  Scorch "
+        "Uses blocks on the active layer as blast centres.  With Position "
+        "using layer heights (default), each plan column drops to the nearest "
+        "occupied voxel beneath it on the chosen terrain layer; when off, "
+        "blasts sit at the plan blocks' own Z.  A bowl crater plus upper "
+        "hemisphere is carved - clearing blocks above that point.  Scorch "
         "darkens remaining solids downward by the blast depth and bleeds into "
         "surrounding terrain.  Soft anti-aliased / dithered lips blend into "
         "the surroundings, with optional debris that stains neighbours.  Each "
@@ -1125,6 +1157,11 @@ static int gui(filter_t *filter_)
         filter->seed = rand();
     }
 
+    gui_checkbox("Position using layer heights", &filter->use_layer_heights,
+                 "When enabled, drop each plan column to the nearest occupied "
+                 "height on the terrain layer below (ignore plan Z). When off, "
+                 "explode at each plan block's XYZ.");
+
     target_layer = find_layer_by_id(filter->target_layer_id);
     if (!target_layer && goxel.image) {
         target_layer = goxel.image->layers;
@@ -1142,7 +1179,10 @@ static int gui(filter_t *filter_)
         gui_combo_end();
     }
     gui_tooltip_if_hovered(
-        "Layer that will be carved and darkened in place.");
+        filter->use_layer_heights
+            ? "Layer whose heights under the plan blocks are used as blast "
+              "centres, then carved and darkened in place."
+            : "Layer that will be carved and darkened in place.");
 
     gui_label_size_pop();
 
