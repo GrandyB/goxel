@@ -164,6 +164,15 @@ void camera_turntable_around_point(camera_t *camera, float rz, float rx, const f
  */
 void camera_move(camera_t *camera, float rx, float ry, float rz, float speed);
 
+/* Like camera_move but only on world XY using yaw (ignore pitch). World Z
+ * unchanged; horizontal speed stays full when looking straight up/down. */
+void camera_move_flat(camera_t *camera, float rx, float ry, float speed);
+
+/* Blend look-aligned move and flat XY move. flat_amt 0 = camera_move,
+ * 1 = camera_move_flat (rz ignored). Used to ease height-lock on/off. */
+void camera_move_blend(camera_t *camera, float rx, float ry, float rz,
+                       float speed, float flat_amt);
+
 bool camera_is_firstperson(const camera_t *camera);
 bool camera_is_player(const camera_t *camera);
 

@@ -104,10 +104,11 @@ static float gxl_sm_in_move[3];
 static float gxl_sm_in_rot[2];
 static float gxl_sm_in_pan[2];
 static float gxl_sm_in_zoom;
-/* First-person soft look: absolute angles from drag origin (like non-soft). */
+/* First-person soft look: filtered incremental yaw/pitch (like soft orbit). */
 static float gxl_sm_fp_look[2];
-static float gxl_sm_fp_look_tgt[2];
-static bool  gxl_sm_fp_look_active;
+static float gxl_sm_in_fp_look[2];
+/* Fly height-lock amount (0 = free look-move, 1 = flat XY). Soft-eased. */
+static float gxl_sm_fly_lock;
 static camera_t *gxl_sm_cam = NULL;
 
 static float gxl_cam_smooth_alpha(double dt, float tau)
@@ -129,8 +130,8 @@ static void gxl_cam_smooth_clear(void)
     gxl_sm_in_pan[0] = gxl_sm_in_pan[1] = 0;
     gxl_sm_in_zoom = 0;
     gxl_sm_fp_look[0] = gxl_sm_fp_look[1] = 0;
-    gxl_sm_fp_look_tgt[0] = gxl_sm_fp_look_tgt[1] = 0;
-    gxl_sm_fp_look_active = false;
+    gxl_sm_in_fp_look[0] = gxl_sm_in_fp_look[1] = 0;
+    gxl_sm_fly_lock = 0;
 }
 
 static void gxl_cam_smooth_begin_frame(camera_t *cam)
@@ -143,6 +144,7 @@ static void gxl_cam_smooth_begin_frame(camera_t *cam)
     gxl_sm_in_rot[0] = gxl_sm_in_rot[1] = 0;
     gxl_sm_in_pan[0] = gxl_sm_in_pan[1] = 0;
     gxl_sm_in_zoom = 0;
+    gxl_sm_in_fp_look[0] = gxl_sm_in_fp_look[1] = 0;
 }
 
 /* In-place yaw/pitch; ignores cam->dist so look never becomes an orbit. */
@@ -195,14 +197,13 @@ static void gxl_cam_smooth_step(camera_t *cam, double dt,
         gxl_sm_zoom = 0;
         gxl_sm_rot[0] = gxl_sm_rot[1] = 0;
 
-        if (gxl_sm_fp_look_active) {
-            for (i = 0; i < 2; i++)
-                gxl_sm_fp_look[i] =
-                    mix(gxl_sm_fp_look[i], gxl_sm_fp_look_tgt[i], a);
-            mat4_copy(goxel.move_origin.camera_mat, cam->mat);
+        /* Incremental soft look on the live camera (no origin rebuild / ofs).
+         * Absolute rebuild + camera_ofs doubled fly speed while RMB was held. */
+        for (i = 0; i < 2; i++)
+            gxl_sm_fp_look[i] = mix(gxl_sm_fp_look[i], gxl_sm_in_fp_look[i], a);
+        if (gxl_sm_fp_look[0] != 0.f || gxl_sm_fp_look[1] != 0.f) {
             cam->dist = 0;
             gxl_cam_fpv_look(cam, gxl_sm_fp_look[0], gxl_sm_fp_look[1]);
-            vec3_add(cam->mat[3], goxel.move_origin.camera_ofs, cam->mat[3]);
         }
         return;
     }
@@ -1229,15 +1230,8 @@ static int on_rotate(const gesture_t *gest, void *user)
     const bool first = camera_is_firstperson(camera);
     const bool soft = camera->smoothing > 0.f;
 
-    if (gest->state == GESTURE_END && first) {
+    if (gest->state == GESTURE_END && first)
         goxel.fpv_look_drag = false;
-        if (soft) {
-            /* Bake final soft look into the camera; stop absolute drag filter. */
-            gxl_sm_fp_look_active = false;
-            gxl_sm_fp_look[0] = gxl_sm_fp_look[1] = 0;
-            gxl_sm_fp_look_tgt[0] = gxl_sm_fp_look_tgt[1] = 0;
-        }
-    }
 
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
@@ -1247,11 +1241,6 @@ static int on_rotate(const gesture_t *gest, void *user)
             vec3_set(goxel.move_origin.camera_ofs, 0, 0, 0);
             goxel.fpv_look_drag = true;
             camera->dist = 0;
-            if (soft) {
-                gxl_sm_fp_look[0] = gxl_sm_fp_look[1] = 0;
-                gxl_sm_fp_look_tgt[0] = gxl_sm_fp_look_tgt[1] = 0;
-                gxl_sm_fp_look_active = true;
-            }
         } else {
             // Try to detect a voxel under the mouse cursor for distance-based rotation
             float voxel_pos[3], voxel_normal[3];
@@ -1273,25 +1262,21 @@ static int on_rotate(const gesture_t *gest, void *user)
     }
 
     if (soft) {
-        x1 = goxel.move_origin.pos[0] / gest->viewport[2];
-        y1 = goxel.move_origin.pos[1] / gest->viewport[3];
-        x2 = gest->pos[0] / gest->viewport[2];
-        y2 = gest->pos[1] / gest->viewport[3];
-        z_rot = (x1 - x2) * 2 * (float)M_PI;
-        x_rot = (y2 - y1) * 2 * (float)M_PI;
-
-        if (first) {
-            /* Absolute soft look targets; applied in gxl_cam_smooth_step. */
-            gxl_sm_fp_look_tgt[0] = z_rot;
-            gxl_sm_fp_look_tgt[1] = x_rot;
-        } else if (gest->state != GESTURE_BEGIN) {
-            /* Orbit: incremental deltas into the soft filter. */
+        if (gest->state != GESTURE_BEGIN) {
+            /* Incremental mouse deltas into the soft filter (FP + orbit). */
             float lx = gest->last_pos[0] / gest->viewport[2];
             float ly = gest->last_pos[1] / gest->viewport[3];
             float cx = gest->pos[0] / gest->viewport[2];
             float cy = gest->pos[1] / gest->viewport[3];
-            gxl_sm_in_rot[0] += (lx - cx) * 2 * (float)M_PI;
-            gxl_sm_in_rot[1] += (cy - ly) * 2 * (float)M_PI;
+            float dz = (lx - cx) * 2 * (float)M_PI;
+            float dx = (cy - ly) * 2 * (float)M_PI;
+            if (first) {
+                gxl_sm_in_fp_look[0] += dz;
+                gxl_sm_in_fp_look[1] += dx;
+            } else {
+                gxl_sm_in_rot[0] += dz;
+                gxl_sm_in_rot[1] += dx;
+            }
         }
         return 0;
     }
@@ -1447,8 +1432,13 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     double t = deltaTime * 100;
     /* Initialized for -Wuninitialized: only read when acc_fpv_key (same for both ifs). */
     float fpv_eye0[3] = {0.f, 0.f, 0.f};
+    /* Soft FP look is incremental on the live camera - no ofs rebuild. */
     const bool acc_fpv_key =
-            camera_is_firstperson(camera) && goxel.fpv_look_drag;
+            camera_is_firstperson(camera) && goxel.fpv_look_drag && !soft;
+    /* Fly (FPV): Right Ctrl locks world height; look/strafe still free. */
+    const bool fly_lock_z = camera->mode == CAMERA_MODE_FPV &&
+                            inputs->keys[KEY_RIGHT_CONTROL];
+    const float fly_z0 = camera->mat[3][2];
     if (acc_fpv_key)
         vec3_copy(camera->mat[3], fpv_eye0);
     //LOG_D("time: %f -- frame time: %f -- delta: %f -- t: %f", time, frameTime, deltaTime, t);
@@ -1471,8 +1461,12 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
             if (inputs->keys[KEY_RIGHT]) rx += (float)t;
             if (inputs->keys[KEY_UP])    ry -= (float)t;
             if (inputs->keys[KEY_DOWN])  ry += (float)t;
-            if (inputs->keys[KEY_PAGE_UP])   rz += (float)t;
-            if (inputs->keys[KEY_PAGE_DOWN]) rz -= (float)t;
+            /* While lock target is on, stop feeding vertical so soft Z coasts
+             * out; lock blend also kills look-pitch climb. */
+            if (!fly_lock_z) {
+                if (inputs->keys[KEY_PAGE_UP])   rz += (float)t;
+                if (inputs->keys[KEY_PAGE_DOWN]) rz -= (float)t;
+            }
         } else if (!player_walk) {
             if (inputs->keys[KEY_PAGE_UP])
                 gxl_sm_in_rot[1] += 0.05f;
@@ -1486,15 +1480,27 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
         gxl_cam_smooth_step(camera, deltaTime, viewport,
                             inputs->touches[0].pos);
 
+        {
+            float lock_tgt = fly_lock_z ? 1.f : 0.f;
+            float a = gxl_cam_smooth_alpha(deltaTime, camera->smoothing);
+            gxl_sm_fly_lock = mix(gxl_sm_fly_lock, lock_tgt, a);
+        }
+
         if (player_walk) {
             gxl_player_frame(camera, inputs, deltaTime,
                              gxl_sm_move[0], gxl_sm_move[1]);
         } else {
             const float fly_speed = camera->fly_speed;
+            float k = gxl_sm_fly_lock;
             if (gxl_sm_move[0] != 0.f || gxl_sm_move[1] != 0.f ||
-                gxl_sm_move[2] != 0.f)
-                camera_move(camera, gxl_sm_move[0], gxl_sm_move[1],
-                            gxl_sm_move[2], fly_speed);
+                gxl_sm_move[2] != 0.f || k > 1e-4f) {
+                if (k > 1e-4f)
+                    camera_move_blend(camera, gxl_sm_move[0], gxl_sm_move[1],
+                                     gxl_sm_move[2], fly_speed, k);
+                else
+                    camera_move(camera, gxl_sm_move[0], gxl_sm_move[1],
+                                gxl_sm_move[2], fly_speed);
+            }
         }
     } else if (camera_is_player(camera) && !player_alt_fly) {
         float rx = 0, ry = 0;
@@ -1510,25 +1516,38 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
          * Fly/FPV (and player+Alt): arrows still strafe. PageUp/Down pitch
          * or move vertically. */
         if (fly_move) {
-            if (inputs->keys[KEY_LEFT])
-                camera_move(camera, -t, 0, 0, fly_speed);
-            if (inputs->keys[KEY_RIGHT])
-                camera_move(camera, +t, 0, 0, fly_speed);
-            if (inputs->keys[KEY_UP])
-                camera_move(camera, 0, -t, 0, fly_speed);
-            if (inputs->keys[KEY_DOWN])
-                camera_move(camera, 0, +t, 0, fly_speed);
+            if (fly_lock_z) {
+                if (inputs->keys[KEY_LEFT])
+                    camera_move_flat(camera, -t, 0, fly_speed);
+                if (inputs->keys[KEY_RIGHT])
+                    camera_move_flat(camera, +t, 0, fly_speed);
+                if (inputs->keys[KEY_UP])
+                    camera_move_flat(camera, 0, -t, fly_speed);
+                if (inputs->keys[KEY_DOWN])
+                    camera_move_flat(camera, 0, +t, fly_speed);
+            } else {
+                if (inputs->keys[KEY_LEFT])
+                    camera_move(camera, -t, 0, 0, fly_speed);
+                if (inputs->keys[KEY_RIGHT])
+                    camera_move(camera, +t, 0, 0, fly_speed);
+                if (inputs->keys[KEY_UP])
+                    camera_move(camera, 0, -t, 0, fly_speed);
+                if (inputs->keys[KEY_DOWN])
+                    camera_move(camera, 0, +t, 0, fly_speed);
+            }
         }
         if (inputs->keys[KEY_PAGE_UP]) {
             if (fly_move) {
-                camera_move(camera, 0, 0, +t, fly_speed);
+                if (!fly_lock_z)
+                    camera_move(camera, 0, 0, +t, fly_speed);
             } else {
                 camera_turntable(camera, 0, +0.05);
             }
         }
         if (inputs->keys[KEY_PAGE_DOWN]) {
             if (fly_move) {
-                camera_move(camera, 0, 0, -t, fly_speed);
+                if (!fly_lock_z)
+                    camera_move(camera, 0, 0, -t, fly_speed);
             } else {
                 camera_turntable(camera, 0, -0.05);
             }
@@ -1544,6 +1563,9 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
                 camera_move(camera, +t, 0, 0, fly_speed);
         }
     }
+    /* Hard height snap only when smoothing is off; soft uses fly_lock blend. */
+    if (fly_lock_z && !soft)
+        camera->mat[3][2] = fly_z0;
     if (acc_fpv_key) {
         float d[3];
         vec3_sub(camera->mat[3], fpv_eye0, d);

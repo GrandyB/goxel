@@ -439,6 +439,57 @@ void camera_move(camera_t *cam, float rx, float ry, float rz, float speed)
     mat4_copy(mat, cam->mat);
 }
 
+void camera_move_flat(camera_t *cam, float rx, float ry, float speed)
+{
+    float mult = speed / 20.f;
+    float sx = cam->mat[0][0];
+    float sy = cam->mat[0][1];
+    float slen = sqrtf(sx * sx + sy * sy);
+    float fx, fy;
+
+    /* Yaw basis from camera right (stays in XY with Z-yaw / X-pitch). Local
+     * +Z flattened matches upright mat[2].xy = (sy, -sx). */
+    if (slen > 1e-6f) {
+        sx /= slen;
+        sy /= slen;
+    } else {
+        sx = 1.f;
+        sy = 0.f;
+    }
+    fx = sy;
+    fy = -sx;
+
+    cam->mat[3][0] += (fx * ry + sx * rx) * mult;
+    cam->mat[3][1] += (fy * ry + sy * rx) * mult;
+}
+
+void camera_move_blend(camera_t *cam, float rx, float ry, float rz,
+                       float speed, float flat_amt)
+{
+    float save[4][4];
+    float pl[3], z0;
+
+    if (flat_amt <= 0.f) {
+        camera_move(cam, rx, ry, rz, speed);
+        return;
+    }
+    if (flat_amt >= 1.f) {
+        camera_move_flat(cam, rx, ry, speed);
+        return;
+    }
+
+    z0 = cam->mat[3][2];
+    mat4_copy(cam->mat, save);
+    camera_move(cam, rx, ry, rz * (1.f - flat_amt), speed);
+    vec3_copy(cam->mat[3], pl);
+    mat4_copy(save, cam->mat);
+    camera_move_flat(cam, rx, ry, speed);
+
+    cam->mat[3][0] = mix(pl[0], cam->mat[3][0], flat_amt);
+    cam->mat[3][1] = mix(pl[1], cam->mat[3][1], flat_amt);
+    cam->mat[3][2] = mix(pl[2], z0, flat_amt);
+}
+
 bool camera_is_firstperson(const camera_t *cam)
 {
     return cam->mode == CAMERA_MODE_FPV || cam->mode == CAMERA_MODE_PLAYER;
