@@ -479,6 +479,7 @@ static void center_origin(tool_placer_t *placer)
 
 static void post_import(tool_placer_t *placer)
 {
+    volume_delete(placer->imported_volume_orig);
     placer->imported_volume_orig = volume_copy(placer->imported_volume);
     center_origin(placer);
     placer_reset_scale(placer);
@@ -701,6 +702,7 @@ static void on_export_format(void *user, file_format_t *f)
 
 static void reset(tool_placer_t* placer) {
     volume_delete(placer->imported_volume);
+    volume_delete(placer->imported_volume_orig);
     placer->imported_volume = volume_new();
     placer->imported_volume_orig = volume_new();
     mat4_copy(mat4_identity, placer->mat);
@@ -724,6 +726,8 @@ struct past_import {
     int64_t imported_at; /* unix seconds when added (not shown in tile UI) */
 };
 past_import_t *past_files = NULL;
+/* Monotonic imported_at so same-second multi-imports keep selection order. */
+static int64_t placer_past_import_clock = 0;
 
 void placer_past_files_clear(void) {
     past_import_t *f, *tmp;
@@ -930,12 +934,19 @@ static void on_file_import(const char *path, const char *file_name, const file_f
         free(name_copy);
         return;
     }
-    *past = (past_import_t) {
-        .path = path_copy,
-        .file_name = name_copy,
-        .format = format,
-        .imported_at = (int64_t)time(NULL),
-    };
+    {
+        int64_t now = (int64_t)time(NULL);
+
+        if (now <= placer_past_import_clock)
+            now = placer_past_import_clock + 1;
+        placer_past_import_clock = now;
+        *past = (past_import_t) {
+            .path = path_copy,
+            .file_name = name_copy,
+            .format = format,
+            .imported_at = now,
+        };
+    }
 
     past_import_t *f, *tmp;
     DL_FOREACH_SAFE(past_files, f, tmp) {
@@ -959,12 +970,13 @@ static void on_file_import(const char *path, const char *file_name, const file_f
     }
 }
 
-/* paths from sys_open_multi_file_dialog: '|'-separated (tinyfd). */
+/* paths from sys_open_multi_file_dialog: '|'-separated (tinyfd).
+ * Each path is a separate history entry (not merged). The last successful
+ * import remains the active placer stamp. */
 static void placer_import_selected_paths(tool_placer_t *placer, char *paths_mut)
 {
     char *saveptr = NULL;
     char *token;
-    bool reset_done = false;
 
     for (token = strtok_r(paths_mut, "|", &saveptr); token;
          token = strtok_r(NULL, "|", &saveptr)) {
@@ -975,10 +987,7 @@ static void placer_import_selected_paths(tool_placer_t *placer, char *paths_mut)
 
         if (!f)
             continue;
-        if (!reset_done) {
-            reset(placer);
-            reset_done = true;
-        }
+        reset(placer);
         err = f->import_volume_func(f, placer->imported_volume, token);
         if (err)
             continue;
