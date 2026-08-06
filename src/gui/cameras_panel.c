@@ -36,17 +36,6 @@ static bool camera_mode_button(camera_t *cam, const char *label, camera_mode_t m
     return false;
 }
 
-static bool camera_smooth_preset_button(camera_t *cam, const char *label,
-                                       camera_smooth_preset_t p)
-{
-    bool v = cam->smooth_preset == p;
-    if (gui_selectable(label, &v, NULL, -1)) {
-        cam->smooth_preset = p;
-        return true;
-    }
-    return false;
-}
-
 void gui_cameras_panel(void)
 {
     camera_t *cam;
@@ -112,15 +101,7 @@ void gui_cameras_panel(void)
         gui_input_float("Crouch height", &cam->crouch_height, 0.1f, 0.5f, 4.f, NULL);
     }
     gui_group_end();
-    gui_checkbox("Smooth mode", &cam->smooth_mode,
-                 "Soft-interpolate mouse and keyboard camera motion");
-    if (cam->smooth_mode) {
-        gui_row_begin(3);
-        camera_smooth_preset_button(cam, "Light", CAMERA_SMOOTH_LIGHT);
-        camera_smooth_preset_button(cam, "Medium", CAMERA_SMOOTH_MEDIUM);
-        camera_smooth_preset_button(cam, "Heavy", CAMERA_SMOOTH_HEAVY);
-        gui_row_end();
-    }
+    gui_input_float("Smoothing", &cam->smoothing, 0.05, 0, 2.0, "%.2f");
 
     // Change camera fov
     gui_input_float("FOV", camera_is_firstperson(cam) ? &cam->fovy_fpv : &cam->fovy,

@@ -94,8 +94,7 @@ static bool gxl_player_space_was = false;
 static camera_t *gxl_pose_cam = NULL;
 static float gxl_pose_prev_eye_h = -1.f;
 
-/* ---- Smooth camera input (camera->smooth_mode) -------------------------- */
-/* Strength comes from camera->smooth_preset via camera_smooth_tau(). */
+/* ---- Smooth camera input (camera->smoothing > 0) ------------------------ */
 
 static float gxl_sm_move[3];       /* Filtered move (same units as key `t`). */
 static float gxl_sm_rot[2];        /* Filtered turntable z_rot, x_rot (orbit). */
@@ -183,7 +182,7 @@ static void gxl_cam_smooth_step(camera_t *cam, double dt,
                                 const float viewport[4],
                                 const float cursor_pos[2])
 {
-    float a = gxl_cam_smooth_alpha(dt, camera_smooth_tau(cam));
+    float a = gxl_cam_smooth_alpha(dt, cam->smoothing);
     const bool first = camera_is_firstperson(cam);
     int i;
 
@@ -1191,7 +1190,7 @@ static int on_pan(const gesture_t *gest, void *user)
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
         vec2_copy(gest->pos, goxel.move_origin.pos);
     }
-    if (camera->smooth_mode) {
+    if (camera->smoothing > 0.f) {
         float wpos[3] = {gest->pos[0], gest->pos[1], 0};
         float wlast[3] = {gest->last_pos[0], gest->last_pos[1], 0};
         float wdelta[3], odelta[3];
@@ -1228,7 +1227,7 @@ static int on_rotate(const gesture_t *gest, void *user)
     float x1, y1, x2, y2, x_rot, z_rot;
     camera_t *camera = get_camera();
     const bool first = camera_is_firstperson(camera);
-    const bool soft = camera->smooth_mode;
+    const bool soft = camera->smoothing > 0.f;
 
     if (gest->state == GESTURE_END && first) {
         goxel.fpv_look_drag = false;
@@ -1329,7 +1328,7 @@ static int on_zoom(const gesture_t *gest, void *user)
     camera_t *camera = get_camera();
 
     zoom = (gest->pos[1] - gest->last_pos[1]) / 10.0;
-    if (camera->smooth_mode) {
+    if (camera->smoothing > 0.f) {
         gxl_sm_in_zoom += (float)zoom;
         return 0;
     }
@@ -1367,7 +1366,7 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 {
     float p[3], n[3];
     camera_t *camera = get_camera();
-    const bool soft = camera->smooth_mode;
+    const bool soft = camera->smoothing > 0.f;
     const bool player_alt_fly = camera->mode == CAMERA_MODE_PLAYER &&
         (inputs->keys[KEY_LEFT_ALT] || inputs->keys[KEY_RIGHT_ALT]);
     goxel.player_flycam_hold = player_alt_fly;
