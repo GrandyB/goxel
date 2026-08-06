@@ -3829,7 +3829,9 @@ int gui_dnd_gap_target(const char *type, void *payload_out, int size,
     if (x1 <= x0 + 1.f)
         x1 = x0 + 1.f;
 
-    snprintf(id, sizeof(id), "##dnd_gap_%d", slot);
+    /* Include drop_kind so nest-exit (4) and below-last (3) gaps under the
+     * same PushID do not share an ImGui ID (DebugHighlightIdConflicts). */
+    snprintf(id, sizeof(id), "##dnd_gap_%d_%d", drop_kind, slot);
     ImGui::SetCursorScreenPos(ImVec2(x0, y0));
     ImGui::InvisibleButton(id, ImVec2(x1 - x0, h));
 

@@ -382,7 +382,8 @@ static void render_layers_list(void)
         g_scroll_to_active = false;
 
     /* End of list: last-child exits when nested, then always a line beneath
-     * the last visible layer. */
+     * the last visible layer. Nest-exit slots are 0..prev_depth-1; use a
+     * distinct slot for the below-last gap under the same PushID. */
     if (prev) {
         gui_push_id("lyr_end_gaps");
         if (prev_depth > 0) {
@@ -394,11 +395,12 @@ static void render_layers_list(void)
             layer_t *drop_payload = NULL;
             float indent = layer_dnd_indent(prev_depth);
             int drop_kind;
+            int below_slot = prev_depth;
 
             gui_dummy(1, 2);
             drop_kind = gui_dnd_gap_target(LAYER_DND_TYPE, &drop_payload,
                                            (int)sizeof(drop_payload), 3.f,
-                                           indent, 3, 0, 1);
+                                           indent, 3, below_slot, 1);
             try_pending_drop(&pending_drag, &pending_target, &pending_kind,
                              drop_kind, drop_payload, prev);
         }
