@@ -499,6 +499,10 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
                                sizeof(camera->standing_height));
         chunk_write_dict_value(&c, out, "crouch_h", &camera->crouch_height,
                                sizeof(camera->crouch_height));
+        chunk_write_dict_value(&c, out, "smooth", &camera->smooth_mode,
+                               sizeof(camera->smooth_mode));
+        chunk_write_dict_value(&c, out, "smooth_p", &camera->smooth_preset,
+                               sizeof(camera->smooth_preset));
         if (camera == img->active_camera)
             chunk_write_dict_value(&c, out, "active", NULL, 0);
 
@@ -824,6 +828,11 @@ int load_from_file(const char *path, bool replace)
                     cam_got_mode = true;
                 DICT_CPY("standing_h", camera->standing_height);
                 DICT_CPY("crouch_h", camera->crouch_height);
+                DICT_CPY("smooth", camera->smooth_mode);
+                if (DICT_CPY("smooth_p", camera->smooth_preset)) {
+                    if (camera->smooth_preset > CAMERA_SMOOTH_HEAVY)
+                        camera->smooth_preset = CAMERA_SMOOTH_MEDIUM;
+                }
                 if (strcmp(dict_key, "fpv") == 0 &&
                     dict_value_size == sizeof(bool)) {
                     bool bf;

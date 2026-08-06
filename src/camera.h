@@ -34,6 +34,13 @@ typedef enum {
     CAMERA_MODE_PLAYER = 2, /* First person, gravity, WASD, jump, crouch, collision. */
 } camera_mode_t;
 
+/* Soft-input strength when smooth_mode is on (exponential time constant). */
+typedef enum {
+    CAMERA_SMOOTH_LIGHT  = 0, /* tau 0.1 */
+    CAMERA_SMOOTH_MEDIUM = 1, /* tau 0.2 */
+    CAMERA_SMOOTH_HEAVY  = 2, /* tau 0.3 */
+} camera_smooth_preset_t;
+
 /* Type: camera_t
  * Camera structure.
  *
@@ -66,6 +73,9 @@ struct camera
     float  player_speed; // Walk speed for Player mode.
     bool   prev_ortho;   // Remember if camera was previously in ortho mode.
     float  prev_dist; // Stashed dist when in first person (FPV or Player).
+    /* Soft-interpolate mouse and keyboard camera motion (coasts after release). */
+    bool   smooth_mode;
+    camera_smooth_preset_t smooth_preset;
 
     /* PLAYER mode: eye Z offset above feet, collision and jump / gravity. */
     float  standing_height;
@@ -167,6 +177,9 @@ bool camera_is_player(const camera_t *camera);
 
 /* Switches mode and updates dist / ortho / player velocity (clears on exit PLAYER). */
 void camera_set_mode(camera_t *camera, camera_mode_t mode);
+
+/* Soft-mode time constant for the active preset (Light/Medium/Heavy). */
+float camera_smooth_tau(const camera_t *camera);
 
 /* Like camera_update, but near/far are computed from vol's tiles only (not the
  * main scene or image box). Used for off-screen single-volume renders. */

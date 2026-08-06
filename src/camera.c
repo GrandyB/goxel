@@ -34,6 +34,8 @@ camera_t *camera_new(const char *name)
     cam->mode = CAMERA_MODE_ORBIT;
     cam->standing_height = 2.7f;
     cam->crouch_height = 1.7f;
+    cam->smooth_mode = false;
+    cam->smooth_preset = CAMERA_SMOOTH_MEDIUM;
     vec3_set(cam->player_vel, 0, 0, 0);
     mat4_itranslate(cam->mat, 0, 0, cam->dist);
     camera_turntable(cam, M_PI / 4, M_PI / 4);
@@ -69,6 +71,8 @@ void camera_set(camera_t *cam, const camera_t *other)
     cam->prev_ortho = other->prev_ortho;
     cam->standing_height = other->standing_height;
     cam->crouch_height = other->crouch_height;
+    cam->smooth_mode = other->smooth_mode;
+    cam->smooth_preset = other->smooth_preset;
     vec3_copy(other->player_vel, cam->player_vel);
     mat4_copy(other->mat, cam->mat);
 }
@@ -368,6 +372,8 @@ uint32_t camera_get_key(const camera_t *cam)
     key = XXH32(&cam->fovy_fpv, sizeof(cam->fovy_fpv), key);
     key = XXH32(&cam->standing_height, sizeof(cam->standing_height), key);
     key = XXH32(&cam->crouch_height, sizeof(cam->crouch_height), key);
+    key = XXH32(&cam->smooth_mode, sizeof(cam->smooth_mode), key);
+    key = XXH32(&cam->smooth_preset, sizeof(cam->smooth_preset), key);
     return key;
 }
 
@@ -496,4 +502,14 @@ void camera_set_mode(camera_t *cam, camera_mode_t m)
         }
     }
     cam->mode = m;
+}
+
+float camera_smooth_tau(const camera_t *cam)
+{
+    switch (cam ? cam->smooth_preset : CAMERA_SMOOTH_MEDIUM) {
+    case CAMERA_SMOOTH_LIGHT:  return 0.1f;
+    case CAMERA_SMOOTH_HEAVY:  return 0.3f;
+    case CAMERA_SMOOTH_MEDIUM:
+    default:                   return 0.2f;
+    }
 }

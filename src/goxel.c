@@ -32,6 +32,10 @@
 goxel_t goxel = {};
 double g_time = 0.0;
 
+static bool goxel_unproject_on_volume(
+        const float viewport[4], const float pos[2],
+        const volume_t *volume, float out_pos[3], float normal[3]);
+
 static void wrap_view_clear(void)
 {
     if (goxel.wrap_view_volume) {
@@ -89,6 +93,142 @@ static bool gxl_player_space_was = false;
  * uncrouch; see gxl_apply_player_pose_height). */
 static camera_t *gxl_pose_cam = NULL;
 static float gxl_pose_prev_eye_h = -1.f;
+
+/* ---- Smooth camera input (camera->smooth_mode) -------------------------- */
+/* Strength comes from camera->smooth_preset via camera_smooth_tau(). */
+
+static float gxl_sm_move[3];       /* Filtered move (same units as key `t`). */
+static float gxl_sm_rot[2];        /* Filtered turntable z_rot, x_rot (orbit). */
+static float gxl_sm_pan[2];        /* Filtered orbit pan (camera local xy). */
+static float gxl_sm_zoom;          /* Filtered zoom (wheel / pinch-drag units). */
+static float gxl_sm_in_move[3];
+static float gxl_sm_in_rot[2];
+static float gxl_sm_in_pan[2];
+static float gxl_sm_in_zoom;
+/* First-person soft look: absolute angles from drag origin (like non-soft). */
+static float gxl_sm_fp_look[2];
+static float gxl_sm_fp_look_tgt[2];
+static bool  gxl_sm_fp_look_active;
+static camera_t *gxl_sm_cam = NULL;
+
+static float gxl_cam_smooth_alpha(double dt, float tau)
+{
+    float t = (float)dt;
+    if (t <= 0.f) return 1.f;
+    if (tau < 1e-4f) return 1.f;
+    return 1.f - expf(-t / tau);
+}
+
+static void gxl_cam_smooth_clear(void)
+{
+    vec3_set(gxl_sm_move, 0, 0, 0);
+    gxl_sm_rot[0] = gxl_sm_rot[1] = 0;
+    gxl_sm_pan[0] = gxl_sm_pan[1] = 0;
+    gxl_sm_zoom = 0;
+    vec3_set(gxl_sm_in_move, 0, 0, 0);
+    gxl_sm_in_rot[0] = gxl_sm_in_rot[1] = 0;
+    gxl_sm_in_pan[0] = gxl_sm_in_pan[1] = 0;
+    gxl_sm_in_zoom = 0;
+    gxl_sm_fp_look[0] = gxl_sm_fp_look[1] = 0;
+    gxl_sm_fp_look_tgt[0] = gxl_sm_fp_look_tgt[1] = 0;
+    gxl_sm_fp_look_active = false;
+}
+
+static void gxl_cam_smooth_begin_frame(camera_t *cam)
+{
+    if (gxl_sm_cam != cam) {
+        gxl_cam_smooth_clear();
+        gxl_sm_cam = cam;
+    }
+    vec3_set(gxl_sm_in_move, 0, 0, 0);
+    gxl_sm_in_rot[0] = gxl_sm_in_rot[1] = 0;
+    gxl_sm_in_pan[0] = gxl_sm_in_pan[1] = 0;
+    gxl_sm_in_zoom = 0;
+}
+
+/* In-place yaw/pitch; ignores cam->dist so look never becomes an orbit. */
+static void gxl_cam_fpv_look(camera_t *cam, float rz, float rx)
+{
+    float mat[4][4] = MAT4_IDENTITY;
+    float eye[3];
+
+    vec3_copy(cam->mat[3], eye);
+    mat4_itranslate(mat, eye[0], eye[1], eye[2]);
+    mat4_irotate(mat, rz, 0, 0, 1);
+    mat4_itranslate(mat, -eye[0], -eye[1], -eye[2]);
+    mat4_imul(mat, cam->mat);
+    mat4_copy(mat, cam->mat);
+    mat4_irotate(cam->mat, rx, 1, 0, 0);
+}
+
+static void gxl_cam_smooth_apply_zoom(camera_t *cam, float zoom,
+                                      const float viewport[4],
+                                      const float pos[2])
+{
+    float p[3], n[3];
+    if (zoom == 0.f) return;
+    mat4_itranslate(cam->mat, 0, 0,
+                    -cam->dist * (1.f - powf(1.1f, -zoom)));
+    cam->dist *= powf(1.1f, -zoom);
+    if (viewport && pos &&
+        goxel_unproject_on_volume(viewport, pos,
+                                  goxel_get_layers_volume_for_snap(goxel.image),
+                                  p, n)) {
+        camera_set_target(cam, p);
+    }
+}
+
+/* Filter inputs toward targets and apply residual motion (coasts to halt). */
+static void gxl_cam_smooth_step(camera_t *cam, double dt,
+                                const float viewport[4],
+                                const float cursor_pos[2])
+{
+    float a = gxl_cam_smooth_alpha(dt, camera_smooth_tau(cam));
+    const bool first = camera_is_firstperson(cam);
+    int i;
+
+    for (i = 0; i < 3; i++)
+        gxl_sm_move[i] = mix(gxl_sm_move[i], gxl_sm_in_move[i], a);
+
+    if (first) {
+        /* First-person: no soft orbit pan/zoom (would poison dist into mouselook). */
+        gxl_sm_pan[0] = gxl_sm_pan[1] = 0;
+        gxl_sm_zoom = 0;
+        gxl_sm_rot[0] = gxl_sm_rot[1] = 0;
+
+        if (gxl_sm_fp_look_active) {
+            for (i = 0; i < 2; i++)
+                gxl_sm_fp_look[i] =
+                    mix(gxl_sm_fp_look[i], gxl_sm_fp_look_tgt[i], a);
+            mat4_copy(goxel.move_origin.camera_mat, cam->mat);
+            cam->dist = 0;
+            gxl_cam_fpv_look(cam, gxl_sm_fp_look[0], gxl_sm_fp_look[1]);
+            vec3_add(cam->mat[3], goxel.move_origin.camera_ofs, cam->mat[3]);
+        }
+        return;
+    }
+
+    for (i = 0; i < 2; i++) {
+        gxl_sm_rot[i] = mix(gxl_sm_rot[i], gxl_sm_in_rot[i], a);
+        gxl_sm_pan[i] = mix(gxl_sm_pan[i], gxl_sm_in_pan[i], a);
+    }
+    gxl_sm_zoom = mix(gxl_sm_zoom, gxl_sm_in_zoom, a);
+
+    if (gxl_sm_pan[0] != 0.f || gxl_sm_pan[1] != 0.f)
+        mat4_itranslate(cam->mat, gxl_sm_pan[0], gxl_sm_pan[1], 0);
+
+    if (gxl_sm_rot[0] != 0.f || gxl_sm_rot[1] != 0.f) {
+        if (goxel.move_origin.has_pivot_point) {
+            camera_turntable_around_point(cam, gxl_sm_rot[0], gxl_sm_rot[1],
+                                          goxel.move_origin.pivot_point);
+        } else {
+            camera_turntable(cam, gxl_sm_rot[0], gxl_sm_rot[1]);
+        }
+    }
+
+    if (gxl_sm_zoom != 0.f)
+        gxl_cam_smooth_apply_zoom(cam, gxl_sm_zoom, viewport, cursor_pos);
+}
 
 static bool gxl_voxel_solid(const volume_t *vol, int x, int y, int z)
 {
@@ -168,17 +308,12 @@ static void gxl_apply_player_pose_height(camera_t *cam, float eye_h)
 }
 
 static void gxl_player_frame(camera_t *cam, const inputs_t *inputs,
-                             double deltaTime, float t)
+                             double deltaTime, float rx, float ry)
 {
     const volume_t *vol = goxel_get_layers_volume(goxel.image);
     bool crouch = inputs->keys[KEY_CONTROL];
     float eye_h = crouch ? cam->crouch_height : cam->standing_height;
     gxl_apply_player_pose_height(cam, eye_h);
-    float rx = 0, ry = 0;
-    if (inputs->keys['W'] || inputs->keys['w']) ry -= t;
-    if (inputs->keys['S'] || inputs->keys['s']) ry += t;
-    if (inputs->keys['A'] || inputs->keys['a']) rx -= t;
-    if (inputs->keys['D'] || inputs->keys['d']) rx += t;
 
     float save[4][4];
     mat4_copy(cam->mat, save);
@@ -1056,6 +1191,22 @@ static int on_pan(const gesture_t *gest, void *user)
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
         vec2_copy(gest->pos, goxel.move_origin.pos);
     }
+    if (camera->smooth_mode) {
+        float wpos[3] = {gest->pos[0], gest->pos[1], 0};
+        float wlast[3] = {gest->last_pos[0], gest->last_pos[1], 0};
+        float wdelta[3], odelta[3];
+        if (gest->state == GESTURE_BEGIN)
+            return 0;
+        vec3_sub(wpos, wlast, wdelta);
+        unproject_delta(wdelta, mat4_identity,
+                        camera->proj_mat, gest->viewport, odelta);
+        vec3_imul(odelta, 2);
+        if (!camera->ortho)
+            vec3_imul(odelta, camera->dist);
+        gxl_sm_in_pan[0] += -odelta[0];
+        gxl_sm_in_pan[1] += -odelta[1];
+        return 0;
+    }
     float wpos[3] = {gest->pos[0], gest->pos[1], 0};
     float worigin_pos[3], wdelta[3], odelta[3];
     vec3_set(worigin_pos, goxel.move_origin.pos[0],
@@ -1077,9 +1228,17 @@ static int on_rotate(const gesture_t *gest, void *user)
     float x1, y1, x2, y2, x_rot, z_rot;
     camera_t *camera = get_camera();
     const bool first = camera_is_firstperson(camera);
+    const bool soft = camera->smooth_mode;
 
-    if (gest->state == GESTURE_END && first)
+    if (gest->state == GESTURE_END && first) {
         goxel.fpv_look_drag = false;
+        if (soft) {
+            /* Bake final soft look into the camera; stop absolute drag filter. */
+            gxl_sm_fp_look_active = false;
+            gxl_sm_fp_look[0] = gxl_sm_fp_look[1] = 0;
+            gxl_sm_fp_look_tgt[0] = gxl_sm_fp_look_tgt[1] = 0;
+        }
+    }
 
     if (gest->state == GESTURE_BEGIN) {
         mat4_copy(camera->mat, goxel.move_origin.camera_mat);
@@ -1088,6 +1247,12 @@ static int on_rotate(const gesture_t *gest, void *user)
             goxel.move_origin.has_pivot_point = false; /* in-place mouselook */
             vec3_set(goxel.move_origin.camera_ofs, 0, 0, 0);
             goxel.fpv_look_drag = true;
+            camera->dist = 0;
+            if (soft) {
+                gxl_sm_fp_look[0] = gxl_sm_fp_look[1] = 0;
+                gxl_sm_fp_look_tgt[0] = gxl_sm_fp_look_tgt[1] = 0;
+                gxl_sm_fp_look_active = true;
+            }
         } else {
             // Try to detect a voxel under the mouse cursor for distance-based rotation
             float voxel_pos[3], voxel_normal[3];
@@ -1108,6 +1273,30 @@ static int on_rotate(const gesture_t *gest, void *user)
         }
     }
 
+    if (soft) {
+        x1 = goxel.move_origin.pos[0] / gest->viewport[2];
+        y1 = goxel.move_origin.pos[1] / gest->viewport[3];
+        x2 = gest->pos[0] / gest->viewport[2];
+        y2 = gest->pos[1] / gest->viewport[3];
+        z_rot = (x1 - x2) * 2 * (float)M_PI;
+        x_rot = (y2 - y1) * 2 * (float)M_PI;
+
+        if (first) {
+            /* Absolute soft look targets; applied in gxl_cam_smooth_step. */
+            gxl_sm_fp_look_tgt[0] = z_rot;
+            gxl_sm_fp_look_tgt[1] = x_rot;
+        } else if (gest->state != GESTURE_BEGIN) {
+            /* Orbit: incremental deltas into the soft filter. */
+            float lx = gest->last_pos[0] / gest->viewport[2];
+            float ly = gest->last_pos[1] / gest->viewport[3];
+            float cx = gest->pos[0] / gest->viewport[2];
+            float cy = gest->pos[1] / gest->viewport[3];
+            gxl_sm_in_rot[0] += (lx - cx) * 2 * (float)M_PI;
+            gxl_sm_in_rot[1] += (cy - ly) * 2 * (float)M_PI;
+        }
+        return 0;
+    }
+
     x1 = goxel.move_origin.pos[0] / gest->viewport[2];
     y1 = goxel.move_origin.pos[1] / gest->viewport[3];
     x2 = gest->pos[0] / gest->viewport[2];
@@ -1119,6 +1308,9 @@ static int on_rotate(const gesture_t *gest, void *user)
 
     if (!first && goxel.move_origin.has_pivot_point) {
         camera_turntable_around_point(camera, z_rot, x_rot, goxel.move_origin.pivot_point);
+    } else if (first) {
+        camera->dist = 0;
+        gxl_cam_fpv_look(camera, z_rot, x_rot);
     } else {
         camera_turntable(camera, z_rot, x_rot);
     }
@@ -1137,6 +1329,10 @@ static int on_zoom(const gesture_t *gest, void *user)
     camera_t *camera = get_camera();
 
     zoom = (gest->pos[1] - gest->last_pos[1]) / 10.0;
+    if (camera->smooth_mode) {
+        gxl_sm_in_zoom += (float)zoom;
+        return 0;
+    }
     mat4_itranslate(camera->mat, 0, 0,
             -camera->dist * (1 - pow(1.1, -zoom)));
     camera->dist *= pow(1.1, -zoom);
@@ -1171,12 +1367,20 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
 {
     float p[3], n[3];
     camera_t *camera = get_camera();
+    const bool soft = camera->smooth_mode;
     const bool player_alt_fly = camera->mode == CAMERA_MODE_PLAYER &&
         (inputs->keys[KEY_LEFT_ALT] || inputs->keys[KEY_RIGHT_ALT]);
     goxel.player_flycam_hold = player_alt_fly;
     double frameTime = get_unix_time();
     double deltaTime = frameTime - g_time;
     g_time = frameTime;
+
+    if (soft)
+        gxl_cam_smooth_begin_frame(camera);
+    else if (gxl_sm_cam) {
+        gxl_cam_smooth_clear();
+        gxl_sm_cam = NULL;
+    }
 
     painter_t painter = goxel.painter;
     gesture_update(goxel.gestures_count, goxel.gestures,
@@ -1211,20 +1415,30 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     }
 
     if (inputs->mouse_wheel && !camera_is_firstperson(camera)) {
-        mat4_itranslate(camera->mat, 0, 0,
-                -camera->dist * (1 - pow(1.1, -inputs->mouse_wheel)));
-        camera->dist *= pow(1.1, -inputs->mouse_wheel);
-        // Auto adjust the camera rotation position.
-        if (goxel_unproject_on_volume(viewport, inputs->touches[0].pos,
-                                goxel_get_layers_volume_for_snap(goxel.image), p, n)) {
-            camera_set_target(camera, p);
+        if (soft) {
+            gxl_sm_in_zoom += (float)inputs->mouse_wheel;
+        } else {
+            mat4_itranslate(camera->mat, 0, 0,
+                    -camera->dist * (1 - pow(1.1, -inputs->mouse_wheel)));
+            camera->dist *= pow(1.1, -inputs->mouse_wheel);
+            // Auto adjust the camera rotation position.
+            if (goxel_unproject_on_volume(viewport, inputs->touches[0].pos,
+                                    goxel_get_layers_volume_for_snap(goxel.image), p, n)) {
+                camera_set_target(camera, p);
+            }
+            return;
         }
+    }
+
+    // Soft mouse coast continues even when the viewport does not capture keys.
+    if (!capture_keys) {
+        if (soft)
+            gxl_cam_smooth_step(camera, deltaTime, viewport,
+                                inputs->touches[0].pos);
         return;
     }
 
     // Keyboard camera (fly arrows / page turntable) and related keys.
-    if (!capture_keys) return;
-
     if (!camera_is_player(camera)) {
         gxl_player_space_was = false;
         gxl_pose_cam = NULL;
@@ -1241,8 +1455,55 @@ void goxel_mouse_in_view(const float viewport[4], const inputs_t *inputs,
     //LOG_D("time: %f -- frame time: %f -- delta: %f -- t: %f", time, frameTime, deltaTime, t);
     if (player_alt_fly)
         vec3_set(camera->player_vel, 0, 0, 0);
-    if (camera_is_player(camera) && !player_alt_fly) {
-        gxl_player_frame(camera, inputs, deltaTime, t);
+
+    if (soft) {
+        const bool fly_move = camera->mode == CAMERA_MODE_FPV || player_alt_fly;
+        const bool player_walk = camera_is_player(camera) && !player_alt_fly;
+        float rx = 0, ry = 0, rz = 0;
+
+        if (player_walk || player_alt_fly) {
+            if (inputs->keys['W'] || inputs->keys['w']) ry -= (float)t;
+            if (inputs->keys['S'] || inputs->keys['s']) ry += (float)t;
+            if (inputs->keys['A'] || inputs->keys['a']) rx -= (float)t;
+            if (inputs->keys['D'] || inputs->keys['d']) rx += (float)t;
+        }
+        if (fly_move) {
+            if (inputs->keys[KEY_LEFT])  rx -= (float)t;
+            if (inputs->keys[KEY_RIGHT]) rx += (float)t;
+            if (inputs->keys[KEY_UP])    ry -= (float)t;
+            if (inputs->keys[KEY_DOWN])  ry += (float)t;
+            if (inputs->keys[KEY_PAGE_UP])   rz += (float)t;
+            if (inputs->keys[KEY_PAGE_DOWN]) rz -= (float)t;
+        } else if (!player_walk) {
+            if (inputs->keys[KEY_PAGE_UP])
+                gxl_sm_in_rot[1] += 0.05f;
+            if (inputs->keys[KEY_PAGE_DOWN])
+                gxl_sm_in_rot[1] -= 0.05f;
+        }
+        gxl_sm_in_move[0] += rx;
+        gxl_sm_in_move[1] += ry;
+        gxl_sm_in_move[2] += rz;
+
+        gxl_cam_smooth_step(camera, deltaTime, viewport,
+                            inputs->touches[0].pos);
+
+        if (player_walk) {
+            gxl_player_frame(camera, inputs, deltaTime,
+                             gxl_sm_move[0], gxl_sm_move[1]);
+        } else {
+            const float fly_speed = camera->fly_speed;
+            if (gxl_sm_move[0] != 0.f || gxl_sm_move[1] != 0.f ||
+                gxl_sm_move[2] != 0.f)
+                camera_move(camera, gxl_sm_move[0], gxl_sm_move[1],
+                            gxl_sm_move[2], fly_speed);
+        }
+    } else if (camera_is_player(camera) && !player_alt_fly) {
+        float rx = 0, ry = 0;
+        if (inputs->keys['W'] || inputs->keys['w']) ry -= (float)t;
+        if (inputs->keys['S'] || inputs->keys['s']) ry += (float)t;
+        if (inputs->keys['A'] || inputs->keys['a']) rx -= (float)t;
+        if (inputs->keys['D'] || inputs->keys['d']) rx += (float)t;
+        gxl_player_frame(camera, inputs, deltaTime, rx, ry);
     } else {
         const bool fly_move = camera->mode == CAMERA_MODE_FPV || player_alt_fly;
         const float fly_speed = camera->fly_speed;
