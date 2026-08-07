@@ -1223,6 +1223,9 @@ void do_move(volume_t *volume, float box[4][4], float mat[4][4], const float tra
 void do_move_layer(layer_t *layer, const float mat[4][4],
                     const float origin_[3], bool only_origin) {
     bool is_volume = layer_is_volume(layer);
+    /* Identity no-ops must not dirty clones: image_update rematerializes
+     * via volume_move whenever base_volume_key is cleared. */
+    if (mat4_equal(mat, mat4_identity)) return;
     do_move(layer->volume, layer->box, layer->mat, mat, origin_, is_volume, only_origin);
     if (!is_volume) {
         layer->base_volume_key = 0; // Mark it as dirty.

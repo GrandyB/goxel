@@ -822,6 +822,10 @@ int gox_iter_infos(const char *path,
  *   mode   - 0: move, 1: resize.
  *   transf - Receive the output transformation.
  *   first  - Set to true if the edit is the first one.
+ *
+ * Returns:
+ *   0 = idle, 1 = hovering a face (gizmo only), 2 = drag just began,
+ *   3 = dragging. Callers that mutate content should require >= 2.
  */
 int box_edit(int snap, int mode, float transf[4][4], bool *first);
 

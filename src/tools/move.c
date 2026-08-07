@@ -50,7 +50,11 @@ static void update_view(void)
     if (layer_is_volume(layer) || layer_has_children(goxel.image, layer)) {
         goxel.tool_drag_mode = DRAG_MOVE;
     }
-    if (box_edit(SNAP_LAYER_OUT, goxel.tool_drag_mode, transf, &first)) {
+    /* box_edit returns 1 while hovering a face; only apply on drag
+     * (state 2 = first change, 3 = following). Hovering must not call
+     * apply_move: for clones that still marks base_volume_key dirty and
+     * rematerializes the whole volume every frame. */
+    if (box_edit(SNAP_LAYER_OUT, goxel.tool_drag_mode, transf, &first) >= 2) {
         if (first) image_history_push(goxel.image);
         apply_move(layer, transf, false);
     }
