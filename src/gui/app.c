@@ -34,9 +34,6 @@
 #   define YOCTO 1
 #endif
 
-#define INITIAL_FILTER_OFFSET 10
-#define RELATIVE_FILTER_OFFSET 40
-
 // Note: duplicated from gui.cpp!  To remove.
 static const float ITEM_HEIGHT = 18;
 static const float ICON_HEIGHT = 32;
@@ -128,34 +125,27 @@ void gui_layers_panel_toggle(void)
     goxel.gui.layers_panel_open = !goxel.gui.layers_panel_open;
 }
 
-typedef struct filter_layout_state filter_layout_state_t;
-
-struct filter_layout_state {
-    int next_x;
-    int next_y;
-};
-
 static void gui_filter_window(void *arg, filter_t *filter)
 {
-    filter_layout_state_t *state = arg;
+    float width;
 
-    if (filter->is_open) {
-        float width = filter->panel_width ? filter->panel_width : goxel.gui.panel_width;
-        gui_window_begin(filter->name, state->next_x, state->next_y, width, 0, GUI_WINDOW_MOVABLE);
+    (void)arg;
+    if (!filter->is_open)
+        return;
 
-        if (gui_panel_header(filter->name)) {
-            if (filter->on_close) {
-                filter->on_close(filter);
-            }
-            filter->is_open = false;
+    width = filter->panel_width ? filter->panel_width : goxel.gui.panel_width;
+    gui_window_begin(filter->name, 0, 0, width, 0,
+                     GUI_WINDOW_MOVABLE | GUI_WINDOW_CENTER);
+
+    if (gui_panel_header(filter->name)) {
+        if (filter->on_close) {
+            filter->on_close(filter);
         }
-        filter->gui_fn(filter);
-
-        gui_window_end();
+        filter->is_open = false;
     }
+    filter->gui_fn(filter);
 
-    state->next_x += RELATIVE_FILTER_OFFSET;
-    state->next_y += RELATIVE_FILTER_OFFSET;
+    gui_window_end();
 }
 
 void gui_app(void)
@@ -163,7 +153,6 @@ void gui_app(void)
     float x = 0, y = 0;
     const char *name;
     int i;
-    filter_layout_state_t filter_layout_state;
     /* Extra Tools width when body scrolled last frame (avoids content squeeze). */
     static bool tools_had_v_scrollbar = false;
 
@@ -260,11 +249,8 @@ void gui_app(void)
         gui_window_end();
     }
 
-    /* Cascade open filters from screen centre so they don't fully overlap. */
-    filter_layout_state.next_x =
-            (int)(goxel.screen_size[0] * 0.5f - goxel.gui.panel_width * 0.5f);
-    filter_layout_state.next_y = (int)(goxel.screen_size[1] * 0.35f);
-    filters_iter_all(&filter_layout_state, gui_filter_window);
+    /* Open filters centred (same as other detachable panels). */
+    filters_iter_all(NULL, gui_filter_window);
 
     placer_gui_history_floating();
 
