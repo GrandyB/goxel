@@ -225,7 +225,8 @@ static int gui(filter_t *filter_)
 static void on_open(filter_t *filter_)
 {
     filter_genland_t *filter = (void *)filter_;
-    reset_to_default(filter);
+    if (!filter->settings)
+        reset_to_default(filter);
 }
 
 FILTER_REGISTER(genland, filter_genland_t,
