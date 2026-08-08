@@ -243,7 +243,7 @@ static bool cursor_box_hit(const camera_t *cam, const float viewport[4],
     float opos[3], onorm[3];
     float plane[4][4], local[3], world[3], delta[3];
     float best_t = INFINITY;
-    float best_world[3], best_n[3];
+    float best_world[3] = {0}, best_n[3] = {0};
     int best_face = -1;
 
     if (!cam || box_is_null(box)) return false;
