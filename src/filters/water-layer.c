@@ -34,6 +34,10 @@
  * bleed_strength opacity. bleed_dithering scatters the falloff; bleed_blur
  * box-blurs that dithered contribution; bleed_noise then adds limited-sat
  * luminance noise on the blurred colour before compositing.
+ *
+ * Bleed is sampled from bleed_src (typically goxel_get_layers_volume), not the
+ * destination volume: generation usually writes into a new/empty layer or a
+ * cleared replace target, so the land colours live on other layers.
  */
 
 typedef struct {
@@ -425,6 +429,7 @@ static void field_to_color(const water_layer_settings_t *s, float h,
 }
 
 static void generate_water_layer(volume_t *volume,
+                                 const volume_t *bleed_src,
                                  const water_layer_settings_t *settings,
                                  int bleed_distance, float bleed_strength,
                                  float bleed_lightness, float bleed_blur,
@@ -441,12 +446,15 @@ static void generate_water_layer(volume_t *volume,
     float *bleed_buf = NULL;
     float *bleed_blurred = NULL;
     volume_iterator_t iter;
+    volume_iterator_t bleed_iter;
     float h, strength, dither, t, n, k, fade, w;
 
     if (!volume || !goxel.image)
         return;
 
     mat4_copy(goxel.image->box, box);
+    if (box_is_null(box))
+        volume_get_box(bleed_src ? bleed_src : volume, true, box);
     if (box_is_null(box))
         volume_get_box(volume, true, box);
     if (box_is_null(box))
@@ -474,7 +482,7 @@ static void generate_water_layer(volume_t *volume,
     if (!water_rgba)
         return;
 
-    if (radius > 0) {
+    if (radius > 0 && bleed_src) {
         src_rgba = calloc((size_t)width * (size_t)height * 4, 1);
         src_solid = calloc((size_t)width * (size_t)height, 1);
         bleed_buf = calloc((size_t)width * (size_t)height * 4, sizeof(float));
@@ -485,12 +493,13 @@ static void generate_water_layer(volume_t *volume,
             free(water_rgba);
             return;
         }
+        bleed_iter = volume_get_iterator(bleed_src, VOLUME_ITER_VOXELS);
         for (x = 0; x < width; x++) {
             for (y = 0; y < height; y++) {
                 pos[0] = start_pos[0] + x;
                 pos[1] = start_pos[1] + y;
                 pos[2] = above_z;
-                volume_get_at(volume, &iter, pos, sample);
+                volume_get_at(bleed_src, &bleed_iter, pos, sample);
                 idx = x * height + y;
                 if (sample[3] != 0) {
                     src_solid[idx] = 1;
@@ -501,6 +510,9 @@ static void generate_water_layer(volume_t *volume,
                 }
             }
         }
+    } else if (radius > 0) {
+        /* No bleed source: skip bleed entirely (water sheet still paints). */
+        radius = 0;
     }
 
     /* Pass 1: water sheet + dithered bleed contribution (premultiplied). */
@@ -724,6 +736,7 @@ static int gui(filter_t *filter_)
         reset_to_defaults(filter);
     if (gui_button_primary("Generate", -1, 0)) {
         layer_t *layer;
+        const volume_t *bleed_src;
         if (!goxel.image)
             return 0;
         image_history_push(goxel.image);
@@ -731,9 +744,13 @@ static int gui(filter_t *filter_)
             goxel.image, "Water layer", filter->replace_current_layer);
         if (!layer || !layer->volume)
             return 0;
+        /* Capture merged visible layers before replace clears them. The
+         * destination layer is usually empty (new child) or about to be
+         * wiped, so land colours for bleed live on other layers. */
+        bleed_src = goxel_get_layers_volume(goxel.image);
         if (filter->replace_current_layer)
             volume_clear(layer->volume);
-        generate_water_layer(layer->volume, s,
+        generate_water_layer(layer->volume, bleed_src, s,
                              filter->bleed_distance, filter->bleed_strength,
                              filter->bleed_lightness, filter->bleed_blur,
                              filter->bleed_dithering, filter->bleed_noise);
