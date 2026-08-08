@@ -507,11 +507,6 @@ void apply_noise_if_applicable(const painter_t* painter, float global_p[3], uint
     }
 }
 
-static bool brush_surface_voxel_is_solid(const uint8_t color[4])
-{
-    return color[3] != 0;
-}
-
 static bool brush_surface_pos_in_aabb(const int pos[3], const int start_pos[3],
                                       const int dimensions[3])
 {
@@ -585,7 +580,7 @@ static bool brush_surface_is_exposed(const volume_t *src,
     int i, npos[3];
 
     volume_get_at(src, src_iter, pos, cur);
-    if (!brush_surface_voxel_is_solid(cur))
+    if (!voxel_is_solid(cur))
         return false;
 
     for (i = 0; i < 6; i++) {
@@ -595,7 +590,7 @@ static bool brush_surface_is_exposed(const volume_t *src,
         if (!brush_surface_pos_in_aabb(npos, start_pos, dimensions))
             continue;
         volume_get_at(src, src_iter, npos, neigh);
-        if (!brush_surface_voxel_is_solid(neigh))
+        if (!voxel_is_solid(neigh))
             return true;
     }
     return false;
@@ -659,7 +654,7 @@ void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
             for (z = start_pos[2] + dimensions[2] - 1; z >= start_pos[2]; z--) {
                 pos[0] = x; pos[1] = y; pos[2] = z;
                 volume_get_at(src, &src_iter, pos, src_voxel);
-                if (!brush_surface_voxel_is_solid(src_voxel)) {
+                if (!voxel_is_solid(src_voxel)) {
                     if (seen_solid)
                         break;
                     continue;
@@ -883,10 +878,10 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
 
         c[3] *= v;
             //LOG_D("C: %i/%i/%i", c[0], c[1], c[2]);
-        if (!c[3] && skip_src_empty) continue;
+        if (!voxel_is_solid(c) && skip_src_empty) continue;
         // volume = tool volume, value = color at point in tool volume
         volume_get_at(volume, &accessor, vp, value);
-        if (!value[3] && skip_dst_empty) continue;
+        if (!voxel_is_solid(value) && skip_dst_empty) continue;
             //LOG_D("Value: %i/%i/%i, C: %i/%i/%i", value[0], value[1], value[2], c[0], c[1], c[2]);
         voxel_combine(value, c, mode, new_value);
             //LOG_D("new_value: %i/%i/%i", new_value[0], new_value[1], new_value[2]);
@@ -1128,7 +1123,7 @@ void volume_merge_sparse_from(volume_t *volume, const volume_t *other, int mode)
     accessor = volume_get_accessor(volume);
     while (volume_iter(&iter, pos)) {
         volume_get_at(other, &iter, pos, src);
-        if (!src[3]) continue;
+        if (!voxel_is_solid(src)) continue;
         volume_get_at(volume, &accessor, pos, dst);
         voxel_combine(dst, src, mode, out);
         if (!vec4_equal(dst, out))
@@ -1161,7 +1156,7 @@ uint32_t volume_crc32(const volume_t *volume)
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
     while (volume_iter(&iter, pos)) {
         volume_get_at(volume, &iter, pos, v);
-        if (!v[3]) continue;
+        if (!voxel_is_solid(v)) continue;
         ret = XXH32(pos, sizeof(pos), ret);
         ret = XXH32(v, sizeof(v), ret);
     }

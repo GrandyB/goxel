@@ -331,6 +331,15 @@ static bool slab_append(slab_t *slab, voxel_t *vox)
     return true;
 }
 
+/* True when the neighbor is empty (exposes that face). */
+static bool neighbor_is_empty(const volume_t *volume, volume_accessor_t *acc,
+                              const int pos[3], int dx, int dy, int dz)
+{
+    uint8_t v[4];
+    int p[3] = { pos[0] + dx, pos[1] + dy, pos[2] + dz };
+    volume_get_at(volume, acc, p, v);
+    return !voxel_is_solid(v);
+}
 
 static int kvx_export_volume_box(const file_format_t *format,
                                  const volume_t *volume,
@@ -376,7 +385,7 @@ static int kvx_export_volume_box(const file_format_t *format,
         iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
         while (volume_iter(&iter, pos)) {
             volume_get_at(volume, &iter, pos, v);
-            if (v[3] < 127) continue;
+            if (!voxel_is_solid(v)) continue;
             if (palette_search(goxel.palette, v, true) < 0) {
                 use_current_palette = false;
                 break;
@@ -402,7 +411,7 @@ static int kvx_export_volume_box(const file_format_t *format,
 
     while (volume_iter(&iter, voxel.pos)) {
         volume_get_at(volume, &iter, voxel.pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
 
         // XXX: we should be able to use box iterator instead of this,
         // but for some reason it doesn't work!
@@ -412,19 +421,13 @@ static int kvx_export_volume_box(const file_format_t *format,
 
         // Compute visible face mask.
         voxel.vis = 0;
-        #define vis_test(x, y, z) \
-            (volume_get_alpha_at(volume, &acc, \
-                        (int[]){voxel.pos[0] + (x), \
-                                voxel.pos[1] + (y), \
-                                voxel.pos[2] + (z)}) < 127)
-        if (vis_test(-1,  0,  0)) voxel.vis |= 1;
-        if (vis_test(+1,  0,  0)) voxel.vis |= 2;
-        if (vis_test( 0, +1,  0)) voxel.vis |= 4;
-        if (vis_test( 0, -1,  0)) voxel.vis |= 8;
-        if (vis_test( 0,  0, +1)) voxel.vis |= 16;
-        if (vis_test( 0,  0, -1)) voxel.vis |= 32;
+        if (neighbor_is_empty(volume, &acc, voxel.pos, -1,  0,  0)) voxel.vis |= 1;
+        if (neighbor_is_empty(volume, &acc, voxel.pos, +1,  0,  0)) voxel.vis |= 2;
+        if (neighbor_is_empty(volume, &acc, voxel.pos,  0, +1,  0)) voxel.vis |= 4;
+        if (neighbor_is_empty(volume, &acc, voxel.pos,  0, -1,  0)) voxel.vis |= 8;
+        if (neighbor_is_empty(volume, &acc, voxel.pos,  0,  0, +1)) voxel.vis |= 16;
+        if (neighbor_is_empty(volume, &acc, voxel.pos,  0,  0, -1)) voxel.vis |= 32;
 
-        #undef vis_test
         if (!voxel.vis) continue; // No visible faces.
         voxel.color = get_color_index(v, palette, false);
         voxel.pos[0] -= orig[0];
@@ -593,25 +596,19 @@ static int kv6_export_volume_box(const file_format_t *format,
 
     while (volume_iter(&iter, voxel.pos)) {
         volume_get_at(volume, &iter, voxel.pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
 
         if (!bbox_contains_vec(box,
                     (float[]){voxel.pos[0], voxel.pos[1], voxel.pos[2]}))
             continue;
 
         voxel.vis = 0;
-        #define vis_test(dx, dy, dz) \
-            (volume_get_alpha_at(volume, &acc, \
-                        (int[]){voxel.pos[0] + (dx), \
-                                voxel.pos[1] + (dy), \
-                                voxel.pos[2] + (dz)}) < 127)
-        if (vis_test(-1,  0,  0)) voxel.vis |= 1;
-        if (vis_test(+1,  0,  0)) voxel.vis |= 2;
-        if (vis_test( 0, +1,  0)) voxel.vis |= 4;
-        if (vis_test( 0, -1,  0)) voxel.vis |= 8;
-        if (vis_test( 0,  0, +1)) voxel.vis |= 16;
-        if (vis_test( 0,  0, -1)) voxel.vis |= 32;
-        #undef vis_test
+        if (neighbor_is_empty(volume, &acc, voxel.pos, -1,  0,  0)) voxel.vis |= 1;
+        if (neighbor_is_empty(volume, &acc, voxel.pos, +1,  0,  0)) voxel.vis |= 2;
+        if (neighbor_is_empty(volume, &acc, voxel.pos,  0, +1,  0)) voxel.vis |= 4;
+        if (neighbor_is_empty(volume, &acc, voxel.pos,  0, -1,  0)) voxel.vis |= 8;
+        if (neighbor_is_empty(volume, &acc, voxel.pos,  0,  0, +1)) voxel.vis |= 16;
+        if (neighbor_is_empty(volume, &acc, voxel.pos,  0,  0, -1)) voxel.vis |= 32;
         if (!voxel.vis) continue;
 
         voxel.color = (int)pack_kv6_color(v);

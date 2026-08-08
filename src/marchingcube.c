@@ -48,7 +48,8 @@ static int mc_compute(const int neighboors[8],
     int cube_index = 0;
     mc_vert_t verts[12];
 
-    for (i = 0; i < 8; i++) if (neighboors[i] >= 127) cube_index |= 1 << i;
+    /* Occupancy is decided at the density fill site via voxel_is_solid. */
+    for (i = 0; i < 8; i++) if (neighboors[i]) cube_index |= 1 << i;
     edges = MC_EDGE_TABLE[cube_index];
     if (!edges) return 0;
     for (i = 0; i < 12; i++) {
@@ -317,7 +318,8 @@ int volume_generate_vertices_mc(const volume_t *volume, const int block_pos[3],
             vy = y + VERTICES_POSITIONS[v][1];
             vz = z + VERTICES_POSITIONS[v][2];
             get_at(data, vx, vy, vz, tmp);
-            densities[v] = tmp[3];
+            /* Binary density so soft alpha still forms a mid-edge iso. */
+            densities[v] = voxel_is_solid(tmp) ? 255 : 0;
         }
         nb_tri = mc_compute(densities, tri);
 

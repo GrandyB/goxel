@@ -39,11 +39,6 @@ typedef struct {
     int dist;
 } bfs_node_t;
 
-static bool voxel_is_solid(const uint8_t color[4])
-{
-    return color[3] != 0;
-}
-
 static bool pos_in_aabb(const int pos[3], const int start_pos[3],
                         const int dimensions[3])
 {

@@ -123,6 +123,17 @@ uint8_t volume_get_alpha_at(const volume_t *volume, volume_iterator_t *it,
                           const int pos[3]);
 
 /*
+ * Function: voxel_is_solid
+ * Whether a voxel RGBA represents solid occupancy.  Any non-zero alpha counts
+ * as solid; empty is alpha 0 only.  Used by meshing, imports, and exports -
+ * not display transparency (meshes stay opaque).
+ */
+static inline bool voxel_is_solid(const uint8_t v[4])
+{
+    return v[3] != 0;
+}
+
+/*
  * Function: volume_set_at
  *
  * Set a single voxel value in a volume.

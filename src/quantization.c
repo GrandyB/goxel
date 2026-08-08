@@ -170,7 +170,7 @@ void quantization_gen_palette(const volume_t *volume, int nb,
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
     while (volume_iter(&iter, pos)) {
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         v[3] = 255;
         if (color_in_exclude(v, exclude, n_exclude)) continue;
         bucket_add(&buckets[0], v, 1, true);
@@ -243,7 +243,7 @@ void quantization_remap_volume(volume_t *volume,
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
     while (volume_iter(&iter, pos)) {
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         idx = quantization_nearest(v, palette, n);
         if (idx < 0) continue;
         memcpy(v, palette[idx], 4);

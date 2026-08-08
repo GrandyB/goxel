@@ -332,7 +332,7 @@ static int *tb_build_heightmap(const volume_t *volume,
         if (pos[1] < ymin || pos[1] >= ymin + sy) continue;
         if (pos[2] < zmin || pos[2] >= zmax_excl) continue;
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         ix = pos[0] - xmin;
         iy = pos[1] - ymin;
         if (pos[2] > hm[ix + iy * sx])
@@ -485,7 +485,7 @@ static uint8_t *tb_build_xy_blocked(const volume_t *blocking,
         if (pos[0] < xmin || pos[0] >= xmin + sx) continue;
         if (pos[1] < ymin || pos[1] >= ymin + sy) continue;
         volume_get_at(blocking, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         occ[(pos[0] - xmin) + (pos[1] - ymin) * sx] = 1;
     }
     return occ;
@@ -518,7 +518,7 @@ static bool tb_xy_blocked_3d_exact(const volume_t *blocking,
     for (z = z0; z <= z1; z++) {
         pos[2] = z;
         volume_get_at(blocking, NULL, pos, v);
-        if (v[3] >= 127) return true;
+        if (voxel_is_solid(v)) return true;
     }
     return false;
 }
@@ -784,7 +784,7 @@ static int vox_trenchblocks_export(const file_format_t *format,
             if (pos[1] < ymin || pos[1] >= ymax) continue;
             if (pos[2] < zmin || pos[2] >= zmin + dims[2]) continue;
             volume_get_at(src_volume, &iter, pos, v);
-            if (v[3] < 127) continue;
+            if (!voxel_is_solid(v)) continue;
             nb_vox++;
         }
         if (nb_vox > 0 && quant_count > 0) {
@@ -807,7 +807,7 @@ static int vox_trenchblocks_export(const file_format_t *format,
         if (pos[1] < ymin || pos[1] >= ymax) continue;
         if (pos[2] < zmin || pos[2] >= zmax) continue;
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         nb_vox++;
     }
     if (nb_vox == 0) {
@@ -839,7 +839,7 @@ static int vox_trenchblocks_export(const file_format_t *format,
         if (pos[1] < ymin || pos[1] >= ymax) continue;
         if (pos[2] < zmin || pos[2] >= zmax) continue;
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         tx = (pos[0] - xmin) / VOX_TILE;
         ty = (pos[1] - ymin) / VOX_TILE;
         tiles[tx + ty * nx].nb_vox++;
@@ -862,7 +862,7 @@ static int vox_trenchblocks_export(const file_format_t *format,
         if (pos[1] < ymin || pos[1] >= ymax) continue;
         if (pos[2] < zmin || pos[2] >= zmax) continue;
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         tx = (pos[0] - xmin) / VOX_TILE;
         ty = (pos[1] - ymin) / VOX_TILE;
         ti = tx + ty * nx;

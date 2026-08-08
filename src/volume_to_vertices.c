@@ -203,7 +203,7 @@ static uint32_t get_neighboors(const uint8_t *data,
     for (xx = -1; xx <= 1; xx++) {
         data_get_at(data, pos[0] + xx, pos[1] + yy, pos[2] + zz, v);
         neighboors[i] = v[3];
-        if (neighboors[i] >= 127) ret |= 1 << i;
+        if (voxel_is_solid(v)) ret |= 1 << i;
         i++;
     }
     return ret;
@@ -262,11 +262,8 @@ int volume_generate_vertices(const volume_t *volume, const int block_pos[3],
         pos[1] = y;
         pos[2] = z;
         data_get_at(data, x, y, z, v);
-        // Non visible. Threshold must stay in sync with:
-        // - import_cmap (src/formats/cmap.c) - only paints voxels at/above this
-        // - image_image_layer_to_volume (src/image.c) - skips creating voxels
-        //   below this, so image references do not leave "ghost" voxels behind
-        if (v[3] < 127) continue;
+        // Opaque mesh; alpha still drives paint/merge, not transparency.
+        if (!voxel_is_solid(v)) continue;
         neighboors_mask = get_neighboors(data, pos, neighboors);
         for (f = 0; f < 6; f++) {
             if (!block_is_face_visible(neighboors_mask, f)) continue;

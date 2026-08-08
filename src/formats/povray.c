@@ -72,7 +72,7 @@ static int export_as_pov(const file_format_t *format, const image_t *image,
         iter = volume_get_iterator(layer->volume, VOLUME_ITER_VOXELS);
         while (volume_iter(&iter, p)) {
             volume_get_at(layer->volume, &iter, p, v);
-            if (v[3] < 127) continue;
+            if (!voxel_is_solid(v)) continue;
             m_voxel = mustache_add_dict(m_voxels, NULL);
             mustache_add_str(m_voxel, "pos", "<%d, %d, %d>",
                              p[0], p[1], p[2]);

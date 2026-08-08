@@ -621,7 +621,7 @@ static int vox_export(const file_format_t *format, const image_t *image,
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
     while (volume_iter(&iter, pos)) {
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         v[3] = 255;
         use_default_palette = use_default_palette &&
                             get_color_index(v, palette, true) != -1;
@@ -667,7 +667,7 @@ static int vox_export(const file_format_t *format, const image_t *image,
         iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
         while (volume_iter(&iter, pos)) {
             volume_get_at(volume, &iter, pos, v);
-            if (v[3] < 127) continue;
+            if (!voxel_is_solid(v)) continue;
             pos[0] -= xmin;
             pos[1] -= ymin;
             pos[2] -= zmin;
@@ -712,7 +712,7 @@ static int vox_export(const file_format_t *format, const image_t *image,
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
     while (volume_iter(&iter, pos)) {
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         tx = (pos[0] - xmin) / VOX_TILE;
         ty = (pos[1] - ymin) / VOX_TILE;
         tz = (pos[2] - zmin) / VOX_TILE;
@@ -730,7 +730,7 @@ static int vox_export(const file_format_t *format, const image_t *image,
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
     while (volume_iter(&iter, pos)) {
         volume_get_at(volume, &iter, pos, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         tx = (pos[0] - xmin) / VOX_TILE;
         ty = (pos[1] - ymin) / VOX_TILE;
         tz = (pos[2] - zmin) / VOX_TILE;

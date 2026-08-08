@@ -69,7 +69,7 @@ static int select_cond(void *user, const volume_t *volume,
     // Optional colour filter vs the voxel under the cursor at gesture start.
     if (ctx->use_color) {
         volume_get_at(volume, volume_accessor, new_pos, c);
-        if (!c[3] || !ctx->start_color[3]) return 0;
+        if (!voxel_is_solid(c) || !voxel_is_solid(ctx->start_color)) return 0;
         diff = max3(abs(c[0] - ctx->start_color[0]),
                     abs(c[1] - ctx->start_color[1]),
                     abs(c[2] - ctx->start_color[2]));

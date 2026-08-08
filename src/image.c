@@ -2053,11 +2053,8 @@ void image_image_layer_to_volume(image_t *img, layer_t *layer)
         memset(c, 0, 4);
         c[3] = 255;
         memcpy(c, data + (y * w + x) * bpp, bpp);
-        // Do not create voxels the mesher would skip. Same alpha threshold as
-        // volume_generate_vertices (src/volume_to_vertices.c) and import_cmap
-        // (src/formats/cmap.c). Writing alpha < 127 leaves invisible "ghost"
-        // voxels that later paint ops can promote to solid visible blocks.
-        if (c[3] < 127)
+        // Skip empty image pixels; any solid alpha becomes a voxel.
+        if (!voxel_is_solid(c))
             continue;
         volume_set_at(layer->volume, &acc, pos, c);
     }

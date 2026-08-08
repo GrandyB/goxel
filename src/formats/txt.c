@@ -89,7 +89,7 @@ static int export_volume_as_txt(const file_format_t *format, const volume_t *vol
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
     while (volume_iter(&iter, p)) {
         volume_get_at(volume, &iter, p, v);
-        if (v[3] < 127) continue;
+        if (!voxel_is_solid(v)) continue;
         fprintf(out, "%d %d %d %02x%02x%02x\n",
                 p[0], p[1], p[2], v[0], v[1], v[2]);
     }
