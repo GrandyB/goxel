@@ -38,7 +38,9 @@ void gui_view_panel(void)
     if (gui_checkbox("Hide box", &goxel.hide_box, NULL))
         settings_save();
     if (gui_checkbox("Wrap", &goxel.wrap_view,
-            "Create a one-time copy of the image and place 8 of them around the outside of the box, simulating the wrap. Untick and re-tick to regenerate the wrapping pieces")) {
+            "Bake image-box meshes once and place copies around the box to "
+            "preview wrap. Uses live lighting from View (no shadows). "
+            "Untick and re-tick to refresh after edits.")) {
         goxel_wrap_view_set(goxel.wrap_view);
     }
 

@@ -91,6 +91,19 @@ void render_volume(renderer_t *rend, const volume_t *volume,
 void render_volume_ref(renderer_t *rend, const volume_t *volume,
                        const material_t *material, int effects,
                        const float model[4][4]);
+
+/*
+ * Bake a volume into per-tile GPU meshes once (caller deletes with
+ * render_bake_delete). Drawn with the volume shader via render_bake_ref;
+ * not included in the shadow map.
+ */
+typedef struct render_bake render_bake_t;
+render_bake_t *render_bake_volume(const volume_t *volume, int effects);
+void render_bake_delete(render_bake_t *bake);
+void render_bake_ref(renderer_t *rend, const render_bake_t *bake,
+                     const material_t *material, int effects,
+                     const float model[4][4]);
+
 void render_grid(renderer_t *rend, const float plane[4][4],
                  const uint8_t color[4], const float clip_box[4][4]);
 void render_line(renderer_t *rend, const float a[3], const float b[3],

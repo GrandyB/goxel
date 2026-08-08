@@ -57,6 +57,7 @@
 #include "utarray.h"
 #include "uthash.h"
 #include "utlist.h"
+#include "wrap_view.h"
 
 #include "utils/box.h"
 #include "utils/cache.h"
@@ -562,8 +563,7 @@ typedef struct goxel
     uint8_t    image_box_color[4];
     bool       hide_box;
     bool       wrap_view;
-    volume_t   *wrap_view_volume; // Frozen snapshot of image box contents.
-    const material_t *wrap_view_material;
+    render_bake_t *wrap_view_bake; // Per-tile VBOs; rebuild on re-tick.
 
     texture_t  *pick_fbo;
     painter_t  painter;
@@ -709,9 +709,6 @@ void goxel_release_graphics(void);
  * Attempt to release cached memory
  */
 void goxel_on_low_memory(void);
-
-// Toggle the "wrapped world" view preview around the image box.
-void goxel_wrap_view_set(bool enabled);
 
 int goxel_unproject(const float viewport[4],
                     const float pos[2], int snap_mask, float offset,

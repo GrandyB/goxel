@@ -20,6 +20,7 @@
 #include "goxel.h"
 
 #include "shader_cache.h"
+#include "render_priv.h"
 
 #ifndef RENDER_CACHE_SIZE
 #   define RENDER_CACHE_SIZE (1 * GB)
@@ -43,6 +44,7 @@ enum {
     ITEM_VOLUME = 1,
     ITEM_MODEL3D,
     ITEM_GRID,
+    ITEM_BAKED_VOLUME,
 };
 
 typedef struct {
@@ -62,6 +64,7 @@ struct render_item_t
     };
     float           volume_mat[4][4];
     bool            owns_volume;
+    const render_bake_t *bake;
     material_t      material;
     uint8_t         color[4];
     float           clip_box[4][4];
@@ -81,10 +84,12 @@ struct render_item_t
 
 // The cache of the g_items.
 static cache_t   *g_items_cache;
-static const int BATCH_QUAD_COUNT = 1 << 14;
+static const int BATCH_QUAD_COUNT = RENDER_BATCH_QUAD_COUNT;
 static model3d_t *g_cube_model;
 static model3d_t *g_line_model;
 static model3d_t *g_wire_cube_model;
+
+static void get_light_dir(const renderer_t *rend, float out[3]);
 
 /* When set, EFFECT_RENDER_POS records tile origins in assignment order so
  * callers can decode pick-FBO tile_ids without re-walking the volume. */
@@ -346,6 +351,45 @@ static void shader_init(gl_shader_t *shader)
     gl_update_uniform(shader, "u_shadow_tex", 2);
 }
 
+GLuint render_priv_index_buffer(void) { return g_index_buffer; }
+GLuint render_priv_bump_tex(void) { return g_bump_tex; }
+GLuint render_priv_occlusion_tex(void) { return g_occlusion_tex; }
+const char **render_priv_volume_attr_names(void) { return ATTR_NAMES; }
+void render_priv_volume_shader_init(gl_shader_t *shader) { shader_init(shader); }
+int render_priv_voxel_attr_count(void) { return ARRAY_SIZE(ATTRIBUTES); }
+
+void render_priv_enable_voxel_attribs(void)
+{
+    int attr;
+    for (attr = 0; attr < ARRAY_SIZE(ATTRIBUTES); attr++)
+        GL(glEnableVertexAttribArray(attr));
+}
+
+void render_priv_disable_voxel_attribs(void)
+{
+    int attr;
+    for (attr = 0; attr < ARRAY_SIZE(ATTRIBUTES); attr++)
+        GL(glDisableVertexAttribArray(attr));
+}
+
+void render_priv_bind_voxel_attribs(void)
+{
+    int attr;
+    for (attr = 0; attr < ARRAY_SIZE(ATTRIBUTES); attr++) {
+        GL(glVertexAttribPointer(attr,
+                                 ATTRIBUTES[attr].size,
+                                 ATTRIBUTES[attr].type,
+                                 ATTRIBUTES[attr].norm,
+                                 sizeof(voxel_vertex_t),
+                                 (void*)(intptr_t)ATTRIBUTES[attr].offset));
+    }
+}
+
+void render_priv_get_light_dir(const renderer_t *rend, float out[3])
+{
+    get_light_dir(rend, out);
+}
+
 void render_init()
 {
     // 6 vertices (2 triangles) per face.
@@ -475,6 +519,27 @@ static render_item_t *get_item_for_tile(
               item->nb_elements * item->size * sizeof(*g_vertices_buffer),
               item_delete);
     return item;
+}
+
+void render_bake_ref(renderer_t *rend, const render_bake_t *bake,
+                     const material_t *material, int effects,
+                     const float model[4][4])
+{
+    render_item_t *item;
+    const material_t default_material = MATERIAL_DEFAULT;
+
+    if (!bake) return;
+    material = material ?: &default_material;
+
+    item = calloc(1, sizeof(*item));
+    item->type = ITEM_BAKED_VOLUME;
+    item->bake = bake;
+    mat4_copy(model, item->volume_mat);
+    item->material = *material;
+    item->effects = effects | rend->settings.effects;
+    item->effects &= ~(EFFECT_GRID | EFFECT_EDGES | EFFECT_SHADOW_MAP |
+                       EFFECT_RENDER_POS);
+    DL_APPEND(rend->items, item);
 }
 
 static void render_tile_(renderer_t *rend, volume_t *volume,
@@ -1017,10 +1082,12 @@ static float item_sort_value(const render_item_t *a)
             !(a->tex) && (a->color[3] == 255)) return 0;
 
     // Then all the non transparent volumes.
-    if (a->type == ITEM_VOLUME && a->material.base_color[3] == 1) return 2;
+    if ((a->type == ITEM_VOLUME || a->type == ITEM_BAKED_VOLUME) &&
+            a->material.base_color[3] == 1) return 2;
 
     // Then all the transparent volumes.
-    if (a->type == ITEM_VOLUME && a->material.base_color[3] < 1) return 4;
+    if ((a->type == ITEM_VOLUME || a->type == ITEM_BAKED_VOLUME) &&
+            a->material.base_color[3] < 1) return 4;
 
     // Then the grids.
     if (a->type == ITEM_GRID) return 5;
@@ -1168,6 +1235,10 @@ void render_submit(renderer_t *rend, const float viewport[4],
                          shadow_mvp, item->volume_mat);
             if (item->owns_volume)
                 volume_delete(item->volume);
+            break;
+        case ITEM_BAKED_VOLUME:
+            render_bake_draw(rend, item->bake, &item->material, item->effects,
+                             item->volume_mat);
             break;
         case ITEM_MODEL3D:
             render_model_item(rend, item, viewport);
