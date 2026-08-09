@@ -711,6 +711,7 @@ int load_from_file(const char *path, bool replace)
     // Remove all layers, materials and camera.
     // XXX: should have a way to create a totally empty image instead.
     if (replace) {
+        goxel_wrap_view_set(false);
         image_clear_gox_content(goxel.image);
     }
 
@@ -980,6 +981,7 @@ static void a_open(void)
     const char *filters[] = {"*.gox", NULL};
     path = sys_open_file_dialog("Open", NULL, filters, "gox");
     if (!path) return;
+    goxel_wrap_view_set(false);
     image_delete(goxel.image);
     goxel.image = image_new();
     load_from_file(path, true);
