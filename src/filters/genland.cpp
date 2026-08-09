@@ -187,7 +187,7 @@ unsigned char sh[VSID * VSID];
 static void process_voxel_data(volume_t *volume, genland_settings_t *settings,
                                vcol *argb, const int *heights, int height_cap)
 {
-    if (settings->replace_current_layer) {
+    if (settings->layer_target == LAYER_TARGET_REPLACE) {
         volume_clear(volume);
     }
     int start_pos[3];

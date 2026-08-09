@@ -53,7 +53,7 @@ static const genland_settings_t default_genland_settings = {
     .shadow_factor = 32,
     .ambience_factor = 0.3,
     .resize_image = true,
-    .replace_current_layer = false,
+    .layer_target = LAYER_TARGET_NEW_LAYER,
 };
 
 
@@ -160,26 +160,7 @@ static int gui(filter_t *filter_)
 
     gui_separator();
 
-    bool has_layer = goxel.image && goxel.image->active_layer;
-    int target_mode;
-
-    if (!has_layer)
-        filter->settings->replace_current_layer = false;
-    target_mode = filter->settings->replace_current_layer ? 1 : 0;
-    gui_row_begin(2);
-    gui_selectable_toggle("In new layer", &target_mode, 0,
-        "With a layer selected: create a child named Genland.\n"
-        "With nothing selected: create a top-level Genland layer.",
-        -1);
-    gui_enabled_begin(has_layer);
-    gui_selectable_toggle("Replace current layer", &target_mode, 1,
-        "Clear and write into the selected layer.",
-        -1);
-    gui_enabled_end();
-    gui_alert_if_disabled_clicked(has_layer, "No layer selected",
-                                  "Select a layer first.");
-    gui_row_end();
-    filter->settings->replace_current_layer = (target_mode == 1);
+    gui_layer_target_picker(&filter->settings->layer_target);
 
     gui_checkbox("Resize image", &filter->settings->resize_image,
         "If checked, we will automatically resize the image box after generating\n"
@@ -204,7 +185,7 @@ static int gui(filter_t *filter_)
     {
         image_history_push(goxel.image);
         layer = image_ensure_layer_for_generation(
-            goxel.image, "Genland", filter->settings->replace_current_layer);
+            goxel.image, "Genland", filter->settings->layer_target);
         if (!layer || !layer->volume)
             return 0;
         generate_tomland_terrain(layer->volume, filter->settings);
@@ -234,5 +215,5 @@ FILTER_REGISTER(genland, filter_genland_t,
                 .menu = "effects",
                 .submenu = "generate",
                 .on_open = on_open,
-                .panel_width = 300,
+                .panel_width = 350,
                 .gui_fn = gui, )

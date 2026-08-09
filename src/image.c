@@ -506,7 +506,7 @@ static void layer_set_uniq_name(image_t *img, layer_t *layer, const char *name)
 }
 
 layer_t *image_ensure_layer_for_generation(
-    image_t *img, const char *name, bool replace_current)
+    image_t *img, const char *name, layer_target_t target)
 {
     layer_t *layer;
     layer_t *parent;
@@ -514,21 +514,27 @@ layer_t *image_ensure_layer_for_generation(
 
     if (!img) return NULL;
 
-    if (!img->active_layer) {
-        layer = layer_new(NULL);
-        layer_set_uniq_name(img, layer, base);
-        return image_add_layer(img, layer);
+    if (target == LAYER_TARGET_REPLACE) {
+        return img->active_layer;
     }
 
-    if (replace_current)
-        return img->active_layer;
+    if (target == LAYER_TARGET_NEW_CHILD) {
+        parent = img->active_layer;
+        if (!parent) return NULL;
+        layer = image_add_child_layer(img, parent);
+        if (!layer) return NULL;
+        layer_set_uniq_name(img, layer, base);
+        parent->collapsed = false;
+        tool_clear_preview();
+        return layer;
+    }
 
-    parent = img->active_layer;
-    layer = image_add_child_layer(img, parent);
-    if (!layer) return NULL;
+    /* LAYER_TARGET_NEW_LAYER: always a top-level layer. */
+    layer = layer_new(NULL);
     layer_set_uniq_name(img, layer, base);
-    parent->collapsed = false;
-    tool_clear_preview();
+    layer = image_add_layer(img, layer);
+    if (layer)
+        layer->parent_id = 0;
     return layer;
 }
 

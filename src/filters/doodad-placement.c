@@ -66,7 +66,7 @@ typedef struct
     bool rotate22pt5;
     bool randomly_flip;
 
-    bool replace_current_layer;
+    layer_target_t layer_target;
 
     doodad_model_t *models;
     doodad_model_t *active_model;
@@ -591,26 +591,7 @@ static int gui(filter_t *filter_)
 
     gui_separator();
 
-    bool has_layer = goxel.image && goxel.image->active_layer;
-    int target_mode;
-
-    if (!has_layer)
-        filter->replace_current_layer = false;
-    target_mode = filter->replace_current_layer ? 1 : 0;
-    gui_row_begin(2);
-    gui_selectable_toggle("In new layer", &target_mode, 0,
-        "With a layer selected: create a child named Doodad placement.\n"
-        "With nothing selected: create a top-level Doodad placement layer.",
-        -1);
-    gui_enabled_begin(has_layer);
-    gui_selectable_toggle("Replace current layer", &target_mode, 1,
-        "Clear the selected layer then place doodads.",
-        -1);
-    gui_enabled_end();
-    gui_alert_if_disabled_clicked(has_layer, "No layer selected",
-                                  "Select a layer first.");
-    gui_row_end();
-    filter->replace_current_layer = (target_mode == 1);
+    gui_layer_target_picker(&filter->layer_target);
 
     gui_separator();
     if (gui_button_primary("Place doodads", -1, 0))
@@ -618,10 +599,10 @@ static int gui(filter_t *filter_)
         layer_t *layer;
         image_history_push(goxel.image);
         layer = image_ensure_layer_for_generation(
-            goxel.image, "Doodad placement", filter->replace_current_layer);
+            goxel.image, "Doodad placement", filter->layer_target);
         if (!layer || !layer->volume)
             return 0;
-        if (filter->replace_current_layer)
+        if (filter->layer_target == LAYER_TARGET_REPLACE)
             volume_clear(layer->volume);
         place_doodads(filter);
     }
@@ -653,7 +634,7 @@ static void on_open(filter_t *filter_)
     filter->rotate45 = true;
     filter->rotate22pt5 = true;
     filter->randomly_flip = true;
-    filter->replace_current_layer = false;
+    filter->layer_target = LAYER_TARGET_NEW_LAYER;
 }
 
 FILTER_REGISTER(doodadplacer, filter_doodadplacement_t,

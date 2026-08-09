@@ -525,26 +525,7 @@ static int gui(filter_t *filter_)
 
     gui_separator();
 
-    {
-        bool has_layer = goxel.image && goxel.image->active_layer;
-        int target_mode;
-        if (!has_layer)
-            s->replace_current_layer = false;
-        target_mode = s->replace_current_layer ? 1 : 0;
-        gui_row_begin(2);
-        gui_selectable_toggle("In new layer", &target_mode, 0,
-                              "Create a Biomes layer (child or top-level).",
-                              -1);
-        gui_enabled_begin(has_layer);
-        gui_selectable_toggle("Replace current layer", &target_mode, 1,
-                              "Clear and write into the selected layer.",
-                              -1);
-        gui_enabled_end();
-        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
-                                      "Select a layer first.");
-        gui_row_end();
-        s->replace_current_layer = (target_mode == 1);
-    }
+    gui_layer_target_picker(&s->layer_target);
 
     gui_checkbox("Resize image", &s->resize_image,
                  "Resize the image box to fit generated voxels");
@@ -567,7 +548,7 @@ static int gui(filter_t *filter_)
     if (gui_button_primary("Generate", -1, 0)) {
         image_history_push(goxel.image);
         layer = image_ensure_layer_for_generation(
-            goxel.image, "Biomes", s->replace_current_layer);
+            goxel.image, "Biomes", s->layer_target);
         if (layer && layer->volume) {
             generate_biomes_terrain(layer->volume, s);
             if (s->resize_image) {

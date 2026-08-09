@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "inputs.h"
+#include "image.h"
 
 #ifndef GUI_PANEL_WIDTH_NORMAL
 #   define GUI_PANEL_WIDTH_NORMAL 230
@@ -224,6 +225,9 @@ bool gui_selectable(const char *name, bool *v, const char *tooltip, float w);
 bool gui_condensed_selectable(const char *name, bool *v, const char *tooltip, float w);
 bool gui_selectable_toggle(const char *name, int *v, int set_v,
                            const char *tooltip, float w);
+/* Writes *target; clamps NEW_CHILD/REPLACE to NEW_LAYER if no active layer.
+ * Renders [New layer] [New child] [Replace current] with tooltips + disable alert. */
+void gui_layer_target_picker(layer_target_t *target);
 bool gui_selectable_icon(const char *name, bool *v, int icon);
 bool gui_condensed_selectable_icon(const char *name, bool *v, int icon);
 bool gui_color(const char *label, uint8_t color[4]);

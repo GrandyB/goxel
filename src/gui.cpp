@@ -1986,6 +1986,38 @@ bool gui_selectable_toggle(const char *name, int *v, int set_v,
     return false;
 }
 
+void gui_layer_target_picker(layer_target_t *target)
+{
+    bool has_layer;
+    int mode;
+
+    if (!target) return;
+
+    has_layer = goxel.image && goxel.image->active_layer;
+    if (!has_layer && *target != LAYER_TARGET_NEW_LAYER)
+        *target = LAYER_TARGET_NEW_LAYER;
+
+    mode = (int)*target;
+    gui_row_begin(3);
+    gui_selectable_toggle("New layer", &mode, LAYER_TARGET_NEW_LAYER,
+        "Create a new top-level layer.",
+        -1);
+    gui_enabled_begin(has_layer);
+    gui_selectable_toggle("New child", &mode, LAYER_TARGET_NEW_CHILD,
+        "Create a child layer under the selected layer.",
+        -1);
+    gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                  "Select a layer first.");
+    gui_selectable_toggle("Replace current", &mode, LAYER_TARGET_REPLACE,
+        "Write into the selected layer.",
+        -1);
+    gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                  "Select a layer first.");
+    gui_enabled_end();
+    gui_row_end();
+    *target = (layer_target_t)mode;
+}
+
 bool gui_selectable_icon(const char *name, bool *v, int icon)
 {
     return _selectable(name, v, NULL, 0, icon, false);

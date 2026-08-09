@@ -70,7 +70,7 @@ typedef struct {
     float bleed_blur;       /* box-blur radius on dithered bleed (blocks) */
     float bleed_dithering;  /* edge scatter radius (brush-style) */
     float bleed_noise;      /* random RGB noise amplitude on bled colour */
-    bool replace_current_layer;
+    layer_target_t layer_target;
 } filter_water_layer_t;
 
 static const water_layer_settings_t default_settings = {
@@ -701,28 +701,7 @@ static int gui(filter_t *filter_)
 
     gui_separator();
 
-    {
-        bool has_layer = goxel.image && goxel.image->active_layer;
-        int target_mode;
-
-        if (!has_layer)
-            filter->replace_current_layer = false;
-        target_mode = filter->replace_current_layer ? 1 : 0;
-        gui_row_begin(2);
-        gui_selectable_toggle("In new layer", &target_mode, 0,
-            "With a layer selected: create a child named Water layer.\n"
-            "With nothing selected: create a top-level Water layer.",
-            -1);
-        gui_enabled_begin(has_layer);
-        gui_selectable_toggle("Replace current layer", &target_mode, 1,
-            "Clear the selected layer then paint the water sheet.",
-            -1);
-        gui_enabled_end();
-        gui_alert_if_disabled_clicked(has_layer, "No layer selected",
-                                      "Select a layer first.");
-        gui_row_end();
-        filter->replace_current_layer = (target_mode == 1);
-    }
+    gui_layer_target_picker(&filter->layer_target);
 
     gui_input_int("Seed", &s->seed, 0, RAND_MAX);
     if (gui_button("Randomize seed", -1, 0)) {
@@ -741,14 +720,14 @@ static int gui(filter_t *filter_)
             return 0;
         image_history_push(goxel.image);
         layer = image_ensure_layer_for_generation(
-            goxel.image, "Water layer", filter->replace_current_layer);
+            goxel.image, "Water layer", filter->layer_target);
         if (!layer || !layer->volume)
             return 0;
         /* Capture merged visible layers before replace clears them. The
          * destination layer is usually empty (new child) or about to be
          * wiped, so land colours for bleed live on other layers. */
         bleed_src = goxel_get_layers_volume(goxel.image);
-        if (filter->replace_current_layer)
+        if (filter->layer_target == LAYER_TARGET_REPLACE)
             volume_clear(layer->volume);
         generate_water_layer(layer->volume, bleed_src, s,
                              filter->bleed_distance, filter->bleed_strength,
@@ -763,7 +742,7 @@ static void on_open(filter_t *filter_)
     filter_water_layer_t *filter = (void *)filter_;
     reset_to_defaults(filter);
     reset_bleed_defaults(filter);
-    filter->replace_current_layer = false;
+    filter->layer_target = LAYER_TARGET_NEW_LAYER;
 }
 
 FILTER_REGISTER(water_layer, filter_water_layer_t,
@@ -771,5 +750,5 @@ FILTER_REGISTER(water_layer, filter_water_layer_t,
                 .menu = "effects",
                 .submenu = "generate",
                 .on_open = on_open,
-                .panel_width = 300,
+                .panel_width = 350,
                 .gui_fn = gui, )

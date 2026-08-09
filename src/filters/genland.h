@@ -37,7 +37,7 @@ typedef struct {
 
     // Transform
     bool resize_image;
-    bool replace_current_layer;
+    layer_target_t layer_target;
 } genland_settings_t;
 
 EXTERNC void generate_tomland_terrain(volume_t *volume, genland_settings_t *settings);

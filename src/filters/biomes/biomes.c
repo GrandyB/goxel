@@ -221,7 +221,7 @@ void biomes_settings_set_defaults(biomes_settings_t *s)
 
     s->seed = 0;
     s->resize_image = true;
-    s->replace_current_layer = false;
+    s->layer_target = LAYER_TARGET_NEW_LAYER;
 }
 
 /* Rebuild gradient like random.txt: step0 RGB + HSB (or RGB) segments
@@ -317,7 +317,7 @@ static void write_heightmap_to_volume(volume_t *volume, mm_heightmap_t *hm,
     int idx;
     uint8_t underground[4] = {90, 80, 70, 255};
 
-    if (settings->replace_current_layer)
+    if (settings->layer_target == LAYER_TARGET_REPLACE)
         volume_clear(volume);
 
     box_get_start_pos(goxel.image->box, start_pos);

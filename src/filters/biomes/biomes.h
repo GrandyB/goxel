@@ -96,7 +96,7 @@ typedef struct {
 
     int seed;
     bool resize_image;
-    bool replace_current_layer;
+    layer_target_t layer_target;
 } biomes_settings_t;
 
 void biomes_settings_set_defaults(biomes_settings_t *s);
