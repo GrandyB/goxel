@@ -62,6 +62,8 @@ struct tool {
     int (*iter_fn)(tool_t *tool, const painter_t *painter,
                    const float viewport[4]);
     int (*gui_fn)(tool_t *tool);
+    void (*on_open)(tool_t *tool);  /* Entering the tool (after switch). */
+    void (*on_close)(tool_t *tool); /* Leaving the tool (before switch). */
     const char *default_shortcut;
     int state; // XXX: to be removed I guess.
     int flags;

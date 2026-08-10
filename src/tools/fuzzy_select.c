@@ -26,6 +26,8 @@ typedef struct {
     float paint_smoothness;
     float paint_dithering;
     bool global;
+    int saved_snap_mask;
+    bool has_saved_snap;
     struct {
         gesture3d_t click;
     } gestures;
@@ -384,6 +386,25 @@ static void paint_selection(float smoothness, float dithering)
         image_recent_color_push_from_painter(goxel.image, &goxel.painter);
 }
 
+static void on_open(tool_t *tool_)
+{
+    tool_fuzzy_select_t *tool = (void*)tool_;
+
+    tool->saved_snap_mask = goxel.snap_mask;
+    tool->has_saved_snap = true;
+    goxel.snap_mask = SNAP_VOLUME;
+}
+
+static void on_close(tool_t *tool_)
+{
+    tool_fuzzy_select_t *tool = (void*)tool_;
+
+    if (!tool->has_saved_snap)
+        return;
+    goxel.snap_mask = tool->saved_snap_mask;
+    tool->has_saved_snap = false;
+}
+
 static int gui(tool_t *tool_)
 {
     tool_fuzzy_select_t *tool = (void*)tool_;
@@ -511,5 +532,7 @@ TOOL_REGISTER(TOOL_FUZZY_SELECT, fuzzy_select, tool_fuzzy_select_t,
               .name = "Fuzzy Select",
               .iter_fn = iter,
               .gui_fn = gui,
+              .on_open = on_open,
+              .on_close = on_close,
               .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_SHOW_MASK,
 )

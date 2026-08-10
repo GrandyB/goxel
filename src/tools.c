@@ -30,8 +30,16 @@ void tool_clear_preview(void)
 static void a_tool_set(void *data)
 {
     tool_t *tool = (tool_t *)data;
+    if (goxel.tool == tool) {
+        tool_clear_preview();
+        return;
+    }
+    if (goxel.tool && goxel.tool->on_close)
+        goxel.tool->on_close(goxel.tool);
     tool_clear_preview();
     goxel.tool = tool;
+    if (tool->on_open)
+        tool->on_open(tool);
 }
 
 void tool_register_(tool_t *tool)
