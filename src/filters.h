@@ -36,7 +36,7 @@ struct filter {
      * Filters in "image" are also listed in the Layers menu, where they open
      * with current_only set. */
     const char *menu;
-    /* Effects submenu: generate, plan, lighting, palette, or utilities. */
+    /* Effects submenu: generate, plan, lighting, colors, or utilities. */
     const char *submenu;
     const char *action_id;
     const char *default_shortcut;
