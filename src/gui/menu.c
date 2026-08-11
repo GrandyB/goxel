@@ -285,8 +285,8 @@ void gui_menu(void)
             filters_iter_menu("effects", "lighting", NULL, on_filter);
             gui_menu_end();
         }
-        if (gui_menu_begin("Palette", true)) {
-            filters_iter_menu("effects", "palette", NULL, on_filter);
+        if (gui_menu_begin("Colors", true)) {
+            filters_iter_menu("effects", "colors", NULL, on_filter);
             gui_menu_end();
         }
         if (gui_menu_begin("Utilities", true)) {
