@@ -45,6 +45,9 @@ struct filter {
      * Set when opened from a menu: false from Image, true from Layers. */
     bool current_only;
     bool is_open;
+    /* Set when the user re-selects an open filter from a menu; gui centres
+     * the window once then clears this. */
+    bool request_center;
 };
 
 #define FILTER_REGISTER(id_, klass_, ...) \

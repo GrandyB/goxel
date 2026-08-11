@@ -98,8 +98,8 @@ static void export_menu_callback(void *user, file_format_t *f)
         goxel_export_to_file(NULL, f->name);
 }
 
-/* Toggle the filter window, opening it with the given layer scope. An open
- * filter clicked from the other menu only switches scope. */
+/* Open the filter window with the given layer scope. Re-selecting an open
+ * filter recentres it; switching menu only changes scope. */
 static void filter_menu_item(filter_t *filter, bool current_only)
 {
     const action_t *action;
@@ -109,6 +109,10 @@ static void filter_menu_item(filter_t *filter, bool current_only)
         return;
     }
     filter->current_only = current_only;
+    if (filter->is_open) {
+        filter->request_center = true;
+        return;
+    }
     action = action_get_by_name(filter->action_id);
     assert(action);
     action_exec(action);

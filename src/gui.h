@@ -43,6 +43,8 @@ enum {
     GUI_WINDOW_HORIZONTAL               = 1 << 1, // For scrolling.
     /* Place at viewport centre on appear (uses pivot; x/y ignored). */
     GUI_WINDOW_CENTER                   = 1 << 3,
+    /* With GUI_WINDOW_CENTER: centre this frame even if already visible. */
+    GUI_WINDOW_CENTER_FORCE             = 1 << 4,
 
     // Return flags.
     GUI_WINDOW_MOVED                    = 1 << 2,

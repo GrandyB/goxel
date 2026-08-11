@@ -1225,11 +1225,11 @@ int gui_window_begin(const char *label, float x, float y, float w, float h,
                      ImGuiWindowFlags_NoScrollWithMouse;
     if (flags & GUI_WINDOW_CENTER) {
         ImGuiViewport *vp = ImGui::GetMainViewport();
+        ImGuiCond cond = ImGuiCond_Always;
+        if ((flags & GUI_WINDOW_MOVABLE) && !(flags & GUI_WINDOW_CENTER_FORCE))
+            cond = ImGuiCond_Appearing;
         ImGui::SetNextWindowPos(
-                vp->GetCenter(),
-                (flags & GUI_WINDOW_MOVABLE) ? ImGuiCond_Appearing
-                                             : ImGuiCond_Always,
-                ImVec2(0.5f, 0.5f));
+                vp->GetCenter(), cond, ImVec2(0.5f, 0.5f));
     } else {
         ImGui::SetNextWindowPos(
                 ImVec2(x, y),

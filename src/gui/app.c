@@ -128,14 +128,19 @@ void gui_layers_panel_toggle(void)
 static void gui_filter_window(void *arg, filter_t *filter)
 {
     float width;
+    int flags;
 
     (void)arg;
     if (!filter->is_open)
         return;
 
     width = filter->panel_width ? filter->panel_width : goxel.gui.panel_width;
-    gui_window_begin(filter->name, 0, 0, width, 0,
-                     GUI_WINDOW_MOVABLE | GUI_WINDOW_CENTER);
+    flags = GUI_WINDOW_MOVABLE | GUI_WINDOW_CENTER;
+    if (filter->request_center) {
+        flags |= GUI_WINDOW_CENTER_FORCE;
+        filter->request_center = false;
+    }
+    gui_window_begin(filter->name, 0, 0, width, 0, flags);
 
     if (gui_panel_header(filter->name)) {
         if (filter->on_close) {
