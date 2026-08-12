@@ -2839,12 +2839,17 @@ bool gui_combo(const char *label, int *v, const char **names, int nb)
     return ret;
 }
 
+/* Reset each combo so duplicate labels (e.g. two layers named "Layer")
+ * still get distinct ImGui IDs. */
+static int g_combo_item_idx;
+
 bool gui_combo_begin(const char *label, const char *preview)
 {
     bool ret;
     bool has_label = label && label[0] != '\0' && label[0] != '#';
     const char *combo_id;
 
+    g_combo_item_idx = 0;
     ImGui::PushID(label ? label : "combo");
     ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR(COMBO, INNER, 0));
     ImGui::PushStyleColor(ImGuiCol_PopupBg, COLOR(COMBO, BACKGROUND, 0));
@@ -2878,9 +2883,11 @@ void gui_combo_end(void)
 bool gui_combo_item(const char *label, bool is_selected)
 {
     bool ret;
+    ImGui::PushID(g_combo_item_idx++);
     ret = ImGui::Selectable(label, is_selected);
     if (is_selected)
         ImGui::SetItemDefaultFocus();
+    ImGui::PopID();
     return ret;
 }
 
