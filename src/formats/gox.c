@@ -970,8 +970,11 @@ error:
         free(data->v);
         free(data);
     }
-    if (replace)
-        image_clear_gox_content(goxel.image);
+    if (replace) {
+        /* replace already cleared the image; restore a usable blank map. */
+        image_delete(goxel.image);
+        goxel.image = image_new();
+    }
     return -1;
 }
 
@@ -984,7 +987,11 @@ static void a_open(void)
     goxel_wrap_view_set(false);
     image_delete(goxel.image);
     goxel.image = image_new();
-    load_from_file(path, true);
+    if (load_from_file(path, true) != 0) {
+        LOG_W("Cannot open '%s', starting with a new file", path);
+        /* load_from_file(replace) already restored a blank image. */
+        return;
+    }
     goxel_add_recent_file(path);
 }
 

@@ -1838,12 +1838,15 @@ const volume_t *goxel_get_layers_volume(const image_t *img)
         k = layer_get_key(layer);
         key = XXH32(&k, sizeof(k), key);
     }
-    if (key != goxel.layers_volume_hash) {
+    /* Always keep a real (possibly empty) volume. key==0 with a NULL
+     * layers_volume_ used to skip allocation and crash camera clip. */
+    if (key != goxel.layers_volume_hash || !goxel.layers_volume_) {
         goxel.layers_volume_hash = key;
         if (!goxel.layers_volume_) goxel.layers_volume_ = volume_new();
         volume_clear(goxel.layers_volume_);
         DL_FOREACH(img->layers, layer) {
             if (!layer_effectively_visible(img, layer)) continue;
+            if (!layer->volume) continue;
             volume_merge(goxel.layers_volume_, layer->volume, MODE_OVER, NULL);
         }
         invalidate_pick_cache();
@@ -1864,13 +1867,14 @@ const volume_t *goxel_get_layers_volume_for_snap(const image_t *img)
         key = XXH32(&k, sizeof(k), key);
         key = XXH32(&layer->volume_snap, sizeof(layer->volume_snap), key);
     }
-    if (key != goxel.layers_snap_volume_hash) {
+    if (key != goxel.layers_snap_volume_hash || !goxel.layers_snap_volume_) {
         goxel.layers_snap_volume_hash = key;
         if (!goxel.layers_snap_volume_) goxel.layers_snap_volume_ = volume_new();
         volume_clear(goxel.layers_snap_volume_);
         DL_FOREACH(img->layers, layer) {
             if (!layer_effectively_visible(img, layer)) continue;
             if (!layer->volume_snap) continue;
+            if (!layer->volume) continue;
             volume_merge(goxel.layers_snap_volume_, layer->volume, MODE_OVER, NULL);
         }
         invalidate_pick_cache();
