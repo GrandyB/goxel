@@ -933,7 +933,7 @@ static int vox_trenchblocks_export(const file_format_t *format,
     }
 
     fprintf(file, "VOX ");
-    WRITE(uint32_t, 150, file);
+    WRITE(uint32_t, 200, file);
     fprintf(file, "MAIN");
     WRITE(uint32_t, 0, file);
     WRITE(uint32_t, children_size, file);
