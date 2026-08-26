@@ -207,7 +207,38 @@ static float gxl_ground_column_feet(const volume_t *vol, int ix, int iy,
     return -1e6f;
 }
 
-/* Support height = max over foot footprint (player can stand on a thin slab). */
+/* Image-box bottom as a walkable plane (feet rest at start_z). Only when the
+ * player footprint overlaps the box in XY; null box = no floor. */
+static float gxl_image_box_floor_feet(float cx, float cy)
+{
+    float box[4][4];
+    int start[3], dims[3];
+    int x0, x1, y0, y1;
+    int bx0, bx1, by0, by1;
+
+    if (!goxel.image || box_is_null(goxel.image->box))
+        return -1e6f;
+    mat4_copy(goxel.image->box, box);
+    box_get_start_pos(box, start);
+    box_get_dimensions(box, dims);
+    if (dims[0] <= 0 || dims[1] <= 0)
+        return -1e6f;
+
+    x0 = (int)floorf(cx - GXL_P_HW);
+    x1 = (int)floorf(cx + GXL_P_HW);
+    y0 = (int)floorf(cy - GXL_P_HW);
+    y1 = (int)floorf(cy + GXL_P_HW);
+    bx0 = start[0];
+    bx1 = start[0] + dims[0] - 1;
+    by0 = start[1];
+    by1 = start[1] + dims[1] - 1;
+    if (x1 < bx0 || x0 > bx1 || y1 < by0 || y0 > by1)
+        return -1e6f;
+    return (float)start[2];
+}
+
+/* Support height = max over foot footprint (player can stand on a thin slab).
+ * Also treats the image-box floor as solid when over the box. */
 static float gxl_ground_feet_z(const volume_t *vol, float cx, float cy,
                                float feet_z)
 {
@@ -224,6 +255,9 @@ static float gxl_ground_feet_z(const volume_t *vol, float cx, float cy,
         if (g > best)
             best = g;
     }
+    g = gxl_image_box_floor_feet(cx, cy);
+    if (g > best)
+        best = g;
     return best;
 }
 
