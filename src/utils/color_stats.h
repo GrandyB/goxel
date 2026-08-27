@@ -24,8 +24,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-struct image;
+#ifndef IMAGE_T_DEFINED
 typedef struct image image_t;
+#   define IMAGE_T_DEFINED
+#endif
 
 typedef struct color_stat_hash {
     int rgba_key;
