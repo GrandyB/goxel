@@ -18,13 +18,7 @@
 
 #include "goxel.h"
 #include "palette.h"
-
-typedef struct color_stat_hash {
-    int rgba_key;
-    uint8_t color[4];
-    int count;
-    UT_hash_handle hh;
-} color_stat_hash_t;
+#include "utils/color_stats.h"
 
 typedef struct {
     uint8_t color[4];
@@ -55,17 +49,6 @@ static int pack_rgba(const uint8_t c[4])
 {
     return (int)((uint32_t)c[0] | ((uint32_t)c[1] << 8) |
                  ((uint32_t)c[2] << 16) | ((uint32_t)c[3] << 24));
-}
-
-static void hash_clear(color_stat_hash_t **head)
-{
-    color_stat_hash_t *cur, *tmp;
-
-    HASH_ITER(hh, *head, cur, tmp) {
-        HASH_DEL(*head, cur);
-        free(cur);
-    }
-    *head = NULL;
 }
 
 static int color_stat_cmp(const void *a, const void *b)
@@ -183,42 +166,8 @@ static int append_analysed_swatches_to_palette(filter_palette_usage_t *filter)
     return attempted;
 }
 
-static void add_volume_layer_counts(filter_palette_usage_t *filter,
-                                    layer_t *layer,
-                                    color_stat_hash_t **colors)
-{
-    volume_iterator_t iter;
-    int pos[3];
-    uint8_t v[4];
-    color_stat_hash_t *el;
-    int key;
-
-    if (!layer || !layer_is_volume(layer))
-        return;
-    iter = volume_get_iterator(layer->volume,
-                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
-    while (volume_iter(&iter, pos)) {
-        volume_get_at(layer->volume, &iter, pos, v);
-        if (v[3] == 0)
-            continue;
-        filter->blocks_analysed++;
-        key = pack_rgba(v);
-        HASH_FIND_INT(*colors, &key, el);
-        if (!el) {
-            el = calloc(1, sizeof(*el));
-            el->rgba_key = key;
-            memcpy(el->color, v, 4);
-            el->count = 1;
-            HASH_ADD_INT(*colors, rgba_key, el);
-        } else {
-            el->count++;
-        }
-    }
-}
-
 static void run_analyse(filter_palette_usage_t *filter)
 {
-    layer_t *layer;
     color_stat_hash_t *colors = NULL;
     color_stat_hash_t *el, *tmp;
     int i, n, above;
@@ -233,13 +182,11 @@ static void run_analyse(filter_palette_usage_t *filter)
     filter->colors_after_condense = 0;
     filter->status_msg[0] = '\0';
 
-    DL_FOREACH(goxel.image->layers, layer) {
-        if (filter->current_layer_only &&
-            !layer_in_active_subtree(goxel.image, layer))
-            continue;
-        if (!layer_is_volume(layer))
-            continue;
-        add_volume_layer_counts(filter, layer, &colors);
+    if (image_collect_color_stats(goxel.image, filter->current_layer_only,
+                                  true, &colors,
+                                  &filter->blocks_analysed) != 0) {
+        color_stats_hash_clear(&colors);
+        return;
     }
 
     filter->unique_colors = HASH_COUNT(colors);
@@ -254,7 +201,7 @@ static void run_analyse(filter_palette_usage_t *filter)
 
     n = HASH_COUNT(colors);
     if (n == 0) {
-        hash_clear(&colors);
+        color_stats_hash_clear(&colors);
         filter->analysis_valid = true;
         return;
     }
@@ -266,7 +213,7 @@ static void run_analyse(filter_palette_usage_t *filter)
         filter->sorted[i].count = el->count;
         i++;
     }
-    hash_clear(&colors);
+    color_stats_hash_clear(&colors);
 
     qsort(filter->sorted, n, sizeof(*filter->sorted), color_stat_cmp);
 

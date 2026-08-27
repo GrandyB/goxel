@@ -3013,6 +3013,13 @@ bool gui_collapsing_header(const char *label, bool default_opened)
     return ImGui::CollapsingHeader(label);
 }
 
+bool gui_collapsing_header_force_open(const char *label, bool force_open)
+{
+    if (force_open)
+        ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    return ImGui::CollapsingHeader(label);
+}
+
 void gui_columns(int count)
 {
     ImGui::Columns(count);

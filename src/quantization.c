@@ -250,3 +250,41 @@ void quantization_remap_volume(volume_t *volume,
         volume_set_at(volume, &iter, pos, v);
     }
 }
+
+static uint8_t quant_snap_channel(uint8_t c, int step)
+{
+    int v;
+
+    if (step <= 1)
+        return c;
+    v = ((int)c + step / 2) / step * step;
+    return (uint8_t)clamp(v, 0, 255);
+}
+
+void quantization_uniform_snap(const uint8_t in[4], int step, uint8_t out[4])
+{
+    step = clamp(step, 1, 255);
+    out[0] = quant_snap_channel(in[0], step);
+    out[1] = quant_snap_channel(in[1], step);
+    out[2] = quant_snap_channel(in[2], step);
+    out[3] = in[3];
+}
+
+void quantization_remap_volume_uniform(volume_t *volume, int step)
+{
+    volume_iterator_t iter;
+    int pos[3];
+    uint8_t v[4];
+
+    if (!volume)
+        return;
+    step = clamp(step, 1, 255);
+    iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(volume, &iter, pos, v);
+        if (!voxel_is_solid(v))
+            continue;
+        quantization_uniform_snap(v, step, v);
+        volume_set_at(volume, &iter, pos, v);
+    }
+}

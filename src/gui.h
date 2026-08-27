@@ -146,6 +146,7 @@ void gui_layers_request_scroll_to_active(void);
 
 // Gui widgets:
 bool gui_collapsing_header(const char *label, bool default_opened);
+bool gui_collapsing_header_force_open(const char *label, bool force_open);
 void gui_text(const char *label, ...);
 void gui_text_wrapped(const char *label, ...);
 bool gui_button(const char *label, float w, int icon);
