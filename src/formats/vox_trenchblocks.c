@@ -12,7 +12,7 @@
  * - Palette indices 1-8: spawn/pickup metadata colours
  * - Indices 9-16: reserved empty
  * - Indices 17+: opaque recent map colours, then quantized fill
- * - Named scene objects T1-T4 (2x2 of 256xy tiles)
+ * - Named scene objects T1-T4 (always a full 2x2 of 256xy tiles; empties OK)
  */
 
 #include "goxel.h"
@@ -687,7 +687,7 @@ static int vox_trenchblocks_export(const file_format_t *format,
     int start[3], dims[3];
     int xmin, ymin, zmin, xmax, ymax, zmax;
     int sx, sy, sz, nx, ny, tx, ty, ti, i, j, pos[3];
-    int nb_vox = 0, nb_tiles = 0, model_i, children_size;
+    int nb_vox = 0, nb_tiles = 0, children_size;
     int stamp_i, color_index;
     uint8_t v[4], stamp_rgb[4];
     volume_iterator_t iter;
@@ -725,14 +725,16 @@ static int vox_trenchblocks_export(const file_format_t *format,
         return -1;
     }
 
-    nx = (sx + VOX_TILE - 1) / VOX_TILE;
-    ny = (sy + VOX_TILE - 1) / VOX_TILE;
-    if (nx > 2 || ny > 2 || nx * ny > 4) {
+    /* Trenchblocks always uses a fixed 2x2 of named tiles T1-T4.  Maps that
+     * do not fill every quadrant still get empty models for the missing ones. */
+    if (sx > VOX_TILE * 2 || sy > VOX_TILE * 2) {
         gui_alert("vox (Trenchblocks)",
                   "Map XY needs more than four 256x256 tiles (T1-T4). "
                   "Reduce the map size or wait for T5-T8 support.");
         return -1;
     }
+    nx = 2;
+    ny = 2;
 
     src_volume = goxel_get_layers_volume(image);
     volume = volume_copy(src_volume);
@@ -827,8 +829,10 @@ static int vox_trenchblocks_export(const file_format_t *format,
         tiles[ti].ox = xmin + tx * VOX_TILE;
         tiles[ti].oy = ymin + ty * VOX_TILE;
         tiles[ti].oz = zmin;
-        tiles[ti].sx = min(VOX_TILE, xmax - tiles[ti].ox);
-        tiles[ti].sy = min(VOX_TILE, ymax - tiles[ti].oy);
+        /* Always full MagicaVoxel tile SIZE in XY (pad empty space if the
+         * map box does not fill the quadrant). */
+        tiles[ti].sx = VOX_TILE;
+        tiles[ti].sy = VOX_TILE;
         tiles[ti].sz = sz;
         tiles[ti].name = tb_tile_name(tx, ty, nx, ny);
     }
@@ -845,15 +849,15 @@ static int vox_trenchblocks_export(const file_format_t *format,
         tiles[tx + ty * nx].nb_vox++;
     }
 
-    nb_tiles = 0;
-    for (i = 0; i < nx * ny; i++) {
+    /* Always emit all four T1..T4 slots (empty models included). */
+    nb_tiles = nx * ny;
+    for (i = 0; i < nb_tiles; i++) {
         if (!tiles[i].nb_vox) continue;
         tiles[i].voxels = calloc(tiles[i].nb_vox, 4);
         if (!tiles[i].voxels) {
             gui_alert("vox (Trenchblocks)", "Out of memory.");
             goto error;
         }
-        nb_tiles++;
     }
 
     iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
@@ -881,22 +885,20 @@ static int vox_trenchblocks_export(const file_format_t *format,
         voxels[i * 4 + 3] = (uint8_t)color_index;
     }
 
-    for (i = 0; i < nx * ny; i++) {
+    for (i = 0; i < nb_tiles; i++) {
         if (!tiles[i].nb_vox) continue;
         qsort(tiles[i].voxels, tiles[i].nb_vox, 4, tb_voxel_cmp);
     }
 
-    /* Emit non-empty tiles in T1..T4 name order (not grid scan order). */
+    /* Emit all tiles in T1..T4 name order (not grid scan order), including
+     * empty models so named scene objects are always present. */
     tile_order = calloc(nb_tiles, sizeof(*tile_order));
     if (!tile_order) {
         gui_alert("vox (Trenchblocks)", "Out of memory.");
         goto error;
     }
-    model_i = 0;
-    for (i = 0; i < nx * ny; i++) {
-        if (!tiles[i].nb_vox) continue;
-        tile_order[model_i++] = i;
-    }
+    for (i = 0; i < nb_tiles; i++)
+        tile_order[i] = i;
     for (i = 0; i < nb_tiles; i++) {
         for (j = i + 1; j < nb_tiles; j++) {
             if (tb_tile_rank(tiles[tile_order[j]].name) <
