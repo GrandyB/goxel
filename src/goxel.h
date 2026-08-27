@@ -49,6 +49,7 @@
 #include "model3d.h"
 #include "palette.h"
 #include "pathtracer.h"
+#include "quantization.h"
 #include "render.h"
 #include "shape.h"
 #include "system.h"
@@ -481,28 +482,6 @@ enum {
 // The block size can only be 16.
 #define BLOCK_SIZE 16
 #define VOXEL_TEXTURE_SIZE 8
-
-// Generate a palette of up to `nb` colors from a volume.
-// Exact colours if unique count <= nb; otherwise median-cut quantization.
-// `exclude` / `n_exclude`: optional opaque RGBs to omit (NULL / 0 if none).
-void quantization_gen_palette(const volume_t *volume, int nb,
-                              uint8_t (*palette)[4],
-                              const uint8_t (*exclude)[4], int n_exclude);
-
-// Nearest opaque palette index by Manhattan RGB distance.  Skips slots with
-// alpha != 255.  Returns -1 if no usable slot.
-int quantization_nearest(const uint8_t c[4],
-                         const uint8_t (*palette)[4], int n);
-
-// Remap every opaque voxel in `volume` to the nearest palette colour.
-void quantization_remap_volume(volume_t *volume,
-                               const uint8_t (*palette)[4], int n);
-
-// Snap RGB channels to a uniform grid (step in 1..255; 1 leaves channels unchanged).
-void quantization_uniform_snap(const uint8_t in[4], int step, uint8_t out[4]);
-
-// Remap every opaque voxel by uniform RGB snapping.
-void quantization_remap_volume_uniform(volume_t *volume, int step);
 
 // #### Goxel : core object ####
 
