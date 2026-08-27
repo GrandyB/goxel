@@ -79,7 +79,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_3d"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_3e-pre2"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -498,6 +498,12 @@ int quantization_nearest(const uint8_t c[4],
 void quantization_remap_volume(volume_t *volume,
                                const uint8_t (*palette)[4], int n);
 
+// Snap RGB channels to a uniform grid (step in 1..255; 1 leaves channels unchanged).
+void quantization_uniform_snap(const uint8_t in[4], int step, uint8_t out[4]);
+
+// Remap every opaque voxel by uniform RGB snapping.
+void quantization_remap_volume_uniform(volume_t *volume, int step);
+
 // #### Goxel : core object ####
 
 // Flags to set where the mouse snap.  In order of priority.
@@ -673,7 +679,7 @@ typedef struct goxel
         bool ui_visible;
     } gui;
 
-    char **recent_files; // stb arraw of most recently used files.
+    char **recent_files; // stb arraw of most recently opened files.
 
     // Last save path specified in the Export panel
     const char* last_export_panel_path;
@@ -830,6 +836,7 @@ void settings_load(void);
 void settings_save(void);
 
 void goxel_add_recent_file(const char *path);
+void goxel_track_opened_file(const char *path);
 
 /*
  * goxel_apply_color_filter

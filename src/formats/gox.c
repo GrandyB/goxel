@@ -961,6 +961,9 @@ int load_from_file(const char *path, bool replace)
     /* Do not leave the last loaded layer selected. */
     goxel.image->active_layer = NULL;
 
+    if (replace)
+        goxel_track_opened_file(path);
+
     return 0;
 
 error:
@@ -992,7 +995,6 @@ static void a_open(void)
         /* load_from_file(replace) already restored a blank image. */
         return;
     }
-    goxel_add_recent_file(path);
 }
 
 ACTION_REGISTER(ACTION_open,
@@ -1015,7 +1017,6 @@ static void a_save_as(void)
     save_to_file(goxel.image, goxel.image->path, false);
     goxel.image->saved_key = image_get_key(goxel.image);
     sys_on_saved(path);
-    goxel_add_recent_file(path);
 }
 
 ACTION_REGISTER(ACTION_save_as,
@@ -1036,7 +1037,6 @@ static void a_save(void)
     save_to_file(goxel.image, goxel.image->path, false);
     goxel.image->saved_key = image_get_key(goxel.image);
     sys_on_saved(path);
-    goxel_add_recent_file(path);
 }
 
 ACTION_REGISTER(ACTION_save,

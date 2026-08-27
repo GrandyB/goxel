@@ -812,6 +812,8 @@ void goxel_add_gesture(int type, int button,
     goxel.gestures_count++;
 }
 
+static bool goxel_recent_tracking_enabled;
+
 static void goxel_load_recent_files(void)
 {
     char listpath[1024];
@@ -869,6 +871,7 @@ void goxel_init(void)
     /* Ensure Trenchblocks vox export is registered (also keeps the TU linked). */
     goxel_ensure_vox_trenchblocks_format();
 
+    goxel_recent_tracking_enabled = true;
     goxel_reset();
 }
 
@@ -2354,6 +2357,12 @@ int goxel_export_to_file(const char *path, const char *format)
     if (err) return err;
     sys_on_saved(path);
     return 0;
+}
+
+void goxel_track_opened_file(const char *path)
+{
+    if (!goxel_recent_tracking_enabled || !path) return;
+    goxel_add_recent_file(path);
 }
 
 void goxel_add_recent_file(const char *path)
