@@ -87,8 +87,8 @@ static float placer_scale_custom_pct_x = 100.f;
 static float placer_scale_custom_pct_y = 100.f;
 static float placer_scale_custom_pct_z = 100.f;
 static float placer_rotation_angle_deg = 22.5f;
-/* Each placement creates a child of the active layer (default on). */
-static bool placer_place_in_child_layer = true;
+/* Each placement creates a child of the active layer (default off). */
+static bool placer_place_in_child_layer = false;
 /* Cached euler readback so editing one axis does not jump from mat→eul ambiguity. */
 static struct {
     float rot[4][4];
