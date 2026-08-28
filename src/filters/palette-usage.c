@@ -183,7 +183,7 @@ static void run_analyse(filter_palette_usage_t *filter)
     filter->status_msg[0] = '\0';
 
     if (image_collect_color_stats(goxel.image, filter->current_layer_only,
-                                  true, &colors,
+                                  true, false, &colors,
                                   &filter->blocks_analysed) != 0) {
         color_stats_hash_clear(&colors);
         return;

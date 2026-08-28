@@ -200,7 +200,7 @@ static int gui(filter_t *filter_)
                                    uniform_step : 0;
 
         image_analyse_color_stats(goxel.image, filter->filter.current_only,
-                                  false, per_layer, per_layer,
+                                  false, true, per_layer, per_layer,
                                   analyse_uniform_step, &filter->analysis);
         filter->analysis_valid = true;
         filter->analysis_open = true;

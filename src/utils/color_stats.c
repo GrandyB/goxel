@@ -27,13 +27,16 @@ static int pack_rgba_key(const uint8_t c[4])
 
 static bool layer_in_stats_scope(const image_t *img, const layer_t *layer,
                                  bool current_layer_only,
-                                 bool plain_voxel_layers_only)
+                                 bool plain_voxel_layers_only,
+                                 bool visible_layers_only)
 {
     if (!layer || !layer->volume)
         return false;
     if (plain_voxel_layers_only && !layer_is_volume(layer))
         return false;
     if (current_layer_only && !layer_in_active_subtree(img, layer))
+        return false;
+    if (visible_layers_only && !layer_effectively_visible(img, layer))
         return false;
     return true;
 }
@@ -153,6 +156,7 @@ static int volume_uniform_color_stats(const volume_t *volume, int step,
 static int collect_uniform_color_stats(const image_t *img,
                                        bool current_layer_only,
                                        bool plain_voxel_layers_only,
+                                       bool visible_layers_only,
                                        int step, color_stats_summary_t *out)
 {
     layer_t *layer;
@@ -164,7 +168,8 @@ static int collect_uniform_color_stats(const image_t *img,
 
     DL_FOREACH(img->layers, layer) {
         if (!layer_in_stats_scope(img, layer, current_layer_only,
-                                  plain_voxel_layers_only))
+                                  plain_voxel_layers_only,
+                                  visible_layers_only))
             continue;
         if (add_volume_uniform_counts(layer->volume, step, &colors) != 0) {
             color_stats_hash_clear(&colors);
@@ -178,7 +183,8 @@ static int collect_uniform_color_stats(const image_t *img,
 }
 
 static int subtree_uniform_color_stats(const image_t *img, const layer_t *root,
-                                       bool plain_voxel_layers_only, int step,
+                                       bool plain_voxel_layers_only,
+                                       bool visible_layers_only, int step,
                                        color_stats_summary_t *out)
 {
     layer_t *layer;
@@ -194,6 +200,9 @@ static int subtree_uniform_color_stats(const image_t *img, const layer_t *root,
         if (!layer->volume)
             continue;
         if (plain_voxel_layers_only && !layer_is_volume(layer))
+            continue;
+        if (visible_layers_only &&
+            !layer_effectively_visible(img, layer))
             continue;
         if (!layer_is_ancestor(img, root, layer))
             continue;
@@ -225,6 +234,7 @@ static int volume_color_stats(const volume_t *volume, color_stats_summary_t *out
 
 int image_collect_color_stats(const image_t *img, bool current_layer_only,
                               bool plain_voxel_layers_only,
+                              bool visible_layers_only,
                               color_stat_hash_t **out, int *voxels_out)
 {
     layer_t *layer;
@@ -238,7 +248,8 @@ int image_collect_color_stats(const image_t *img, bool current_layer_only,
 
     DL_FOREACH(img->layers, layer) {
         if (!layer_in_stats_scope(img, layer, current_layer_only,
-                                  plain_voxel_layers_only))
+                                  plain_voxel_layers_only,
+                                  visible_layers_only))
             continue;
         if (add_volume_counts(layer->volume, out, &voxels) != 0) {
             color_stats_hash_clear(out);
@@ -253,6 +264,7 @@ int image_collect_color_stats(const image_t *img, bool current_layer_only,
 
 int image_count_unique_colors(const image_t *img, bool current_layer_only,
                               bool plain_voxel_layers_only,
+                              bool visible_layers_only,
                               color_stats_summary_t *out)
 {
     color_stat_hash_t *colors = NULL;
@@ -267,6 +279,7 @@ int image_count_unique_colors(const image_t *img, bool current_layer_only,
 
     ret = image_collect_color_stats(img, current_layer_only,
                                     plain_voxel_layers_only,
+                                    visible_layers_only,
                                     &colors, &out->voxels_analysed);
     if (ret != 0)
         return ret;
@@ -277,6 +290,7 @@ int image_count_unique_colors(const image_t *img, bool current_layer_only,
 
 static int subtree_color_stats(const image_t *img, const layer_t *root,
                                bool plain_voxel_layers_only,
+                               bool visible_layers_only,
                                color_stats_summary_t *out)
 {
     layer_t *layer;
@@ -289,6 +303,9 @@ static int subtree_color_stats(const image_t *img, const layer_t *root,
             continue;
         if (plain_voxel_layers_only && !layer_is_volume(layer))
             continue;
+        if (visible_layers_only &&
+            !layer_effectively_visible(img, layer))
+            continue;
         if (!layer_is_ancestor(img, root, layer))
             continue;
         volume_merge(merged, layer->volume, MODE_OVER, NULL);
@@ -299,7 +316,8 @@ static int subtree_color_stats(const image_t *img, const layer_t *root,
 }
 
 int image_analyse_color_stats(const image_t *img, bool current_layer_only,
-                              bool plain_voxel_layers_only, bool per_layer,
+                              bool plain_voxel_layers_only,
+                              bool visible_layers_only, bool per_layer,
                               bool merge_layer_subtrees, int uniform_step,
                               color_stats_breakdown_t *out)
 {
@@ -315,6 +333,7 @@ int image_analyse_color_stats(const image_t *img, bool current_layer_only,
 
     if (image_collect_color_stats(img, current_layer_only,
                                   plain_voxel_layers_only,
+                                  visible_layers_only,
                                   &colors,
                                   &out->total.voxels_analysed) != 0) {
         color_stats_hash_clear(&colors);
@@ -324,7 +343,8 @@ int image_analyse_color_stats(const image_t *img, bool current_layer_only,
     color_stats_hash_clear(&colors);
 
     if (collect_uniform_color_stats(img, current_layer_only,
-                                    plain_voxel_layers_only, uniform_step,
+                                    plain_voxel_layers_only,
+                                    visible_layers_only, uniform_step,
                                     &out->total) != 0) {
         color_stats_breakdown_clear(out);
         return -1;
@@ -337,8 +357,12 @@ int image_analyse_color_stats(const image_t *img, bool current_layer_only,
         if (merge_layer_subtrees) {
             if (layer->parent_id != 0)
                 continue;
+            if (visible_layers_only &&
+                !layer_effectively_visible(img, layer))
+                continue;
         } else if (!layer_in_stats_scope(img, layer, false,
-                                         plain_voxel_layers_only)) {
+                                         plain_voxel_layers_only,
+                                         visible_layers_only)) {
             continue;
         }
 
@@ -351,12 +375,14 @@ int image_analyse_color_stats(const image_t *img, bool current_layer_only,
                  layer->name[0] ? layer->name : "(unnamed)");
         if (merge_layer_subtrees) {
             if (subtree_color_stats(img, layer, plain_voxel_layers_only,
+                                    visible_layers_only,
                                     &out->layers[out->layer_count].stats) != 0) {
                 color_stats_breakdown_clear(out);
                 return -1;
             }
             if (subtree_uniform_color_stats(img, layer,
                                             plain_voxel_layers_only,
+                                            visible_layers_only,
                                             uniform_step,
                                             &out->layers[out->layer_count].stats) != 0) {
                 color_stats_breakdown_clear(out);

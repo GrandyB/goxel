@@ -59,10 +59,12 @@ void color_stats_breakdown_clear(color_stats_breakdown_t *breakdown);
 /*
  * Build a hash of distinct non-transparent RGBA values on layers with a
  * volume. When plain_voxel_layers_only is true, skip non-voxel layers
- * (image/shape/group layers). Returns 0, or -1 on allocation failure.
+ * (image/shape/group layers). When visible_layers_only is true, skip layers
+ * that are not effectively visible. Returns 0, or -1 on allocation failure.
  */
 int image_collect_color_stats(const image_t *img, bool current_layer_only,
                               bool plain_voxel_layers_only,
+                              bool visible_layers_only,
                               color_stat_hash_t **out, int *voxels_out);
 
 /*
@@ -71,16 +73,20 @@ int image_collect_color_stats(const image_t *img, bool current_layer_only,
  */
 int image_count_unique_colors(const image_t *img, bool current_layer_only,
                               bool plain_voxel_layers_only,
+                              bool visible_layers_only,
                               color_stats_summary_t *out);
 
 /*
  * Analyse distinct colours. When per_layer is true, fills one entry per layer
  * in scope. When merge_layer_subtrees is also true, only top-level layers
  * (parent_id 0) are listed and each entry merges that layer's full subtree.
- * Always fills total with merged stats for layers in scope.
+ * When visible_layers_only is true, hidden layers are excluded from totals
+ * and per-layer entries. Always fills total with merged stats for layers in
+ * scope.
  */
 int image_analyse_color_stats(const image_t *img, bool current_layer_only,
-                              bool plain_voxel_layers_only, bool per_layer,
+                              bool plain_voxel_layers_only,
+                              bool visible_layers_only, bool per_layer,
                               bool merge_layer_subtrees, int uniform_step,
                               color_stats_breakdown_t *out);
 

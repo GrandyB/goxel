@@ -647,6 +647,8 @@ static void palette_in_use_rebuild(palette_t *p)
     DL_FOREACH(goxel.image->layers, layer) {
         if (!layer_is_volume(layer) || !layer->volume)
             continue;
+        if (!layer_effectively_visible(goxel.image, layer))
+            continue;
         iter = volume_get_iterator(layer->volume,
                                    VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
         while (volume_iter(&iter, pos)) {
