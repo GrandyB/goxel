@@ -536,7 +536,8 @@ static bool tb_stamp_column(const int *hm, int xmin, int ymin, int sx, int sy,
     iy = y - ymin;
     top = hm[ix + iy * sx];
     if (top == INT_MIN)
-        return true; /* empty column: skip */
+        return tb_add_stamp(stamps, n, cap, x, y, zmin, index, zmin,
+                            zmax_excl_io);
     return tb_add_stamp(stamps, n, cap, x, y, top + 1, index, zmin, zmax_excl_io);
 }
 
@@ -550,7 +551,7 @@ static bool tb_collect_stamps(const image_t *image, const int *hm,
     const char *spawn_layers_csv;
     volume_t *blocking = NULL;
     uint8_t *xy_blocked = NULL;
-    int index, x0, x1, y0, y1, z0, z1, x, y, cap = 0;
+    int index, x0, x1, y0, y1, z0, z1, x, y, z, cap = 0;
     bool ok = true;
 
     *stamps = NULL;
@@ -593,16 +594,18 @@ static bool tb_collect_stamps(const image_t *image, const int *hm,
             y1 = max(obj->p0[1], obj->p1[1]);
             z0 = min(obj->p0[2], obj->p1[2]);
             z1 = max(obj->p0[2], obj->p1[2]);
-            for (y = y0; y <= y1; y++) {
-                for (x = x0; x <= x1; x++) {
-                    if (tb_is_player_spawn_meta(index) &&
-                        tb_xy_blocked_3d_exact(blocking, x, y, z0, z1))
-                        continue;
-                    if (!tb_stamp_column(hm, xmin, ymin, sx, sy, x, y,
-                                         (uint8_t)index, zmin, zmax_excl_io,
-                                         stamps, n_stamps, &cap)) {
-                        ok = false;
-                        goto done;
+            for (z = z0; z <= z1; z++) {
+                for (y = y0; y <= y1; y++) {
+                    for (x = x0; x <= x1; x++) {
+                        if (tb_is_player_spawn_meta(index) &&
+                            tb_xy_blocked_3d_exact(blocking, x, y, z, z))
+                            continue;
+                        if (!tb_add_stamp(stamps, n_stamps, &cap,
+                                          x, y, z, (uint8_t)index, zmin,
+                                          zmax_excl_io)) {
+                            ok = false;
+                            goto done;
+                        }
                     }
                 }
             }
