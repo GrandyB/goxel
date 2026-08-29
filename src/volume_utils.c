@@ -478,6 +478,33 @@ static bool brush_sample_texture_color(const int vp[3], uint8_t out[4])
     return true;
 }
 
+void goxel_paint_voxel_color(const painter_t *painter, const int pos[3],
+                             void *inherit_ctx, uint8_t out[4])
+{
+    float global_p[3];
+
+    memcpy(out, painter->color, 4);
+    if (goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE &&
+            brush_sample_texture_color(pos, out)) {
+        out[3] = ((int)out[3] * (int)painter->color[3]) / 255;
+    } else if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE &&
+               goxel_brush_palette_sample_at(pos, out)) {
+        if (painter->mode == MODE_PAINT)
+            out[3] = ((int)out[3] * (int)painter->color[3]) / 255;
+    } else if (painter->color_inherit && inherit_ctx) {
+        get_color_beneath(inherit_ctx, pos, out);
+    }
+
+    if (goxel.brush_source_mode != BRUSH_SOURCE_TEXTURE &&
+        goxel.brush_source_mode != BRUSH_SOURCE_PALETTE) {
+        vec3_set(global_p,
+                 (float)noise_tex_coord(pos[0]),
+                 (float)noise_tex_coord(pos[1]),
+                 (float)noise_tex_coord(pos[2]));
+        apply_noise_if_applicable(painter, global_p, out);
+    }
+}
+
 void apply_noise_if_applicable(const painter_t* painter, float global_p[3], uint8_t col[4]) {
     if (painter->noise_enabled != 0 && painter->noise_intensity != 0 && painter->noise_coverage != 0) {
         float noise_value = uniform_noise(global_p[0], global_p[1], global_p[2]);
@@ -645,7 +672,6 @@ void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
     for (x = min_x; x <= max_x; x++) {
         for (y = min_y; y <= max_y; y++) {
             float edge_alpha = 0.f;
-            float global_p[3];
             if (!brush_surface_column_membership(painter, center, radius_x, radius_y,
                                                  x, y, &edge_alpha))
                 continue;
@@ -664,29 +690,9 @@ void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
                                               start_pos, dimensions)) {
                     break;
                 }
-                memcpy(paint_voxel, painter->color, 4);
-                if (goxel.tool && goxel.tool->id == TOOL_BRUSH &&
-                        goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE &&
-                        brush_sample_texture_color(pos, paint_voxel)) {
-                    paint_voxel[3] = ((int)paint_voxel[3] * (int)painter->color[3]) / 255;
-                } else if (goxel.tool && goxel.tool->id == TOOL_BRUSH &&
-                           goxel.brush_source_mode == BRUSH_SOURCE_PALETTE &&
-                           goxel_brush_palette_sample_at(pos, paint_voxel)) {
-                    if (painter->mode == MODE_PAINT)
-                        paint_voxel[3] = ((int)paint_voxel[3] *
-                                          (int)painter->color[3]) / 255;
-                } else if (painter->color_inherit) {
-                    get_color_beneath(&inherit_ctx, pos, paint_voxel);
-                }
-                if (!(goxel.tool && goxel.tool->id == TOOL_BRUSH &&
-                      (goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE ||
-                       goxel.brush_source_mode == BRUSH_SOURCE_PALETTE))) {
-                    vec3_set(global_p,
-                             (float)noise_tex_coord(pos[0]),
-                             (float)noise_tex_coord(pos[1]),
-                             (float)noise_tex_coord(pos[2]));
-                    apply_noise_if_applicable(painter, global_p, paint_voxel);
-                }
+                goxel_paint_voxel_color(painter, pos,
+                        painter->color_inherit ? &inherit_ctx : NULL,
+                        paint_voxel);
                 paint_voxel[3] = (uint8_t)((float)paint_voxel[3] * edge_alpha);
                 if (paint_voxel[3] == 0)
                     continue;
@@ -709,7 +715,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     uint8_t value[4], new_value[4], c[4];
     volume_iterator_t iter;
     volume_accessor_t accessor;
-    float size[3], p[3], global_p[3];
+    float size[3], p[3];
     float mat[4][4];
     float (*shape_func)(const float[3], const float[3], float smoothness);
     float k, v;
@@ -831,10 +837,6 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     // For every tile in the volume, iterate
     while (volume_iter(&iter, vp)) {
         vec3_set(p, vp[0] + 0.5, vp[1] + 0.5, vp[2] + 0.5);
-        vec3_set(global_p,
-                 (float)noise_tex_coord(vp[0]),
-                 (float)noise_tex_coord(vp[1]),
-                 (float)noise_tex_coord(vp[2]));
         if (use_box && !bbox_contains_vec(*painter->box, p)) continue;
         mat4_mul_vec3(mat, p, p);
         k = shape_func(p, size, shape_sm);
@@ -852,28 +854,8 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
 
         // Apply colours
         uint8_t col[4];
-        memcpy(col, painter->color, 4);
-        if (goxel.tool && goxel.tool->id == TOOL_BRUSH &&
-                goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE &&
-                brush_sample_texture_color(vp, col)) {
-            // Apply shared brush opacity to sampled texture alpha.
-            col[3] = ((int)col[3] * (int)painter->color[3]) / 255;
-        } else if (goxel.tool && goxel.tool->id == TOOL_BRUSH &&
-                   goxel.brush_source_mode == BRUSH_SOURCE_PALETTE &&
-                   goxel_brush_palette_sample_at(vp, col)) {
-            if (painter->mode == MODE_PAINT)
-                col[3] = ((int)col[3] * (int)painter->color[3]) / 255;
-        } else if (painter->color_inherit) {
-            get_color_beneath(&inherit_ctx, vp, col);
-        }
-
-        // Texture / palette mode should not inherit hidden color-noise settings.
-        if (!(goxel.tool && goxel.tool->id == TOOL_BRUSH &&
-              (goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE ||
-               goxel.brush_source_mode == BRUSH_SOURCE_PALETTE))) {
-            apply_noise_if_applicable(painter, global_p, col);
-        }
-        
+        goxel_paint_voxel_color(painter, vp,
+                painter->color_inherit ? &inherit_ctx : NULL, col);
         memcpy(c, col, 4);
 
         c[3] *= v;

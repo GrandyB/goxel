@@ -128,6 +128,7 @@ int tool_gui_inherit(void);
 int tool_gui_noise(int section_flags);
 int tool_gui_color(bool always_show_opacity);
 int tool_gui_color_default_collapsed(bool always_show_opacity);
+int tool_gui_brush_source(const char *tabsheet_id);
 int tool_gui_symmetry(void);
 int tool_gui_drag_mode(int *mode);
 

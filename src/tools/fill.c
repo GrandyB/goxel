@@ -319,8 +319,11 @@ static bool flood_fill_volume(volume_t *paint_volume,
                  paint_mode ? MODE_PAINT : MODE_OVER, NULL);
     goxel.painter.mode = existing_mode;
     goxel.painter.shape = existing_shape;
-    if (volume_get_key(paint_volume) != layer_key0)
+    if (volume_get_key(paint_volume) != layer_key0) {
         image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+        if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE)
+            goxel_brush_palette_reroll_seed();
+    }
     volume_delete(new_vol);
 
     LOG_D("flood_fill: complete");
@@ -423,8 +426,7 @@ static int gui(tool_t *tool)
         gui_input_int("Threshold", &filler->color_threshold, 0, 255);
     }
 
-    tool_gui_color(false);
-    gui_section_end();
+    tool_gui_brush_source("##fill_source");
     return 0;
 }
 

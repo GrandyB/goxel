@@ -163,6 +163,10 @@ void volume_get_heights_in_box(const volume_t *volume, int dimensions[3], int st
 void volume_op(volume_t *volume, const painter_t *painter,
                const float box[4][4]);
 
+/* Resolve painter color at a voxel: solid, texture, palette, inherit, noise. */
+void goxel_paint_voxel_color(const painter_t *painter, const int pos[3],
+                             void *inherit_ctx, uint8_t out[4]);
+
 /* Brush paint helper: top-down paint exposed surface shell per XY column. */
 void volume_brush_surface_stamp(volume_t *dst, const volume_t *src,
                                 const painter_t *painter,

@@ -483,22 +483,9 @@ static int iter(tool_t *tool, const painter_t *painter,
 
 static int gui(tool_t *tool)
 {
-    int i, tex_count;
-    float cell = 64.f;
-    char textures_dir[1024];
-    bool has_textures_dir;
     bool is_paint_mode = (goxel.painter.mode == MODE_PAINT);
-    /* Defer reload: swatches may already be in this frame's ImGui draw list. */
-    static bool textures_reload_pending = false;
 
     (void)tool;
-    if (textures_reload_pending) {
-        goxel_brush_textures_reload();
-        textures_reload_pending = false;
-    }
-    has_textures_dir = goxel_brush_textures_dir(textures_dir, sizeof(textures_dir));
-    if (!has_textures_dir)
-        textures_dir[0] = '\0';
 
     if (is_paint_mode && goxel.brush_surface_paint)
         tool_gui_radius_xy();
@@ -519,123 +506,7 @@ static int gui(tool_t *tool)
     gui_enabled_end();
     tool_gui_smoothness();
 
-    gui_dummy(0, 8);
-    {
-        static const char *source_tabs[] = {"Color", "Texture", "Palette"};
-        int prev_mode = goxel.brush_source_mode;
-        if (gui_tabsheet_begin("##brush_source", source_tabs, 3,
-                               &goxel.brush_source_mode)) {
-            if (prev_mode == BRUSH_SOURCE_PALETTE &&
-                goxel.brush_source_mode != BRUSH_SOURCE_PALETTE) {
-                goxel_brush_palette_exit_to_mode(goxel.brush_source_mode);
-            }
-
-            if (goxel.brush_source_mode == BRUSH_SOURCE_COLOR) {
-                tool_gui_color(false);
-                gui_section_end();
-            }
-
-            if (goxel.brush_source_mode == BRUSH_SOURCE_TEXTURE) {
-                tex_count = goxel_brush_textures_count();
-                if (gui_section_begin("Textures", true)) {
-                    if (tex_count == 0) {
-                        gui_text("No textures found in your goxel/textures folder.");
-                    } else {
-                        int cols = max(1, (int)((gui_content_avail_x() + 6.f) / (cell + 6.f)));
-                        for (i = 0; i < tex_count; i++) {
-                            const brush_texture_t *tex = goxel_brush_texture_get(i);
-                            texture_t *preview = goxel_brush_texture_preview_get(i);
-                            char id[64];
-                            snprintf(id, sizeof(id), "brush_tex_%d", i);
-                            if (i && (i % cols))
-                                gui_same_line_spaced(6.f);
-                            if (gui_texture_swatch_entry(
-                                        id,
-                                        preview ? preview->tex : 0,
-                                        preview ? preview->tex_w : 0,
-                                        preview ? preview->tex_h : 0,
-                                        preview ? preview->w : 0,
-                                        preview ? preview->h : 0,
-                                        tex ? tex->name : NULL,
-                                        goxel.brush_texture_index == i,
-                                        cell)) {
-                                goxel_brush_texture_set_current(i);
-                            }
-                        }
-                    }
-                    if (gui_button("Refresh", 0, 0))
-                        textures_reload_pending = true;
-                    gui_same_line_spaced(6.f);
-                    gui_enabled_begin(has_textures_dir);
-                    if (gui_button("Open folder", 0, 0)) {
-                        if (!gui_open_in_shell(textures_dir))
-                            gui_alert("Open folder", "Could not open the textures folder.");
-                    }
-                    gui_enabled_end();
-                }
-                gui_dummy(0, 8);
-                gui_input_float("Hue", &goxel.brush_texture_hue, 1.f, -180.f, 180.f,
-                                "%.1f");
-                gui_input_float("Saturation", &goxel.brush_texture_saturation, 1.f,
-                                0.f, 200.f, "%.1f");
-                gui_input_float("Lightness", &goxel.brush_texture_lightness, 1.f,
-                                -100.f, 100.f, "%.1f");
-                if (goxel.painter.mode == MODE_PAINT) {
-                    gui_color_opacity(goxel.painter.color);
-                }
-                if (gui_button("Reset", 0, 0)) {
-                    goxel.brush_texture_hue = 0.f;
-                    goxel.brush_texture_saturation = 100.f;
-                    goxel.brush_texture_lightness = 0.f;
-                    goxel.painter.color[3] = 255;
-                    /* Persist reset onto the active texture's remembered values. */
-                    if (goxel.brush_texture_index >= 0 &&
-                        goxel.brush_texture_index < goxel.brush_textures_count) {
-                        brush_texture_t *cur =
-                            &goxel.brush_textures[goxel.brush_texture_index];
-                        cur->hue = 0.f;
-                        cur->saturation = 100.f;
-                        cur->lightness = 0.f;
-                        cur->opacity = 255;
-                    }
-                }
-                gui_section_end();
-            }
-
-            if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE) {
-                if (gui_section_begin("Palette", true)) {
-                    if (goxel.brush_palette_count <= 0) {
-                        gui_text("Shift+click colours in the Palette panel to "
-                                 "paint with multiple colours.");
-                    } else {
-                        gui_text("%d colours selected (Shift+click to toggle).",
-                                 goxel.brush_palette_count);
-                        {
-                            gui_icon_info_t *pgrid;
-                            int pi, pidx = -1;
-                            pgrid = calloc((size_t)goxel.brush_palette_count,
-                                           sizeof(*pgrid));
-                            for (pi = 0; pi < goxel.brush_palette_count; pi++) {
-                                pgrid[pi] = (gui_icon_info_t){
-                                    .label = "",
-                                    .icon = 0,
-                                    .color = {
-                                        VEC4_SPLIT(
-                                            goxel.brush_palette_colors[pi])},
-                                };
-                            }
-                            gui_color_swatches_grid(
-                                    goxel.brush_palette_count, pgrid, NULL,
-                                    &pidx);
-                            free(pgrid);
-                        }
-                    }
-                }
-                gui_section_end();
-            }
-            gui_tabsheet_end();
-        }
-    }
+    tool_gui_brush_source("##brush_source");
 
     tool_gui_shape(NULL);
     tool_gui_symmetry();
