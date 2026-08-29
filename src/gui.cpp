@@ -3701,18 +3701,18 @@ int gui_color_swatches_grid(int nb, const gui_icon_info_t *icons,
         else
             highlight = (current && *current >= 0 && i == *current);
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(
-                icon->color[0] / 255.f, icon->color[1] / 255.f,
-                icon->color[2] / 255.f, icon->color[3] / 255.f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(
-                icon->color[0] / 255.f, icon->color[1] / 255.f,
-                icon->color[2] / 255.f, icon->color[3] / 255.f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(icon->color));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(icon->color));
         ImGui::Button("", ImVec2(size, size));
         ImGui::PopStyleColor(2);
         /* IsItemClicked: reliable with modifiers; Button() alone can miss them. */
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-            *current = i;
+            if (current) *current = i;
             ret = shift ? 2 : 1;
+        } else if (ImGui::IsItemHovered() &&
+                   ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            if (current) *current = i;
+            ret = 3;
         }
         if (icon->label && icon->label[0] && ImGui::IsItemHovered())
             gui_tooltip(icon->label);

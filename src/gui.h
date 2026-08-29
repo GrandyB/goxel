@@ -202,7 +202,8 @@ bool gui_icons_grid(int nb, const gui_icon_info_t *icons, int *current);
 /* Color swatch grid with optional multi-select highlights.
  * multi_selected[i] true => draw selection (nullable = use *current only).
  * *current may be -1 for no single selection when multi_selected is NULL.
- * Returns 0=none, 1=plain click, 2=Shift(+no Ctrl) click. Sets *current. */
+ * Returns 0=none, 1=plain click, 2=Shift(+no Ctrl) click, 3=right click.
+ * Sets *current. */
 int gui_color_swatches_grid(int nb, const gui_icon_info_t *icons,
                             const bool *multi_selected, int *current);
 float gui_label_size_get(void);

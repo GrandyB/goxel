@@ -463,11 +463,11 @@ int tool_gui_brush_source(const char *tabsheet_id)
                         gui_text("Shift+click colours in the Palette panel to "
                                  "paint with multiple colours.");
                     } else {
-                        gui_text("%d colours selected (Shift+click to toggle).",
+                        gui_text("%d colours selected (right-click to remove).",
                                  goxel.brush_palette_count);
                         {
                             gui_icon_info_t *pgrid;
-                            int pi, pidx = -1;
+                            int pi, pidx = -1, click;
                             pgrid = calloc((size_t)goxel.brush_palette_count,
                                            sizeof(*pgrid));
                             for (pi = 0; pi < goxel.brush_palette_count; pi++) {
@@ -479,9 +479,16 @@ int tool_gui_brush_source(const char *tabsheet_id)
                                             goxel.brush_palette_colors[pi])},
                                 };
                             }
-                            gui_color_swatches_grid(
+                            click = gui_color_swatches_grid(
                                     goxel.brush_palette_count, pgrid, NULL,
                                     &pidx);
+                            if (click == 3 && pidx >= 0 &&
+                                pidx < goxel.brush_palette_count) {
+                                goxel_brush_palette_toggle(
+                                        goxel.brush_palette_colors[pidx]);
+                                if (goxel.brush_palette_count == 0)
+                                    goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
+                            }
                             free(pgrid);
                         }
                     }
