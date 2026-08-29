@@ -467,13 +467,13 @@ static int iter(tool_t *tool, const painter_t *painter,
 
     if (goxel.brush_auto_plane) {
         if (!plane_is_null(goxel.tool_plane)) {
-            render_grid(&goxel.rend, goxel.tool_plane, goxel.grid_color,
+            render_grid(&goxel.rend, goxel.tool_plane, goxel.plane_color,
                         goxel.image->box);
         } else if ((curs->flags & CURSOR_SHIFT) && curs->snaped) {
             float plane[4][4], plane_pos[3];
             vec3_addk(curs->pos, curs->normal, -curs->snap_offset, plane_pos);
             plane_from_normal(plane, plane_pos, curs->normal);
-            render_grid(&goxel.rend, plane, goxel.grid_color, goxel.image->box);
+            render_grid(&goxel.rend, plane, goxel.plane_color, goxel.image->box);
         }
     }
 

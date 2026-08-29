@@ -96,8 +96,8 @@ static int gui(tool_t *tool_)
     }
 
     if (v) {
-        gui_color_small("Plane color", goxel.grid_color);
-        gui_color_opacity(goxel.grid_color);
+        gui_color_small("Plane color", goxel.plane_color);
+        gui_color_opacity(goxel.plane_color);
     }
 
     gui_combo("Move", &tool->move_mode, (const char*[]) {

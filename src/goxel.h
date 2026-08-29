@@ -80,7 +80,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GOXEL_VERSION_STR "0.13.0-aos-0_3e-pre2"
+#define GOXEL_VERSION_STR "0.13.0-aos-0_3e"
 #ifndef GOXEL_DEFAULT_THEME
 #   define GOXEL_DEFAULT_THEME "dark"
 #endif
@@ -544,7 +544,7 @@ typedef struct goxel
     bool       show_export_viewport;
 
     uint8_t    back_color[4];
-    uint8_t    grid_color[4];
+    uint8_t    plane_color[4];
     uint8_t    image_box_color[4];
     bool       hide_box;
     bool       wrap_view;

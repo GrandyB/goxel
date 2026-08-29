@@ -26,7 +26,7 @@ void gui_view_panel(void)
         const char *label;
     } COLORS[] = {
         {goxel.back_color, "Back color"},
-        {goxel.grid_color, "Grid color"},
+        {goxel.plane_color, "Plane color"},
         {goxel.image_box_color, "Box color"},
     };
     int i;

@@ -888,7 +888,7 @@ void goxel_reset(void)
             VEC(0, 0, 0), VEC(1, 0, 0), VEC(0, 1, 0));
 
     vec4_set(goxel.back_color, 70, 70, 70, 255);
-    vec4_set(goxel.grid_color, 255, 255, 255, 32);
+    vec4_set(goxel.plane_color, 255, 255, 255, 32);
     vec4_set(goxel.image_box_color, 204, 204, 255, 255);
 
     action_exec2(ACTION_tool_set_cursor);
@@ -1845,7 +1845,7 @@ void goxel_render_view(const float viewport[4], bool render_mode)
         render_box(rend, b, c, EFFECT_WIREFRAME);
     }
     if (goxel.snap_mask & SNAP_PLANE)
-        render_grid(rend, goxel.plane, goxel.grid_color, goxel.image->box);
+        render_grid(rend, goxel.plane, goxel.plane_color, goxel.image->box);
 
     if (!box_is_null(goxel.image->box) && !goxel.hide_box) {
         render_box(rend, goxel.image->box, goxel.image_box_color,
