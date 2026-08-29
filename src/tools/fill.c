@@ -410,6 +410,9 @@ int tool_fill_iter(tool_t *tool, const painter_t *painter,
 static int gui(tool_t *tool)
 {
     tool_fill_t *filler = (void *)tool;
+    gui_text_wrapped(
+            "'Add' mode floodfills with new blocks.\n"
+            "'Paint' mode paints existing blocks.");
     gui_label_size_push(0);
     gui_checkbox(
             "Current layer only", &filler->current_layer_only,
