@@ -119,6 +119,7 @@ void model3d_render(model3d_t *model3d,
                     const texture_t *tex,
                     const float light[3],
                     const float clip_box[4][4],
-                    int   effects);
+                    int   effects,
+                    float grid_alpha);
 
 #endif // MODEL3D_H

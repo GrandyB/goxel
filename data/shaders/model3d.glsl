@@ -77,8 +77,11 @@ void main()
         if (abs((u_model * vec4(v_normal, 0.0)).y) > 0.5) c = v_pos.zx;
         if (abs((u_model * vec4(v_normal, 0.0)).z) > 0.5) c = v_pos.xy;
         mediump vec2 grid = abs(fract(c - 0.5) - 0.5) / fwidth(c);
-        mediump float line = min(grid.x, grid.y);
-        gl_FragColor.rgb *= mix(1.0 - u_grid_alpha, 1.0, min(line, 1.0));
+        mediump float line = min(grid.x, grid.y) * step(0.5, max(grid.x, grid.y));
+        mediump float t = u_grid_alpha * (1.0 - min(line, 1.0));
+        mediump float lum = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        mediump vec3 grid_rgb = lum < 0.4 ? vec3(1.0) : vec3(0.0);
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, grid_rgb, t);
     }
 #endif
 

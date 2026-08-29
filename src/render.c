@@ -583,12 +583,9 @@ static void render_tile_(renderer_t *rend, volume_t *volume,
             GL(glDrawElements(GL_TRIANGLES, item->nb_elements * 6,
                               GL_UNSIGNED_SHORT, 0));
         } else {
-            gl_update_uniform(shader, "u_l_amb", 0.0);
             gl_update_uniform(shader, "u_z_ofs", -0.001);
-            GL(glDrawElements(GL_LINES, item->nb_elements * 8,
-                              GL_UNSIGNED_SHORT,
-                              (void*)(uintptr_t)(BATCH_QUAD_COUNT * 6 * 2)));
-            gl_update_uniform(shader, "u_l_amb", rend->settings.ambient);
+            GL(glDrawElements(GL_TRIANGLES, item->nb_elements * 6,
+                              GL_UNSIGNED_SHORT, 0));
             gl_update_uniform(shader, "u_z_ofs", 0.0);
         }
     } else {
@@ -716,6 +713,7 @@ static void render_volume_(renderer_t *rend, volume_t *volume,
                                (effects & (EFFECT_EDGES | EFFECT_GRID))},
             {"HAS_TANGENTS", effects & EFFECT_BORDERS},
             {"ONLY_EDGES", effects & EFFECT_EDGES},
+            {"GRID_OVERLAY", effects & EFFECT_GRID},
             {"HAS_OCCLUSION_MAP", rend->settings.occlusion_strength > 0},
             {"VERTEX_LIGHTNING", !(effects & (EFFECT_BORDERS | EFFECT_UNLIT))},
             {"SMOOTHNESS", rend->settings.smoothness > 0},
@@ -745,7 +743,10 @@ static void render_volume_(renderer_t *rend, volume_t *volume,
     alpha = material->base_color[3];
     if (effects & EFFECT_SEMI_TRANSPARENT) alpha *= 0.75;
 
-    if (alpha < 1) {
+    if (effects & EFFECT_GRID) {
+        GL(glEnable(GL_BLEND));
+        GL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    } else if (alpha < 1) {
         GL(glEnable(GL_BLEND));
         GL(glBlendFunc(GL_CONSTANT_COLOR, GL_ONE_MINUS_CONSTANT_COLOR));
         GL(glBlendColor(alpha, alpha, alpha, alpha));
@@ -911,7 +912,9 @@ static void render_model_item(renderer_t *rend, const render_item_t *item,
     model3d_render(item->model3d,
                    item->mat, *view_mat, *proj_mat,
                    item->color,
-                   item->tex, light, item->clip_box, item->effects);
+                   item->tex, light, item->clip_box, item->effects,
+                   (item->effects & EFFECT_GRID) ? rend->settings.grid_alpha
+                                                 : 0.0);
 }
 
 static void render_grid_item(renderer_t *rend, const render_item_t *item)
@@ -927,7 +930,9 @@ static void render_grid_item(renderer_t *rend, const render_item_t *item)
         model3d_render(item->model3d,
                        model_mat, rend->view_mat, rend->proj_mat,
                        item->color, NULL, NULL, item->clip_box,
-                       item->effects);
+                       item->effects,
+                       (item->effects & EFFECT_GRID) ? rend->settings.grid_alpha
+                                                     : 0.0);
     }
 }
 

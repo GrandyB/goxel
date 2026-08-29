@@ -302,13 +302,13 @@ void model3d_render(model3d_t *model3d,
                     const texture_t *tex,
                     const float light[3],
                     const float clip_box[4][4],
-                    int   effects)
+                    int   effects,
+                    float grid_alpha)
 {
     uint8_t c[4];
     float cf[4];
     float light_dir[3];
     float clip[4][4] = {};
-    float grid_alpha;
 
     model3d_init();
     copy_color(color, c);
@@ -372,8 +372,8 @@ void model3d_render(model3d_t *model3d,
     if (clip_box && !box_is_null(clip_box)) mat4_invert(clip_box, clip);
     gl_update_uniform(g_shader, "u_clip", clip);
 
-    grid_alpha = (effects & EFFECT_GRID) ? 0.05 : 0.0;
-    gl_update_uniform(g_shader, "u_grid_alpha", grid_alpha);
+    gl_update_uniform(g_shader, "u_grid_alpha",
+            (effects & EFFECT_GRID) ? grid_alpha : 0.0);
 
     if (model3d->solid) {
         if (light && (!(effects & EFFECT_NO_SHADING))) {

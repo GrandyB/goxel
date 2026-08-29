@@ -18,6 +18,10 @@
 
 // Some of the algos come from glTF Sampler, under Apache Licence V2.
 
+#if defined(GL_ES) && defined(FRAGMENT_SHADER)
+#extension GL_OES_standard_derivatives : enable
+#endif
+
 uniform highp mat4  u_model;
 uniform highp mat4  u_view;
 uniform highp mat4  u_proj;
@@ -266,6 +270,29 @@ void main()
     vec4 base_color = u_m_base_color * v_color;
 
 #ifdef MATERIAL_UNLIT
+#ifdef GRID_OVERLAY
+#if !defined(GL_ES) || defined(GL_OES_standard_derivatives)
+    mediump vec3 n;
+#ifdef HAS_TANGENTS
+    n = normalize(v_TBN[2]);
+#else
+    n = normalize(v_Normal);
+#endif
+    mediump vec2 c;
+    if (abs(n.x) > 0.5) c = v_Position.yz;
+    else if (abs(n.y) > 0.5) c = v_Position.zx;
+    else c = v_Position.xy;
+    mediump vec2 grid = abs(fract(c - 0.5) - 0.5) / fwidth(c);
+    // Suppress bright + blobs where two lines cross on the same face.
+    mediump float line = min(grid.x, grid.y) * step(0.5, max(grid.x, grid.y));
+    mediump float t = u_m_base_color.a * (1.0 - min(line, 1.0));
+    if (t <= 0.0) discard;
+    float lum = dot(v_color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    vec3 grid_rgb = lum < 0.4 ? vec3(1.0) : vec3(0.0);
+    gl_FragColor = vec4(grid_rgb, t);
+    return;
+#endif
+#endif
     gl_FragColor = vec4(sqrt(base_color.rgb), base_color.a);
     return;
 #endif
