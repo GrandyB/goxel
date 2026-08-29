@@ -625,7 +625,8 @@ typedef struct goxel
     double     fps;         // Average fps.
     bool       quit;        // Set to true to quit the application.
 
-    int        view_effects; // EFFECT_WIREFRAME | EFFECT_GRID | EFFECT_EDGES
+    int        view_effects; // EFFECT_WIREFRAME | EFFECT_EDGES
+    int        grid_strength; // 0-100; 0 = no grid overlay
 
     // All the gestures we listen to.  Up to 16.
     gesture_t *gestures[16];

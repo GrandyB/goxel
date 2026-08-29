@@ -1781,6 +1781,9 @@ void goxel_render_view(const float viewport[4], bool render_mode)
     mat4_copy(camera->proj_mat, goxel.rend.proj_mat);
 
     effects |= goxel.view_effects;
+    goxel.rend.settings.grid_alpha = goxel.grid_strength / 100.f;
+    if (goxel.grid_strength > 0)
+        effects |= EFFECT_GRID;
 
     for (layer = goxel_get_render_layers(true); layer; layer = layer->next) {
         if (layer->visible && layer->volume) {

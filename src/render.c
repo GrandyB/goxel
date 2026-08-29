@@ -713,7 +713,7 @@ static void render_volume_(renderer_t *rend, volume_t *volume,
         shader_define_t defines[] = {
             {"SHADOW", shadow},
             {"MATERIAL_UNLIT", (rend->settings.effects & EFFECT_UNLIT) ||
-                               (effects & EFFECT_EDGES)},
+                               (effects & (EFFECT_EDGES | EFFECT_GRID))},
             {"HAS_TANGENTS", effects & EFFECT_BORDERS},
             {"ONLY_EDGES", effects & EFFECT_EDGES},
             {"HAS_OCCLUSION_MAP", rend->settings.occlusion_strength > 0},
@@ -838,7 +838,7 @@ void render_volume(renderer_t *rend, const volume_t *volume,
     if (effects & EFFECT_GRID_ONLY) effects |= EFFECT_GRID;
 
     if (effects & EFFECT_GRID) {
-        alpha = 0.1;
+        alpha = (effects & EFFECT_GRID_ONLY) ? 0.1f : rend->settings.grid_alpha;
         item = calloc(1, sizeof(*item));
         item->type = ITEM_VOLUME;
         item->volume = volume_copy(volume);

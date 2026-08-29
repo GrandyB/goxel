@@ -80,7 +80,8 @@ void gui_view_panel(void)
             clamp(goxel.rend.settings.smoothness, 0, 1);
     }
 
-    gui_checkbox_flag("Grid", &goxel.view_effects, EFFECT_GRID, NULL);
+    if (gui_input_int("Grid strength", &goxel.grid_strength, 0, 100))
+        goxel.grid_strength = clamp(goxel.grid_strength, 0, 100);
     gui_checkbox_flag("Edges", &goxel.view_effects, EFFECT_EDGES, NULL);
     gui_checkbox_flag("Unlit",
             &goxel.rend.settings.effects, EFFECT_UNLIT, NULL);

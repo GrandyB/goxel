@@ -54,6 +54,7 @@ typedef struct {
     float shadow;
     int   effects;
     float occlusion_strength;
+    float grid_alpha; // 0.0-1.0, from grid_strength / 100
 } render_settings_t;
 
 #ifndef RENDERER_T_DEFINED
