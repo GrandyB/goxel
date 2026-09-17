@@ -1017,6 +1017,7 @@ static void a_save_as(void)
     save_to_file(goxel.image, goxel.image->path, false);
     goxel.image->saved_key = image_get_key(goxel.image);
     sys_on_saved(path);
+    goxel_track_opened_file(goxel.image->path);
 }
 
 ACTION_REGISTER(ACTION_save_as,
@@ -1037,6 +1038,7 @@ static void a_save(void)
     save_to_file(goxel.image, goxel.image->path, false);
     goxel.image->saved_key = image_get_key(goxel.image);
     sys_on_saved(path);
+    goxel_track_opened_file(goxel.image->path);
 }
 
 ACTION_REGISTER(ACTION_save,
