@@ -46,6 +46,11 @@ int tool_color_picker_iter(tool_t *tool, const painter_t *painter,
     }
     goxel_set_help_text("%d %d %d", color[0], color[1], color[2]);
     if (curs->flags & CURSOR_PRESSED) {
+        /* Palette brush: leave multi-colour mode and use the picked colour. */
+        if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE) {
+            goxel_brush_palette_clear();
+            goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
+        }
         vec4_copy(color, goxel.painter.color);
         image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     }
