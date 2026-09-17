@@ -76,6 +76,10 @@ void gui_palette_panel(void)
     bool *multi_sel = NULL;
     static char name_buf[128];
     static palette_t *name_sync_palette;
+    /* Which swatch is highlighted when the palette has duplicate colours.
+     * Color-only matching collapses to first/last and jumps the highlight. */
+    static int sticky_swatch_idx = -1;
+    static const palette_t *sticky_palette = NULL;
     const char *preview;
 
     if (!goxel.palette)
@@ -223,9 +227,21 @@ void gui_palette_panel(void)
         if (psz < 0)
             psz = 0;
 
+        if (p != sticky_palette) {
+            sticky_palette = p;
+            sticky_swatch_idx = -1;
+        }
+
         swatch_idx = -1;
         if (psz > 0 && !in_palette_mode) {
-            swatch_idx = palette_search(p, goxel.painter.color, true);
+            if (sticky_swatch_idx >= 0 && sticky_swatch_idx < psz &&
+                memcmp(goxel.painter.color,
+                       p->entries[sticky_swatch_idx].color, 4) == 0) {
+                swatch_idx = sticky_swatch_idx;
+            } else {
+                swatch_idx = palette_search(p, goxel.painter.color, true);
+                sticky_swatch_idx = swatch_idx;
+            }
         }
 
         if (psz > 0) {
@@ -240,15 +256,15 @@ void gui_palette_panel(void)
             };
             if (in_palette_mode)
                 multi_sel[i] = goxel_brush_palette_contains(p->entries[i].color);
-            else if (memcmp(goxel.painter.color, p->entries[i].color, 4) == 0)
-                swatch_idx = i;
         }
         click = gui_color_swatches_grid(psz, grid,
                                         in_palette_mode ? multi_sel : NULL,
                                         &swatch_idx);
         if (click == 2 && swatch_idx >= 0 && swatch_idx < psz) {
+            sticky_swatch_idx = swatch_idx;
             goxel_brush_palette_shift_click(p->entries[swatch_idx].color);
         } else if (click == 1 && swatch_idx >= 0 && swatch_idx < psz) {
+            sticky_swatch_idx = swatch_idx;
             goxel_brush_palette_clear();
             goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
             if (gui_pick_rgb_keep_alpha()) {
@@ -291,6 +307,11 @@ void gui_palette_panel(void)
                     ni = goxel.palette->size - 1;
                 memcpy(goxel.painter.color,
                        goxel.palette->entries[ni].color, 4);
+                sticky_swatch_idx = ni;
+            } else if (sticky_swatch_idx > swatch_idx) {
+                sticky_swatch_idx--;
+            } else if (sticky_swatch_idx == swatch_idx) {
+                sticky_swatch_idx = -1;
             }
             palette_persist_or_alert();
         }
@@ -305,6 +326,7 @@ void gui_palette_panel(void)
     if (gui_button("Clear all colours", -1, 0)) {
         if (goxel.palette->size > 0) {
             palette_clear(goxel.palette);
+            sticky_swatch_idx = -1;
             palette_persist_or_alert();
         }
     }
