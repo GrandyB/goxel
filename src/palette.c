@@ -100,6 +100,14 @@ void palette_insert(palette_t *p, const uint8_t col[4], const char *name)
     p->size++;
 }
 
+void palette_replace_at(palette_t *p, int idx, const uint8_t col[4])
+{
+    if (!p || p->readonly || !col || idx < 0 || idx >= p->size)
+        return;
+    memcpy(p->entries[idx].color, col, 4);
+    p->entries[idx].name[0] = '\0';
+}
+
 void palette_remove_at(palette_t *p, int idx)
 {
     if (!p || p->readonly || idx < 0 || idx >= p->size)

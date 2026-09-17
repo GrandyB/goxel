@@ -84,6 +84,9 @@ int palette_search(const palette_t *palette, const uint8_t col[4],
 /* No-op on readonly palettes (use palette_in_use_update_if_needed to rebuild). */
 void palette_insert(palette_t *p, const uint8_t col[4], const char *name);
 
+/* Overwrite colour at idx; clears the entry name. No-op if readonly / bad idx. */
+void palette_replace_at(palette_t *p, int idx, const uint8_t col[4]);
+
 /* Remove one entry by index; shifts later entries down. No-op if readonly. */
 void palette_remove_at(palette_t *p, int idx);
 

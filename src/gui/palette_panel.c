@@ -80,6 +80,7 @@ void gui_palette_panel(void)
      * Color-only matching collapses to first/last and jumps the highlight. */
     static int sticky_swatch_idx = -1;
     static const palette_t *sticky_palette = NULL;
+    static bool replace_mode = false;
     const char *preview;
 
     if (!goxel.palette)
@@ -265,29 +266,42 @@ void gui_palette_panel(void)
             goxel_brush_palette_shift_click(p->entries[swatch_idx].color);
         } else if (click == 1 && swatch_idx >= 0 && swatch_idx < psz) {
             sticky_swatch_idx = swatch_idx;
-            goxel_brush_palette_clear();
-            goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
-            if (gui_pick_rgb_keep_alpha()) {
-                painter_color_apply_rgb_keep_alpha(
-                        goxel.painter.color, p->entries[swatch_idx].color);
+            if (replace_mode && !readonly) {
+                palette_replace_at(goxel.palette, swatch_idx,
+                                   goxel.painter.color);
+                palette_persist_or_alert();
             } else {
-                memcpy(goxel.painter.color, p->entries[swatch_idx].color, 4);
+                goxel_brush_palette_clear();
+                goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
+                if (gui_pick_rgb_keep_alpha()) {
+                    painter_color_apply_rgb_keep_alpha(
+                            goxel.painter.color, p->entries[swatch_idx].color);
+                } else {
+                    memcpy(goxel.painter.color, p->entries[swatch_idx].color, 4);
+                }
             }
         }
         free(grid);
         free(multi_sel);
     }
 
-    gui_row_begin(2);
+    if (readonly)
+        replace_mode = false;
+
+    gui_row_begin(3);
     gui_enabled_begin(!readonly);
-    if (gui_button("Add current color", -1, 0)) {
+    if (gui_button("Add", -1, 0)) {
         int n_before = goxel.palette->size;
 
         palette_insert(goxel.palette, goxel.painter.color, NULL);
         if (goxel.palette->size > n_before)
             palette_persist_or_alert();
     }
-    if (gui_button("Remove selected", -1, 0)) {
+    gui_tooltip_if_hovered("Append the current brush colour to this palette.");
+    gui_selectable("Replace", &replace_mode,
+                   "When on, click a swatch to overwrite it with the current "
+                   "brush colour.", -1);
+    if (gui_button("Remove", -1, 0)) {
         uint8_t removed[4];
 
         if (goxel.palette->size <= 0) {
