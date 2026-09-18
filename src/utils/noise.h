@@ -11,6 +11,12 @@
 
 float uniform_noise(float x, float y, float z);
 
+/* Position hash mixed with a stroke seed (brush edge dither).
+ * Call dither_noise_reroll_seed after each committed brush stroke. */
+float dither_noise(float x, float y, float z);
+uint32_t dither_noise_get_seed(void);
+void dither_noise_reroll_seed(void);
+
 /* Seeded 2D classic Perlin (~[-1, 1]).  One shared permutation table;
  * call perlin2_init_seed when the seed changes.  Seed 0 is treated as 1. */
 void perlin2_init_seed(unsigned seed);

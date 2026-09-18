@@ -2,6 +2,8 @@
 
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 // Hash function to create a pseudorandom number based on x, y, z
 static int hash(int x, int y, int z) {
@@ -16,6 +18,35 @@ float uniform_noise(float x, float y, float z) {
     int h = hash(x, y, z);
 
     // Normalize the hash value to [0, 1]
+    return (h & 0x7FFFFFFF) / (float)0x7FFFFFFF;
+}
+
+/* Seed for brush edge dither; advances after each committed brush stroke. */
+static uint32_t g_dither_seed = 1u;
+
+uint32_t dither_noise_get_seed(void)
+{
+    return g_dither_seed;
+}
+
+void dither_noise_reroll_seed(void)
+{
+    uint32_t a = (uint32_t)rand();
+    uint32_t b = (uint32_t)rand();
+
+    g_dither_seed = (a << 16) ^ b ^ ((uint32_t)goxel.frame_count * 0x9e3779b9u);
+    if (g_dither_seed == 0)
+        g_dither_seed = 1u;
+}
+
+float dither_noise(float x, float y, float z)
+{
+    /* Fold the stroke seed into the spatial hash so the same voxel can
+     * dither differently across brush strokes while staying stable mid-stroke. */
+    int h = hash((int)x, (int)y, (int)z);
+    h ^= (int)g_dither_seed;
+    h = (h >> 13) ^ h;
+    h = h * (h * h * 15731 + 789221) + 1376312589;
     return (h & 0x7FFFFFFF) / (float)0x7FFFFFFF;
 }
 

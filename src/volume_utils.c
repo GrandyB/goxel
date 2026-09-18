@@ -578,7 +578,7 @@ static bool brush_surface_column_membership(const painter_t *painter,
     }
 
     if (painter->dithering > 0) {
-        k += (uniform_noise((float)x, (float)y, center[2]) * 2.f - 1.f) *
+        k += (dither_noise((float)x, (float)y, center[2]) * 2.f - 1.f) *
              painter->dithering;
     }
     if (painter->smoothness > 0) {
@@ -742,6 +742,7 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         float     brush_texture_saturation;
         float     brush_texture_lightness;
         uint32_t  brush_palette_fp;
+        uint32_t  dither_seed;
     } key;
     memset(&key, 0, sizeof(key));
     key.id = volume_get_key(volume);
@@ -753,6 +754,9 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
     key.brush_texture_saturation = goxel.brush_texture_saturation;
     key.brush_texture_lightness = goxel.brush_texture_lightness;
     key.brush_palette_fp = goxel_brush_palette_fingerprint();
+    /* Only brush dither is seeded; still key it so stroke rerolls miss. */
+    key.dither_seed = (goxel.tool && goxel.tool->id == TOOL_BRUSH)
+        ? dither_noise_get_seed() : 0;
     cached = cache_get(cache, &key, sizeof(key));
     if (cached) {
         volume_set(volume, cached);
@@ -841,8 +845,11 @@ void volume_op(volume_t *volume, const painter_t *painter, const float box[4][4]
         mat4_mul_vec3(mat, p, p);
         k = shape_func(p, size, shape_sm);
         // Randomly displace the SDF boundary so edges dither/scatter.
+        // Brush uses a stroke seed so each stroke gets a fresh pattern.
         if (painter->dithering > 0) {
-            float n = uniform_noise((float)vp[0], (float)vp[1], (float)vp[2]);
+            float n = (goxel.tool && goxel.tool->id == TOOL_BRUSH)
+                ? dither_noise((float)vp[0], (float)vp[1], (float)vp[2])
+                : uniform_noise((float)vp[0], (float)vp[1], (float)vp[2]);
             k += (n * 2.f - 1.f) * painter->dithering;
         }
         if (painter->smoothness) {

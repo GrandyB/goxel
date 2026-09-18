@@ -50,6 +50,7 @@ typedef struct {
         float      brush_texture_saturation;
         float      brush_texture_lightness;
         uint32_t   brush_palette_fp;
+        uint32_t   dither_seed;
     } last_op;
     /* Active layer before this stroke; used to add map-color history on commit. */
     uint64_t   layer_key_at_stroke_start;
@@ -86,6 +87,7 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
                 goxel.brush_texture_lightness &&
             brush->last_op.brush_palette_fp ==
                 goxel_brush_palette_fingerprint() &&
+            brush->last_op.dither_seed == dither_noise_get_seed() &&
             vec3_equal(curs->pos, brush->last_op.pos) &&
             /* Drag locks alignment at begin; only hover tracks live normal. */
             (!goxel.brush_block_face_alignment || pressed ||
@@ -107,6 +109,7 @@ static bool check_can_skip(tool_brush_t *brush, const cursor_t *curs,
     brush->last_op.brush_texture_saturation = goxel.brush_texture_saturation;
     brush->last_op.brush_texture_lightness = goxel.brush_texture_lightness;
     brush->last_op.brush_palette_fp = goxel_brush_palette_fingerprint();
+    brush->last_op.dither_seed = dither_noise_get_seed();
     vec3_copy(curs->pos, brush->last_op.pos);
     vec3_copy(curs->normal, brush->last_op.normal);
     return false;
@@ -364,6 +367,7 @@ static int on_drag(gesture3d_t *gest, void *user)
                 image_recent_color_push_from_painter(goxel.image, &goxel.painter);
             if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE)
                 goxel_brush_palette_reroll_seed();
+            dither_noise_reroll_seed();
         }
         volume_set(brush->volume_orig, goxel.tool_volume);
         volume_delete(goxel.tool_volume);

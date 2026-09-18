@@ -905,6 +905,7 @@ void goxel_reset(void)
     goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
     goxel_brush_palette_clear();
     goxel_brush_palette_reroll_seed();
+    dither_noise_reroll_seed();
     if (goxel.brush_texture_index >= goxel.brush_textures_count)
         goxel.brush_texture_index = 0;
     goxel.brush_texture_hue = 0.f;
