@@ -424,7 +424,8 @@ static int gui(filter_t *filter_)
     const char *panel_help =
         "Collection of .vxl editing utilities for permeation and color cleanup.";
     const char *permeate_help =
-        "Permeate surface colours X blocks into non-exposed blocks around them.";
+        "Permeate surface colours X blocks into non-exposed blocks around them "
+        "(current layer only).";
     const char *fill_help =
         "Fill each column from bottom upward until the first solid voxel.";
     const char *remove_help =
