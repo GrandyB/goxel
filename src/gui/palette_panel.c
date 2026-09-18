@@ -286,10 +286,12 @@ void gui_palette_panel(void)
             };
             if (in_palette_mode)
                 multi_sel[i] = goxel_brush_palette_contains(p->entries[i].color);
+            else
+                multi_sel[i] = (memcmp(goxel.painter.color,
+                                       p->entries[i].color, 4) == 0);
         }
-        click = gui_color_swatches_grid(psz, grid,
-                                        in_palette_mode ? multi_sel : NULL,
-                                        &swatch_idx);
+        /* Always pass multi_sel so duplicate brush-colour matches all highlight. */
+        click = gui_color_swatches_grid(psz, grid, multi_sel, &swatch_idx);
         if (click == 2 && swatch_idx >= 0 && swatch_idx < psz) {
             sticky_swatch_idx = swatch_idx;
             goxel_brush_palette_shift_click(p->entries[swatch_idx].color);
