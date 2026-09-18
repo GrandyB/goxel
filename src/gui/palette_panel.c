@@ -253,6 +253,7 @@ void gui_palette_panel(void)
     p = goxel.palette;
     {
         int psz = p->size;
+        char (*tip_bufs)[16] = NULL;
 
         if (psz < 0)
             psz = 0;
@@ -277,10 +278,20 @@ void gui_palette_panel(void)
         if (psz > 0) {
             grid = calloc((size_t)psz, sizeof(*grid));
             multi_sel = calloc((size_t)psz, sizeof(*multi_sel));
+            tip_bufs = calloc((size_t)psz, sizeof(*tip_bufs));
         }
         for (i = 0; i < psz; i++) {
+            const char *label = p->entries[i].name;
+
+            /* Unnamed swatches (legacy / PNG / empty name) still show RGB. */
+            if (!label || !label[0]) {
+                snprintf(tip_bufs[i], sizeof(tip_bufs[i]), "#%02x%02x%02x",
+                         p->entries[i].color[0], p->entries[i].color[1],
+                         p->entries[i].color[2]);
+                label = tip_bufs[i];
+            }
             grid[i] = (gui_icon_info_t) {
-                .label = p->entries[i].name,
+                .label = label,
                 .icon = 0,
                 .color = {VEC4_SPLIT(p->entries[i].color)},
             };
@@ -315,6 +326,7 @@ void gui_palette_panel(void)
         }
         free(grid);
         free(multi_sel);
+        free(tip_bufs);
     }
 
     if (readonly)

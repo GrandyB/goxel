@@ -83,6 +83,12 @@ int palette_search(const palette_t *palette, const uint8_t col[4],
     return -1;
 }
 
+static void palette_entry_default_name(palette_entry_t *e)
+{
+    snprintf(e->name, sizeof(e->name), "#%02x%02x%02x",
+             e->color[0], e->color[1], e->color[2]);
+}
+
 void palette_append(palette_t *p, const uint8_t col[4], const char *name)
 {
     palette_entry_t *e;
@@ -94,8 +100,10 @@ void palette_append(palette_t *p, const uint8_t col[4], const char *name)
     e = &p->entries[p->size];
     memset(e, 0, sizeof(*e));
     memcpy(e->color, col, 4);
-    if (name)
+    if (name && name[0])
         snprintf(e->name, sizeof(e->name), "%s", name);
+    else
+        palette_entry_default_name(e);
     p->size++;
 }
 
@@ -111,7 +119,7 @@ void palette_replace_at(palette_t *p, int idx, const uint8_t col[4])
     if (!p || p->readonly || !col || idx < 0 || idx >= p->size)
         return;
     memcpy(p->entries[idx].color, col, 4);
-    p->entries[idx].name[0] = '\0';
+    palette_entry_default_name(&p->entries[idx]);
 }
 
 void palette_remove_at(palette_t *p, int idx)
@@ -733,6 +741,7 @@ static void palette_in_use_rebuild(palette_t *p)
     for (i = 0; i < n; i++) {
         memset(&p->entries[i], 0, sizeof(p->entries[i]));
         memcpy(p->entries[i].color, sorted[i].color, 4);
+        palette_entry_default_name(&p->entries[i]);
     }
     p->size = n;
     free(sorted);
