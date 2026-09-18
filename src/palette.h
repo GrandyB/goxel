@@ -53,10 +53,17 @@ void palette_make_unique_name(const palette_t *list, const char *base,
                               char *out, int out_size);
 
 /*
- * Rebuild the readonly "In-use colours" palette from non-hidden volume layers
- * when the scene content stamp changes. No-op if the stamp matches the last build.
+ * Rebuild the readonly "In-use colours" palette from effectively visible volume
+ * layers when the scene content stamp changes. No-op if the stamp matches the
+ * last build.
  */
 void palette_in_use_update_if_needed(void);
+
+/*
+ * Always rebuild "In-use colours" from the currently effectively visible volume
+ * layers (e.g. when the user re-selects that palette).
+ */
+void palette_in_use_force_update(void);
 
 /*
  * Free every palette in *list, reload from disk/assets, then optionally find

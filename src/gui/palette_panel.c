@@ -131,6 +131,8 @@ void gui_palette_panel(void)
                 name_sync_palette = NULL;
                 sync_name_field(goxel.palette, &name_sync_palette, name_buf,
                                 (int)sizeof(name_buf));
+                if (strcmp(goxel.palette->name, PALETTE_IN_USE_NAME) == 0)
+                    palette_in_use_force_update();
             }
             i++;
         }
@@ -161,6 +163,9 @@ void gui_palette_panel(void)
                 name_sync_palette = NULL;
                 sync_name_field(goxel.palette, &name_sync_palette, name_buf,
                                 (int)sizeof(name_buf));
+                if (goxel.palette &&
+                    strcmp(goxel.palette->name, PALETTE_IN_USE_NAME) == 0)
+                    palette_in_use_force_update();
             }
         }
     }

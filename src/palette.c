@@ -613,6 +613,9 @@ static int in_use_color_cmp(const void *a, const void *b)
     return 0;
 }
 
+/* Last scene stamp used by palette_in_use_update_if_needed / force_update. */
+static uint64_t g_in_use_last_stamp = (uint64_t)-1;
+
 static uint64_t palette_in_use_content_stamp(void)
 {
     layer_t *layer;
@@ -627,7 +630,9 @@ static uint64_t palette_in_use_content_stamp(void)
         stamp ^= ((uint64_t)i) << 32;
         if (layer->volume)
             stamp ^= volume_get_key(layer->volume) + (uint64_t)i * 0x100000001b3ULL;
-        stamp ^= (uint64_t)(layer->visible ? 1 : 0) << (i & 31);
+        /* Match rebuild: parent visibility and layer focus matter. */
+        stamp ^= (uint64_t)(layer_effectively_visible(goxel.image, layer) ? 1 : 0)
+                 << (i & 31);
         stamp ^= (uint64_t)layer->name[0] << ((i * 3) & 31);
     }
     stamp ^= (uint64_t)i * 0xcbf29ce484222325ULL;
@@ -710,9 +715,8 @@ static void palette_in_use_rebuild(palette_t *p)
     free(sorted);
 }
 
-void palette_in_use_update_if_needed(void)
+void palette_in_use_force_update(void)
 {
-    static uint64_t last_stamp = (uint64_t)-1;
     palette_t *p;
     uint64_t stamp;
 
@@ -720,9 +724,22 @@ void palette_in_use_update_if_needed(void)
     if (!p)
         return;
     stamp = palette_in_use_content_stamp();
-    if (stamp == last_stamp)
+    g_in_use_last_stamp = stamp;
+    palette_in_use_rebuild(p);
+}
+
+void palette_in_use_update_if_needed(void)
+{
+    palette_t *p;
+    uint64_t stamp;
+
+    p = palette_find_by_name(goxel.palettes, PALETTE_IN_USE_NAME);
+    if (!p)
         return;
-    last_stamp = stamp;
+    stamp = palette_in_use_content_stamp();
+    if (stamp == g_in_use_last_stamp)
+        return;
+    g_in_use_last_stamp = stamp;
     palette_in_use_rebuild(p);
 }
 
