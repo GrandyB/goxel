@@ -226,6 +226,7 @@ bool gui_bbox(float box[4][4]);
 bool gui_quat(const char *label, float q[4]);
 bool gui_action_button(int id, const char *label, float size);
 bool gui_selectable(const char *name, bool *v, const char *tooltip, float w);
+/* Text height matches gui_button (ITEM_HEIGHT); use next to row buttons. */
 bool gui_condensed_selectable(const char *name, bool *v, const char *tooltip, float w);
 bool gui_selectable_toggle(const char *name, int *v, int set_v,
                            const char *tooltip, float w);

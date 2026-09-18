@@ -298,7 +298,7 @@ void gui_palette_panel(void)
             palette_persist_or_alert();
     }
     gui_tooltip_if_hovered("Append the current brush colour to this palette.");
-    gui_selectable("Replace", &replace_mode,
+    gui_condensed_selectable("Replace", &replace_mode,
                    "When on, click a swatch to overwrite it with the current "
                    "brush colour.", -1);
     if (gui_button("Remove", -1, 0)) {

@@ -1908,7 +1908,11 @@ static bool _selectable(const char *label, bool *v, const char *tooltip,
     bool default_v = false;
     ImVec2 uv0, uv1; // The position in the icon texture.
 
-    float icon_height = ICON_HEIGHT * (condensed ? CONDENSE_FACTOR : 1);
+    /* Condensed text selectables match gui_button (ITEM_HEIGHT); icon ones
+     * stay on the scaled icon grid. */
+    float icon_height = condensed
+        ? (icon == -1 ? ITEM_HEIGHT : ICON_HEIGHT * CONDENSE_FACTOR)
+        : ICON_HEIGHT;
 
     if (gui->item_size) w = gui->item_size;
 
