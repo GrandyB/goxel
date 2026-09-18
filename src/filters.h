@@ -27,6 +27,8 @@ struct filter {
     int (*gui_fn)(filter_t *filter);
     void (*on_open)(filter_t *filter);
     void (*on_close)(filter_t *filter);
+    /* Called when a colour is picked from the map (Ctrl+click or picker). */
+    void (*on_color_picked)(filter_t *filter, const uint8_t color[4]);
     /* If true and the filter is open, view mouse is not sent to tools.
      * Optional mouse_fn receives the viewport each frame instead. */
     bool override_mouse;
@@ -79,5 +81,8 @@ void filters_iter_menu(const char *menu, const char *submenu,
 /* If any open filter has override_mouse, call its mouse_fn (if set) and
  * return true so the caller can skip tool_iter. */
 bool filters_mouse_overlay(const float viewport[4]);
+
+/* Notify open filters that a colour was picked from the map. */
+void filters_notify_color_picked(const uint8_t color[4]);
 
 #endif // FILTERS_H

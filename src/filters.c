@@ -117,3 +117,17 @@ bool filters_mouse_overlay(const float viewport[4])
     }
     return handled;
 }
+
+void filters_notify_color_picked(const uint8_t color[4])
+{
+    int i;
+
+    if (!color)
+        return;
+    for (i = 0; i < arrlen(g_filters); i++) {
+        filter_t *filter = g_filters[i];
+        if (!filter->is_open || !filter->on_color_picked)
+            continue;
+        filter->on_color_picked(filter, color);
+    }
+}

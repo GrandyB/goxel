@@ -55,6 +55,7 @@ int tool_color_picker_iter(tool_t *tool, const painter_t *painter,
         goxel.painter.color_inherit = false;
         vec4_copy(color, goxel.painter.color);
         image_recent_color_push_from_painter(goxel.image, &goxel.painter);
+        filters_notify_color_picked(color);
     }
     return 0;
 }
