@@ -63,6 +63,31 @@ static void palette_panel_new_user(char *name_buf, int name_buf_size,
     palette_persist_or_alert();
 }
 
+/* Sticky swatch highlight (file-scoped so clear-all can reset it). */
+static int sticky_swatch_idx = -1;
+
+static int clear_all_colours_popup(void *data)
+{
+    int ret = 0;
+
+    (void)data;
+    gui_text("Are you sure?");
+
+    gui_row_begin(0);
+    if (gui_button("Clear", 0, 0)) {
+        if (goxel.palette && goxel.palette->size > 0) {
+            palette_clear(goxel.palette);
+            sticky_swatch_idx = -1;
+            palette_persist_or_alert();
+        }
+        ret = 1;
+    }
+    if (gui_button("Cancel", 0, 0))
+        ret = 2;
+    gui_row_end();
+    return ret;
+}
+
 void gui_palette_panel(void)
 {
     int nb, i;
@@ -78,7 +103,6 @@ void gui_palette_panel(void)
     static palette_t *name_sync_palette;
     /* Which swatch is highlighted when the palette has duplicate colours.
      * Color-only matching collapses to first/last and jumps the highlight. */
-    static int sticky_swatch_idx = -1;
     static const palette_t *sticky_palette = NULL;
     static bool replace_mode = false;
     const char *preview;
@@ -340,9 +364,8 @@ void gui_palette_panel(void)
     gui_enabled_begin(!readonly);
     if (gui_button("Clear all colours", -1, 0)) {
         if (goxel.palette->size > 0) {
-            palette_clear(goxel.palette);
-            sticky_swatch_idx = -1;
-            palette_persist_or_alert();
+            gui_open_popup("Clear all colours", GUI_POPUP_RESIZE, NULL,
+                           clear_all_colours_popup);
         }
     }
     gui_enabled_end();
