@@ -270,6 +270,7 @@ void gui_palette_panel(void)
                 palette_replace_at(goxel.palette, swatch_idx,
                                    goxel.painter.color);
                 palette_persist_or_alert();
+                replace_mode = false;
             } else {
                 goxel_brush_palette_clear();
                 goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
@@ -299,8 +300,8 @@ void gui_palette_panel(void)
     }
     gui_tooltip_if_hovered("Append the current brush colour to this palette.");
     gui_condensed_selectable("Replace", &replace_mode,
-                   "When on, click a swatch to overwrite it with the current "
-                   "brush colour.", -1);
+                   "When on, the next swatch click overwrites that swatch "
+                   "with the current brush colour, then turns off.", -1);
     if (gui_button("Remove", -1, 0)) {
         uint8_t removed[4];
 
