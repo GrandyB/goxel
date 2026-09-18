@@ -117,6 +117,23 @@ void palette_remove_at(palette_t *p, int idx)
     p->size--;
 }
 
+void palette_move_at(palette_t *p, int idx, int dir)
+{
+    palette_entry_t tmp;
+    int j;
+
+    if (!p || p->readonly || idx < 0 || idx >= p->size)
+        return;
+    if (dir != -1 && dir != 1)
+        return;
+    j = idx + dir;
+    if (j < 0 || j >= p->size)
+        return;
+    tmp = p->entries[idx];
+    p->entries[idx] = p->entries[j];
+    p->entries[j] = tmp;
+}
+
 void palette_clear(palette_t *p)
 {
     if (!p || p->readonly)

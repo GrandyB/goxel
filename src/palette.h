@@ -97,6 +97,12 @@ void palette_replace_at(palette_t *p, int idx, const uint8_t col[4]);
 /* Remove one entry by index; shifts later entries down. No-op if readonly. */
 void palette_remove_at(palette_t *p, int idx);
 
+/*
+ * Swap entry at idx with the neighbour at idx+dir (dir = -1 or +1).
+ * No-op if readonly, out of range, or the neighbour would be out of range.
+ */
+void palette_move_at(palette_t *p, int idx, int dir);
+
 /* Remove all entries; keeps the entries buffer allocated for reuse. No-op if readonly. */
 void palette_clear(palette_t *p);
 

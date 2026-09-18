@@ -377,6 +377,40 @@ void gui_palette_panel(void)
     gui_tooltip_if_hovered("Remove every color swatch from the current "
                            "palette.");
     gui_row_end();
+
+    {
+        bool can_move;
+        bool can_back;
+        bool can_fwd;
+        int psz = goxel.palette->size;
+
+        if (psz < 0)
+            psz = 0;
+        /* One selected swatch only; multi-colour brush mode cannot reorder. */
+        can_move = !readonly && !in_palette_mode &&
+                   swatch_idx >= 0 && swatch_idx < psz;
+        can_back = can_move && swatch_idx > 0;
+        can_fwd = can_move && swatch_idx < psz - 1;
+
+        gui_row_begin(2);
+        gui_enabled_begin(can_back);
+        if (gui_button("<", -1, 0)) {
+            palette_move_at(goxel.palette, swatch_idx, -1);
+            sticky_swatch_idx = swatch_idx - 1;
+            palette_persist_or_alert();
+        }
+        gui_enabled_end();
+        gui_tooltip_if_hovered("Move backwards");
+        gui_enabled_begin(can_fwd);
+        if (gui_button(">", -1, 0)) {
+            palette_move_at(goxel.palette, swatch_idx, 1);
+            sticky_swatch_idx = swatch_idx + 1;
+            palette_persist_or_alert();
+        }
+        gui_enabled_end();
+        gui_tooltip_if_hovered("Move forwards");
+        gui_row_end();
+    }
 }
 
 void gui_palette_floating(void)
