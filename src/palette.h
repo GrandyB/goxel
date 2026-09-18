@@ -88,7 +88,16 @@ palette_t *palette_reload_all(palette_t **list, const char *prefer_name);
 int palette_search(const palette_t *palette, const uint8_t col[4],
                    bool exact);
 
-/* No-op on readonly palettes (use palette_in_use_update_if_needed to rebuild). */
+/*
+ * Append a colour even if it is already present (allows duplicate swatches).
+ * No-op on readonly palettes.
+ */
+void palette_append(palette_t *p, const uint8_t col[4], const char *name);
+
+/*
+ * Insert a colour if it is not already present (exact RGBA match).
+ * No-op on readonly palettes (use palette_in_use_update_if_needed to rebuild).
+ */
 void palette_insert(palette_t *p, const uint8_t col[4], const char *name);
 
 /* Overwrite colour at idx; clears the entry name. No-op if readonly / bad idx. */

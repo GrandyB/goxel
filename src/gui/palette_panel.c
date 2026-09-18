@@ -323,11 +323,15 @@ void gui_palette_panel(void)
     if (gui_button("Add", -1, 0)) {
         int n_before = goxel.palette->size;
 
-        palette_insert(goxel.palette, goxel.painter.color, NULL);
-        if (goxel.palette->size > n_before)
+        /* Always append, including when the brush colour is already present. */
+        palette_append(goxel.palette, goxel.painter.color, NULL);
+        if (goxel.palette->size > n_before) {
+            sticky_swatch_idx = goxel.palette->size - 1;
             palette_persist_or_alert();
+        }
     }
-    gui_tooltip_if_hovered("Append the current brush colour to this palette.");
+    gui_tooltip_if_hovered("Append the current brush colour to this palette "
+                           "(allows duplicates).");
     gui_condensed_selectable("Replace", &replace_mode,
                    "When on, the next swatch click overwrites that swatch "
                    "with the current brush colour, then turns off.", -1);

@@ -83,11 +83,10 @@ int palette_search(const palette_t *palette, const uint8_t col[4],
     return -1;
 }
 
-void palette_insert(palette_t *p, const uint8_t col[4], const char *name)
+void palette_append(palette_t *p, const uint8_t col[4], const char *name)
 {
     palette_entry_t *e;
     if (!p || p->readonly) return;
-    if (palette_search(p, col, true) != -1) return;
     if (p->allocated <= p->size) {
         p->allocated += 64;
         p->entries = realloc(p->entries, p->allocated * sizeof(*p->entries));
@@ -98,6 +97,13 @@ void palette_insert(palette_t *p, const uint8_t col[4], const char *name)
     if (name)
         snprintf(e->name, sizeof(e->name), "%s", name);
     p->size++;
+}
+
+void palette_insert(palette_t *p, const uint8_t col[4], const char *name)
+{
+    if (!p || p->readonly) return;
+    if (palette_search(p, col, true) != -1) return;
+    palette_append(p, col, name);
 }
 
 void palette_replace_at(palette_t *p, int idx, const uint8_t col[4])
