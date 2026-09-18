@@ -887,7 +887,7 @@ void goxel_reset(void)
     plane_from_vectors(goxel.plane,
             VEC(0, 0, 0), VEC(1, 0, 0), VEC(0, 1, 0));
 
-    vec4_set(goxel.back_color, 70, 70, 70, 255);
+    vec4_set(goxel.back_color, 147, 158, 158, 255);
     vec4_set(goxel.plane_color, 255, 255, 255, 32);
     vec4_set(goxel.image_box_color, 204, 204, 255, 255);
 
