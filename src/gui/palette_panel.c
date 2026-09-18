@@ -316,6 +316,8 @@ void gui_palette_panel(void)
             } else {
                 goxel_brush_palette_clear();
                 goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
+                /* Explicit single-colour pick overrides inherit-from-beneath. */
+                goxel.painter.color_inherit = false;
                 if (gui_pick_rgb_keep_alpha()) {
                     painter_color_apply_rgb_keep_alpha(
                             goxel.painter.color, p->entries[swatch_idx].color);
