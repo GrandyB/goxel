@@ -435,6 +435,6 @@ TOOL_REGISTER(TOOL_FILL, fill, tool_fill_t,
              .iter_fn = tool_fill_iter,
              .gui_fn = gui,
              .default_shortcut = "N",
-             .flags = TOOL_SHOW_MASK,
+             .flags = TOOL_SHOW_MASK | TOOL_ALLOW_PICK_COLOR,
              .has_snap = true,
 )

@@ -256,7 +256,7 @@ TOOL_REGISTER(TOOL_EXTRUDE, extrude, tool_extrude_t,
               .name = "Extrude",
               .iter_fn = iter,
               .gui_fn = gui,
-              .flags = TOOL_REQUIRE_CAN_EDIT,
+              .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_ALLOW_PICK_COLOR,
               .default_shortcut = "F",
               .has_snap = true,
 )

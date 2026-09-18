@@ -1437,6 +1437,6 @@ TOOL_REGISTER(TOOL_SMOOTH, smooth, tool_smooth_t,
               .name = "Smooth",
               .iter_fn = iter,
               .gui_fn = gui,
-              .flags = TOOL_REQUIRE_CAN_EDIT,
+              .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_ALLOW_PICK_COLOR,
               .has_snap = true,
 )

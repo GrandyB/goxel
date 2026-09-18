@@ -534,5 +534,5 @@ TOOL_REGISTER(TOOL_FUZZY_SELECT, fuzzy_select, tool_fuzzy_select_t,
               .gui_fn = gui,
               .on_open = on_open,
               .on_close = on_close,
-              .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_SHOW_MASK,
+              .flags = TOOL_REQUIRE_CAN_EDIT | TOOL_SHOW_MASK | TOOL_ALLOW_PICK_COLOR,
 )

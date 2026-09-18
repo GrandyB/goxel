@@ -482,6 +482,17 @@ static int iter(tool_t *tool, const painter_t *painter,
         return 0;
     }
 
+    /* Ctrl+click is shared color pick (tool_iter). Cursor normally clears
+     * snap_mask, so re-snap to the volume and do not steal the press. */
+    if (curs->flags & CURSOR_CTRL) {
+        curs->snap_mask = SNAP_VOLUME;
+        curs->snap_offset = -0.5;
+        curs->snaped = goxel_unproject(viewport, curs->xy, curs->snap_mask,
+                                       curs->snap_offset, curs->pos,
+                                       curs->normal);
+        return 0;
+    }
+
     /* Hit-test only (boxes are drawn from tool_cursor_render).
      * Prefer nearer faces so large sparse AABBs (roofs) stay selectable
      * over smaller layers behind them; at similar depth, smaller volume
@@ -739,6 +750,6 @@ TOOL_REGISTER(TOOL_CURSOR, cursor, tool_cursor_t,
               .name = "Cursor",
               .iter_fn = iter,
               .gui_fn = gui,
-              .flags = TOOL_REQUIRE_CAN_MOVE,
+              .flags = TOOL_REQUIRE_CAN_MOVE | TOOL_ALLOW_PICK_COLOR,
               .default_shortcut = "J",
 )
