@@ -102,6 +102,8 @@ static int pick_color_gesture(gesture3d_t *gest, void *user)
             goxel_brush_palette_clear();
             goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
         }
+        /* Explicit pick overrides inherit-from-beneath. */
+        goxel.painter.color_inherit = false;
         vec4_copy(color, goxel.painter.color);
         image_recent_color_push_from_painter(goxel.image, &goxel.painter);
     }
