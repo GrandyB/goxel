@@ -45,6 +45,9 @@ typedef struct {
     int analysis_recent_blocks;
     int analysis_palette_colors;
     int analysis_palette_blocks;
+    int analysis_covered_total;
+    int *analysis_covered_layers;
+    int analysis_covered_layer_count;
 } filter_reduce_colors_t;
 
 typedef struct {
@@ -88,6 +91,92 @@ static int usage_count_for_color(color_stat_hash_t *usage, const uint8_t c[4])
     key = pack_rgba(c);
     HASH_FIND_INT(usage, &key, el);
     return el ? el->count : 0;
+}
+
+/* How many forced colours appear in `usage` (intersection with unique set). */
+static int count_forced_covered(const forced_colors_t *forced,
+                                color_stat_hash_t *usage)
+{
+    int i, n = 0;
+
+    if (!forced || !usage)
+        return 0;
+    for (i = 0; i < forced->n; i++) {
+        if (usage_count_for_color(usage, forced->colors[i]) > 0)
+            n++;
+    }
+    return n;
+}
+
+static int collect_volume_color_hash(const volume_t *volume,
+                                     color_stat_hash_t **out)
+{
+    volume_iterator_t iter;
+    int pos[3];
+    uint8_t v[4];
+    color_stat_hash_t *el;
+    int key;
+
+    *out = NULL;
+    if (!volume)
+        return 0;
+
+    iter = volume_get_iterator(volume,
+                               VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(volume, &iter, pos, v);
+        if (v[3] == 0)
+            continue;
+        key = pack_rgba(v);
+        HASH_FIND_INT(*out, &key, el);
+        if (!el) {
+            el = calloc(1, sizeof(*el));
+            if (!el)
+                return -1;
+            el->rgba_key = key;
+            memcpy(el->color, v, 4);
+            el->count = 1;
+            HASH_ADD_INT(*out, rgba_key, el);
+        } else {
+            el->count++;
+        }
+    }
+    return 0;
+}
+
+/* Visible subtree merge — matches image_analyse_color_stats per-layer rows. */
+static int collect_subtree_color_hash(const image_t *img, const layer_t *root,
+                                      color_stat_hash_t **out)
+{
+    layer_t *layer;
+    volume_t *merged;
+    int ret;
+
+    *out = NULL;
+    if (!img || !root)
+        return 0;
+
+    merged = volume_new();
+    DL_FOREACH(img->layers, layer) {
+        if (!layer->volume)
+            continue;
+        if (!layer_effectively_visible(img, layer))
+            continue;
+        if (!layer_is_ancestor(img, root, layer))
+            continue;
+        volume_merge(merged, layer->volume, MODE_OVER, NULL);
+    }
+    ret = collect_volume_color_hash(merged, out);
+    volume_delete(merged);
+    return ret;
+}
+
+static void clear_covered_analysis(filter_reduce_colors_t *filter)
+{
+    free(filter->analysis_covered_layers);
+    filter->analysis_covered_layers = NULL;
+    filter->analysis_covered_layer_count = 0;
+    filter->analysis_covered_total = 0;
 }
 
 static bool layer_in_scope(const filter_reduce_colors_t *filter,
@@ -236,14 +325,18 @@ static void clear_analysis(filter_reduce_colors_t *filter)
     filter->analysis_recent_blocks = 0;
     filter->analysis_palette_colors = 0;
     filter->analysis_palette_blocks = 0;
+    clear_covered_analysis(filter);
 }
 
 static void gui_analysis_line(const char *label, int unique, int uniform,
-                              bool show_uniform)
+                              bool show_uniform, int covered)
 {
     if (show_uniform && uniform > 0)
         gui_text("%s: %d unique colours (%d after uniform)",
                  label, unique, uniform);
+    else if (covered > 0)
+        gui_text("%s: %d (-%d) unique colours = %d",
+                 label, unique, covered, unique - covered);
     else
         gui_text("%s: %d unique colours", label, unique);
 }
@@ -256,6 +349,9 @@ static void on_open(filter_t *filter_)
     filter->uniform_step = 8;
     filter->include_recent_colors = false;
     filter->include_palette_name[0] = '\0';
+    filter->analysis_covered_layers = NULL;
+    filter->analysis_covered_layer_count = 0;
+    filter->analysis_covered_total = 0;
     clear_analysis(filter);
 }
 
@@ -263,6 +359,7 @@ static void on_close(filter_t *filter_)
 {
     filter_reduce_colors_t *filter = (void *)filter_;
     color_stats_breakdown_clear(&filter->analysis);
+    clear_covered_analysis(filter);
 }
 
 static int gui(filter_t *filter_)
@@ -296,7 +393,7 @@ static int gui(filter_t *filter_)
     has_layer = goxel.image && goxel.image->active_layer;
     can_apply = goxel.image && (!filter->filter.current_only || has_layer);
 
-    gui_label_size_push(120);
+    gui_label_size_push(130);
 
     {
         bool prev_current_only = filter->filter.current_only;
@@ -317,7 +414,7 @@ static int gui(filter_t *filter_)
             clear_analysis(filter);
     }
 
-    gui_label_size_push(180);
+    gui_label_size_push(130);
 
     {
         int prev_method = filter->method;
@@ -399,6 +496,7 @@ static int gui(filter_t *filter_)
         filter->analysis_recent_blocks = 0;
         filter->analysis_palette_colors = 0;
         filter->analysis_palette_blocks = 0;
+        clear_covered_analysis(filter);
 
         if (filter->method == REDUCE_METHOD_MEDIAN_CUT &&
             (filter->include_recent_colors ||
@@ -411,6 +509,45 @@ static int gui(filter_t *filter_)
                                       filter->filter.current_only,
                                       false, true, &usage, NULL);
             collect_forced_colors(filter, usage, &forced);
+            filter->analysis_covered_total =
+                count_forced_covered(&forced, usage);
+
+            if (per_layer && filter->analysis.layer_count > 0 &&
+                forced.n > 0) {
+                layer_t *layer;
+                int idx = 0;
+
+                filter->analysis_covered_layers =
+                    calloc((size_t)filter->analysis.layer_count,
+                           sizeof(*filter->analysis_covered_layers));
+                if (filter->analysis_covered_layers) {
+                    filter->analysis_covered_layer_count =
+                        filter->analysis.layer_count;
+                    DL_FOREACH(goxel.image->layers, layer) {
+                        color_stat_hash_t *layer_usage = NULL;
+
+                        if (layer->parent_id != 0)
+                            continue;
+                        if (!layer_effectively_visible(goxel.image, layer))
+                            continue;
+                        if (idx >= filter->analysis.layer_count)
+                            break;
+                        if (collect_subtree_color_hash(goxel.image, layer,
+                                                       &layer_usage) == 0) {
+                            /* Skip empty like image_analyse_color_stats. */
+                            if (HASH_COUNT(layer_usage) == 0) {
+                                color_stats_hash_clear(&layer_usage);
+                                continue;
+                            }
+                            filter->analysis_covered_layers[idx] =
+                                count_forced_covered(&forced, layer_usage);
+                            idx++;
+                        }
+                        color_stats_hash_clear(&layer_usage);
+                    }
+                }
+            }
+
             color_stats_hash_clear(&usage);
 
             filter->analysis_show_recent = filter->include_recent_colors;
@@ -443,18 +580,33 @@ static int gui(filter_t *filter_)
                 if (show_uniform && total->uniform_colors > 0)
                     gui_text("Unique colours: %d (%d after uniform)",
                              total->unique_colors, total->uniform_colors);
+                else if (filter->analysis_covered_total > 0)
+                    gui_text("Unique colours: %d (-%d) = %d",
+                             total->unique_colors,
+                             filter->analysis_covered_total,
+                             total->unique_colors -
+                                 filter->analysis_covered_total);
                 else
                     gui_text("Unique colours: %d", total->unique_colors);
             } else {
                 int i;
+                int covered_total = filter->analysis_covered_total;
+                int covered_layer;
 
                 gui_analysis_line("Total", total->unique_colors,
-                                  total->uniform_colors, show_uniform);
+                                  total->uniform_colors, show_uniform,
+                                  covered_total);
                 for (i = 0; i < filter->analysis.layer_count; i++) {
-                    gui_analysis_line(filter->analysis.layers[i].name,
-                                      filter->analysis.layers[i].stats.unique_colors,
-                                      filter->analysis.layers[i].stats.uniform_colors,
-                                      show_uniform);
+                    covered_layer =
+                        (i < filter->analysis_covered_layer_count &&
+                         filter->analysis_covered_layers)
+                            ? filter->analysis_covered_layers[i]
+                            : 0;
+                    gui_analysis_line(
+                        filter->analysis.layers[i].name,
+                        filter->analysis.layers[i].stats.unique_colors,
+                        filter->analysis.layers[i].stats.uniform_colors,
+                        show_uniform, covered_layer);
                 }
             }
 
@@ -494,6 +646,6 @@ FILTER_REGISTER(reduce_colors, filter_reduce_colors_t,
     .menu = "image",
     .on_open = on_open,
     .on_close = on_close,
-    .panel_width = (GUI_PANEL_WIDTH_NORMAL * 3) / 2,
+    .panel_width = (GUI_PANEL_WIDTH_NORMAL * 4) / 2,
     .gui_fn = gui,
 )
