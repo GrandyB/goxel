@@ -33,10 +33,62 @@ typedef struct {
     int method;
     int nb_colors;
     int uniform_step;
+    bool include_recent_colors;
+    char include_palette_name[128];
     bool analysis_valid;
     bool analysis_open;
     color_stats_breakdown_t analysis;
+    bool analysis_show_recent;
+    bool analysis_show_palette;
+    char analysis_palette_name[128];
+    int analysis_recent_colors;
+    int analysis_recent_blocks;
+    int analysis_palette_colors;
+    int analysis_palette_blocks;
 } filter_reduce_colors_t;
+
+typedef struct {
+    uint8_t colors[256][4];
+    int n;
+    int n_recent;
+    int blocks_recent;
+    int n_palette;
+    int blocks_palette;
+} forced_colors_t;
+
+static int pack_rgba(const uint8_t c[4])
+{
+    return (int)((uint32_t)c[0] | ((uint32_t)c[1] << 8) |
+                 ((uint32_t)c[2] << 16) | ((uint32_t)c[3] << 24));
+}
+
+static bool forced_has_opaque_rgb(const forced_colors_t *forced,
+                                  const uint8_t rgb[3])
+{
+    int i;
+
+    for (i = 0; i < forced->n; i++) {
+        if (forced->colors[i][3] != 255)
+            continue;
+        if (forced->colors[i][0] == rgb[0] &&
+            forced->colors[i][1] == rgb[1] &&
+            forced->colors[i][2] == rgb[2])
+            return true;
+    }
+    return false;
+}
+
+static int usage_count_for_color(color_stat_hash_t *usage, const uint8_t c[4])
+{
+    color_stat_hash_t *el;
+    int key;
+
+    if (!usage)
+        return 0;
+    key = pack_rgba(c);
+    HASH_FIND_INT(usage, &key, el);
+    return el ? el->count : 0;
+}
 
 static bool layer_in_scope(const filter_reduce_colors_t *filter,
                            const layer_t *layer)
@@ -49,12 +101,73 @@ static bool layer_in_scope(const filter_reduce_colors_t *filter,
     return true;
 }
 
+/*
+ * Build forced median-cut colours: optional recent-bar opaques, then in-use
+ * entries from the selected user palette.  Dedupes by opaque RGB.  `usage`
+ * supplies block counts and palette membership; may be NULL when only the
+ * recent bar is enabled.
+ */
+static void collect_forced_colors(const filter_reduce_colors_t *filter,
+                                  color_stat_hash_t *usage,
+                                  forced_colors_t *out)
+{
+    const image_t *img = goxel.image;
+    const palette_t *pal;
+    uint8_t c[4];
+    int i;
+
+    memset(out, 0, sizeof(*out));
+    if (!img)
+        return;
+
+    if (filter->include_recent_colors) {
+        for (i = 0; i < img->recent_color_count; i++) {
+            memcpy(c, img->recent_colors[i].color, 4);
+            if (c[3] != 255)
+                continue;
+            if (forced_has_opaque_rgb(out, c))
+                continue;
+            if (out->n >= 256)
+                break;
+            memcpy(out->colors[out->n], c, 4);
+            out->n++;
+            out->n_recent++;
+            out->blocks_recent += usage_count_for_color(usage, c);
+        }
+    }
+
+    if (filter->include_palette_name[0] == '\0')
+        return;
+
+    pal = palette_find_by_name(goxel.palettes, filter->include_palette_name);
+    if (!pal || palette_is_readonly(pal) || !usage)
+        return;
+
+    for (i = 0; i < pal->size; i++) {
+        memcpy(c, pal->entries[i].color, 4);
+        if (c[3] != 255)
+            continue;
+        if (usage_count_for_color(usage, c) <= 0)
+            continue;
+        if (forced_has_opaque_rgb(out, c))
+            continue;
+        if (out->n >= 256)
+            break;
+        memcpy(out->colors[out->n], c, 4);
+        out->n++;
+        out->n_palette++;
+        out->blocks_palette += usage_count_for_color(usage, c);
+    }
+}
+
 static void apply_median_cut(filter_reduce_colors_t *filter)
 {
     layer_t *layer;
     volume_t *merged;
     uint8_t palette[256][4];
-    int nb;
+    color_stat_hash_t *usage = NULL;
+    forced_colors_t forced;
+    int nb, n_forced, rem, i;
 
     nb = clamp(filter->nb_colors, 2, 256);
     filter->nb_colors = nb;
@@ -67,7 +180,26 @@ static void apply_median_cut(filter_reduce_colors_t *filter)
         volume_merge(merged, layer->volume, MODE_OVER, NULL);
     }
 
-    quantization_gen_palette(merged, nb, palette, NULL, 0);
+    /* Palette membership needs usage; recent-only apply does not. */
+    if (filter->include_palette_name[0]) {
+        image_collect_color_stats(goxel.image, filter->filter.current_only,
+                                  false, false, &usage, NULL);
+    }
+    collect_forced_colors(filter, usage, &forced);
+    color_stats_hash_clear(&usage);
+
+    n_forced = forced.n;
+    if (n_forced > nb)
+        n_forced = nb;
+    for (i = 0; i < n_forced; i++)
+        memcpy(palette[i], forced.colors[i], 4);
+
+    rem = nb - n_forced;
+    if (rem > 0) {
+        quantization_gen_palette(merged, rem, palette + n_forced,
+                                 (const uint8_t (*)[4])forced.colors,
+                                 n_forced);
+    }
     volume_delete(merged);
 
     DL_FOREACH(goxel.image->layers, layer) {
@@ -97,6 +229,13 @@ static void clear_analysis(filter_reduce_colors_t *filter)
     filter->analysis_valid = false;
     filter->analysis_open = false;
     color_stats_breakdown_clear(&filter->analysis);
+    filter->analysis_show_recent = false;
+    filter->analysis_show_palette = false;
+    filter->analysis_palette_name[0] = '\0';
+    filter->analysis_recent_colors = 0;
+    filter->analysis_recent_blocks = 0;
+    filter->analysis_palette_colors = 0;
+    filter->analysis_palette_blocks = 0;
 }
 
 static void gui_analysis_line(const char *label, int unique, int uniform,
@@ -115,6 +254,8 @@ static void on_open(filter_t *filter_)
     filter->method = REDUCE_METHOD_MEDIAN_CUT;
     filter->nb_colors = 16;
     filter->uniform_step = 8;
+    filter->include_recent_colors = false;
+    filter->include_palette_name[0] = '\0';
     clear_analysis(filter);
 }
 
@@ -135,14 +276,19 @@ static int gui(filter_t *filter_)
     bool can_apply;
     int uniform_step;
 
+    const char *bar_help =
+        "Reduce distinct colours via median-cut or uniform quantization.";
     const char *help_text =
         "Reduce the number of distinct colours.  "
         "Median-cut builds a shared palette from layers in scope and maps "
         "voxels to the nearest palette colour.  "
+        "Optionally reserve exact colours from the recent-colours bar and/or "
+        "in-use entries from a user palette (those take slots from the colour "
+        "budget first).  "
         "Uniform snaps each RGB channel to a fixed step in 0..255.  "
         "One shared palette (median-cut) or step (uniform) applies to all "
         "layers in scope.";
-    goxel_set_help_text(help_text);
+    goxel_set_help_text(bar_help);
 
     if (gui_collapsing_header("Hint", false))
         gui_text_wrapped(help_text);
@@ -150,7 +296,7 @@ static int gui(filter_t *filter_)
     has_layer = goxel.image && goxel.image->active_layer;
     can_apply = goxel.image && (!filter->filter.current_only || has_layer);
 
-    gui_label_size_push(60);
+    gui_label_size_push(120);
 
     {
         bool prev_current_only = filter->filter.current_only;
@@ -171,7 +317,7 @@ static int gui(filter_t *filter_)
             clear_analysis(filter);
     }
 
-    gui_label_size_push(90);
+    gui_label_size_push(180);
 
     {
         int prev_method = filter->method;
@@ -184,7 +330,50 @@ static int gui(filter_t *filter_)
 
     gui_group_begin(NULL);
     if (filter->method == REDUCE_METHOD_MEDIAN_CUT) {
+        bool prev_recent = filter->include_recent_colors;
+        char prev_palette[128];
+        const char *preview;
+        const palette_t *it;
+        const palette_t *selected;
+
         gui_input_int("Colors", &filter->nb_colors, 2, 256);
+
+        gui_checkbox(
+            "Include recent colours",
+            &filter->include_recent_colors,
+            "Reserve opaque colours from the map recent-colours bar in the "
+            "median-cut palette (they take slots from the colour budget).");
+        if (prev_recent != filter->include_recent_colors)
+            clear_analysis(filter);
+
+        memcpy(prev_palette, filter->include_palette_name,
+               sizeof(prev_palette));
+        selected = filter->include_palette_name[0]
+                       ? palette_find_by_name(goxel.palettes,
+                                              filter->include_palette_name)
+                       : NULL;
+        if (selected && palette_is_readonly(selected))
+            selected = NULL;
+        if (!selected && filter->include_palette_name[0])
+            filter->include_palette_name[0] = '\0';
+        preview = selected ? selected->name : "None";
+
+        if (gui_combo_begin("Include palette", preview)) {
+            if (gui_combo_item("None", !selected))
+                filter->include_palette_name[0] = '\0';
+            DL_FOREACH(goxel.palettes, it) {
+                if (palette_is_readonly(it))
+                    continue;
+                if (gui_combo_item(it->name, it == selected)) {
+                    snprintf(filter->include_palette_name,
+                             sizeof(filter->include_palette_name),
+                             "%s", it->name);
+                }
+            }
+            gui_combo_end();
+        }
+        if (strcmp(prev_palette, filter->include_palette_name) != 0)
+            clear_analysis(filter);
     } else {
         gui_input_int("Variation", &filter->uniform_step, 1, 255);
     }
@@ -202,6 +391,41 @@ static int gui(filter_t *filter_)
         image_analyse_color_stats(goxel.image, filter->filter.current_only,
                                   false, true, per_layer, per_layer,
                                   analyse_uniform_step, &filter->analysis);
+
+        filter->analysis_show_recent = false;
+        filter->analysis_show_palette = false;
+        filter->analysis_palette_name[0] = '\0';
+        filter->analysis_recent_colors = 0;
+        filter->analysis_recent_blocks = 0;
+        filter->analysis_palette_colors = 0;
+        filter->analysis_palette_blocks = 0;
+
+        if (filter->method == REDUCE_METHOD_MEDIAN_CUT &&
+            (filter->include_recent_colors ||
+             filter->include_palette_name[0])) {
+            color_stat_hash_t *usage = NULL;
+            forced_colors_t forced;
+
+            /* Same flags as image_analyse_color_stats totals above. */
+            image_collect_color_stats(goxel.image,
+                                      filter->filter.current_only,
+                                      false, true, &usage, NULL);
+            collect_forced_colors(filter, usage, &forced);
+            color_stats_hash_clear(&usage);
+
+            filter->analysis_show_recent = filter->include_recent_colors;
+            filter->analysis_recent_colors = forced.n_recent;
+            filter->analysis_recent_blocks = forced.blocks_recent;
+            if (filter->include_palette_name[0]) {
+                filter->analysis_show_palette = true;
+                snprintf(filter->analysis_palette_name,
+                         sizeof(filter->analysis_palette_name),
+                         "%s", filter->include_palette_name);
+                filter->analysis_palette_colors = forced.n_palette;
+                filter->analysis_palette_blocks = forced.blocks_palette;
+            }
+        }
+
         filter->analysis_valid = true;
         filter->analysis_open = true;
     }
@@ -232,6 +456,19 @@ static int gui(filter_t *filter_)
                                       filter->analysis.layers[i].stats.uniform_colors,
                                       show_uniform);
                 }
+            }
+
+            if (filter->method == REDUCE_METHOD_MEDIAN_CUT) {
+                if (filter->analysis_show_recent)
+                    gui_text("Recent colours bar: %d colours (%d blocks)",
+                             filter->analysis_recent_colors,
+                             filter->analysis_recent_blocks);
+                if (filter->analysis_show_palette)
+                    gui_text("Palette \"%s\": %d colours (%d out of %d blocks)",
+                             filter->analysis_palette_name,
+                             filter->analysis_palette_colors,
+                             filter->analysis_palette_blocks,
+                             total->voxels_analysed);
             }
         }
     }
