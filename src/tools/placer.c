@@ -537,11 +537,16 @@ static int on_drag(gesture3d_t *gest, void *user)
 {
     if (gest->state == GESTURE_END) {
         tool_placer_t *placer = USER_GET(user, 0);
-        bool did_place = goxel.image->active_layer &&
-                         goxel.image->active_layer->volume && goxel.tool_volume;
+        layer_t *active = goxel.image->active_layer;
+        /* Groups cannot hold voxels; always place into a new child. Also
+         * avoid image_ensure_layer_for_adding here: it clears tool_volume. */
+        bool place_as_child = placer_place_in_child_layer ||
+            (active && layer_has_children(goxel.image, active));
+        bool did_place = active && goxel.tool_volume &&
+                         (place_as_child || active->volume);
 
         image_history_push(goxel.image);
-        if (did_place && placer_place_in_child_layer) {
+        if (did_place && place_as_child) {
             layer_t *target = placer_new_child_layer_for_placement(placer);
             volume_t *stamp = NULL;
 
@@ -557,11 +562,7 @@ static int on_drag(gesture3d_t *gest, void *user)
                 }
             }
         } else if (did_place) {
-            if (!image_ensure_layer_for_adding(goxel.image))
-                did_place = false;
-            if (did_place) {
-                volume_set(goxel.image->active_layer->volume, goxel.tool_volume);
-            }
+            volume_set(goxel.image->active_layer->volume, goxel.tool_volume);
         }
         volume_delete(goxel.tool_volume);
         goxel.tool_volume = NULL;
@@ -1326,7 +1327,8 @@ static int gui(tool_t *tool)
     gui_label_size_push(0);
     gui_checkbox("Place in child layer", &placer_place_in_child_layer,
             "If checked, each placement creates a child of the active layer.\n"
-            "If unchecked, placements merge into the current layer.");
+            "If unchecked, placements merge into the current layer.\n"
+            "When a group is selected, placements always create a child.");
     gui_label_size_pop();
 
     prev_cr_mode = placer->color_replace_mode;
