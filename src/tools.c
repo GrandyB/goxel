@@ -149,24 +149,21 @@ int tool_gui(tool_t *tool)
 }
 
 
-static bool mask_mode_button(const char *label, int s)
-{
-    bool v = goxel.mask_mode == s;
-    if (gui_selectable(label, &v, NULL, 0)) {
-        goxel.mask_mode = s;
-        return true;
-    }
-    return false;
-}
-
 int tool_gui_mask_mode(void)
 {
+    /* MODE_NULL (0) is the unset default; treat it as Set so the toggle
+     * always shows an active option. */
+    if (goxel.mask_mode != MODE_REPLACE &&
+        goxel.mask_mode != MODE_OVER &&
+        goxel.mask_mode != MODE_SUB)
+        goxel.mask_mode = MODE_REPLACE;
+
     gui_text("Mask");
     gui_group_begin(NULL);
     gui_row_begin(3);
-    mask_mode_button("Set", MODE_REPLACE);
-    mask_mode_button("Add", MODE_OVER);
-    mask_mode_button("Sub", MODE_SUB);
+    gui_selectable_toggle("Set", &goxel.mask_mode, MODE_REPLACE, NULL, 0);
+    gui_selectable_toggle("Add", &goxel.mask_mode, MODE_OVER, NULL, 0);
+    gui_selectable_toggle("Sub", &goxel.mask_mode, MODE_SUB, NULL, 0);
     gui_row_end();
     gui_group_end();
     return 0;

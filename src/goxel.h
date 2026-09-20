@@ -596,6 +596,8 @@ typedef struct goxel
 
     float      selection[4][4];   // The selection box.
     volume_t   *mask; // Global selection mask volume.
+    /* How clicks merge into mask: MODE_REPLACE (Set), MODE_OVER (Add),
+     * MODE_SUB.  Default MODE_REPLACE; 0 (MODE_NULL) is treated as Set. */
     int        mask_mode;
 
     struct {
