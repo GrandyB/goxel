@@ -94,7 +94,8 @@ void palette_append(palette_t *p, const uint8_t col[4], const char *name)
     palette_entry_t *e;
     if (!p || p->readonly) return;
     if (p->allocated <= p->size) {
-        p->allocated += 64;
+        /* Use size+64 (not allocated+64): disk loads leave allocated at 0. */
+        p->allocated = p->size + 64;
         p->entries = realloc(p->entries, p->allocated * sizeof(*p->entries));
     }
     e = &p->entries[p->size];
@@ -459,6 +460,7 @@ static int on_system_palette(int i, const char *path, void *user)
         free(pal);
         return 0;
     }
+    pal->allocated = pal->size;
     pal->entries = calloc(pal->size, sizeof(*pal->entries));
     parse_gpl(data, NULL, NULL, pal->entries);
     DL_APPEND(*list, pal);
@@ -555,12 +557,14 @@ static int on_palette2(const char *dir, const char *name, void *user)
     data = read_file(path, &size);
     if (str_endswith(name, ".gpl")) {
         pal->size = parse_gpl(data, pal->name, &pal->columns, NULL);
+        pal->allocated = pal->size;
         pal->entries = calloc(pal->size, sizeof(*pal->entries));
         err = parse_gpl(data, NULL, NULL, pal->entries);
     }
     else if (str_endswith(name, ".dat")) {
         snprintf(pal->name, sizeof(pal->name), "%s", name);
         pal->size = 256;
+        pal->allocated = pal->size;
         pal->entries = calloc(pal->size, sizeof(*pal->entries));
         err = parse_dat((void*)data, size, pal->entries);
     }
