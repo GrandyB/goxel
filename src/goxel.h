@@ -757,6 +757,11 @@ const layer_t *goxel_get_render_layers(bool with_tool_preview);
 void goxel_set_help_text(const char *msg, ...);
 void goxel_set_hint_text(const char *msg, ...);
 
+/* Clear the voxel selection mask (fuzzy/rect select). */
+void goxel_reset_mask(void);
+/* Clear the 3D selection box. */
+void goxel_reset_selection_box(void);
+
 void goxel_import_hmap_cmap(const char *hmap_path, const char *cmap_path);
 void goxel_import_image_reference(const char *path);
 void goxel_import_image_volume(const char *path);

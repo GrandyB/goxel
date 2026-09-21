@@ -2572,14 +2572,25 @@ ACTION_REGISTER(ACTION_copy_as_new_layer,
     .cfunc = a_copy_as_new_layer,
 )
 
+void goxel_reset_mask(void)
+{
+    if (!goxel.mask) return;
+    volume_delete(goxel.mask);
+    goxel.mask = NULL;
+}
+
+void goxel_reset_selection_box(void)
+{
+    mat4_copy(mat4_zero, goxel.selection);
+}
+
 static void a_reset_selection(void)
 {
     if (!volume_is_empty(goxel.mask)) {
-        volume_delete(goxel.mask);
-        goxel.mask = NULL;
+        goxel_reset_mask();
         return;
     }
-    mat4_copy(mat4_zero, goxel.selection);
+    goxel_reset_selection_box();
 }
 
 ACTION_REGISTER(ACTION_reset_selection,

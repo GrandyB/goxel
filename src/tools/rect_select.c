@@ -31,6 +31,8 @@ static void apply(const float rect_[4])
     rect[3] = max(rect_[1], rect_[3]);
 
     mat4_mul(cam->proj_mat, cam->view_mat, view_proj_mat);
+    /* Voxel mask and the 3D box are exclusive. */
+    goxel_reset_selection_box();
     if (goxel.mask == NULL) goxel.mask = volume_new();
     if (goxel.mask_mode == MODE_SUB)
         memset(color, 0, sizeof(color));

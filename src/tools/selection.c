@@ -368,8 +368,11 @@ static int on_drag(gesture3d_t *gest, void *user)
     tool_selection_t *tool = user;
     cursor_t *curs = gest->cursor;
 
-    if (gest->state == GESTURE_BEGIN)
+    if (gest->state == GESTURE_BEGIN) {
         vec3_copy(curs->pos, tool->start_pos);
+        /* Voxel mask and the 3D box are exclusive. */
+        goxel_reset_mask();
+    }
     curs->snap_mask &= ~(SNAP_SELECTION_IN | SNAP_SELECTION_OUT);
     goxel_set_help_text("Drag.");
     get_box(tool->start_pos, curs->pos, curs->normal,
@@ -481,6 +484,7 @@ static int gui(tool_t *tool)
         gui_enabled_begin(has_layer);
         if (gui_button("Select entire layer", -1, 0)) {
             float box[4][4];
+            goxel_reset_mask();
             volume_get_box(goxel.image->active_layer->volume, true, box);
             mat4_copy(box, goxel.selection);
         }

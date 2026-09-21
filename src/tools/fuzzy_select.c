@@ -102,6 +102,8 @@ static int on_click(gesture3d_t *gest, void *user)
     pi[0] = floor(curs->pos[0]);
     pi[1] = floor(curs->pos[1]);
     pi[2] = floor(curs->pos[2]);
+    /* Voxel mask and the 3D box are exclusive. */
+    goxel_reset_selection_box();
     sel = volume_new();
     if (!tool->global) {
         volume_select(volume, pi, select_cond, tool, sel);
