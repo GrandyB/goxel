@@ -69,6 +69,11 @@ void gui_tools_panel(void)
     }
     gui_section_end();
 
+    /* Box (selection tool) or voxel mask (fuzzy/rect select) persist across
+     * tool switches; offer reset here so other tools need not switch back. */
+    if (!box_is_null(goxel.selection) || !volume_is_empty(goxel.mask))
+        gui_action_button(ACTION_reset_selection, "Reset current selection", 1.0);
+
     if (gui_collapsing_header(goxel.tool->name, true))
         tool_gui(goxel.tool);
 }

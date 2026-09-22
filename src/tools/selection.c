@@ -495,12 +495,6 @@ static int gui(tool_t *tool)
 
     if (box_is_null(*box)) return 0;
 
-    gui_text("Drag mode");
-    if(gui_combo("##drag_mode", &g_drag_mode,
-              (const char*[]) {"Resize", "Move"}, 2)) {
-        original_drag_mode = g_drag_mode;
-    };
-
     gui_group_begin(NULL);
     if (gui_action_button(ACTION_reset_selection, "Reset", 1.0)) {
         gui_group_end();
@@ -515,6 +509,12 @@ static int gui(tool_t *tool)
     gui_action_button(ACTION_cut_as_new_layer, "Cut as new layer", 1);
     gui_action_button(ACTION_copy_as_new_layer, "Copy as new layer", 1.0);
     gui_group_end();
+
+    gui_text("Drag mode");
+    if(gui_combo("##drag_mode", &g_drag_mode,
+              (const char*[]) {"Resize", "Move"}, 2)) {
+        original_drag_mode = g_drag_mode;
+    };
 
     // XXX: why not using gui_bbox here?
     x_mag = fabs(get_magnitude(*box, 0));
