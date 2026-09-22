@@ -497,8 +497,13 @@ static int gui(tool_t *tool)
         tool_gui_radius();
 
     if (is_paint_mode) {
-        gui_checkbox("Surface paint", &goxel.brush_surface_paint,
-                     "Ignore Diameter Z; paint air-exposed surface down each column under the X/Y shape");
+        if (gui_checkbox("Surface paint", &goxel.brush_surface_paint,
+                     "Ignore Diameter Z; paint air-exposed surface down each column under the X/Y shape") &&
+            goxel.brush_surface_paint) {
+            goxel.brush_origin_at_base = false;
+            goxel.brush_block_face_alignment = false;
+            goxel.brush_auto_plane = false;
+        }
     }
     gui_enabled_begin(!(is_paint_mode && goxel.brush_surface_paint));
     gui_checkbox("Origin at base", &goxel.brush_origin_at_base,

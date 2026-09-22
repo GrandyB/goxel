@@ -809,8 +809,11 @@ static void render_view_cube(void)
                     camera, CAMERA_MODE_ORBIT, true, true);
             /* Surface paint only applies in Paint mode; leave it on so
              * switching into Paint (or already being in Paint) uses the
-             * top-down stamp. */
+             * top-down stamp. Incompatible with face/plane brush options. */
             goxel.brush_surface_paint = true;
+            goxel.brush_origin_at_base = false;
+            goxel.brush_block_face_alignment = false;
+            goxel.brush_auto_plane = false;
         }
         gizmo_camera_tooltip_if_hovered(
                 "Top-down camera - right click to pan, scroll to zoom");
