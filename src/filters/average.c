@@ -242,9 +242,9 @@ static int gui(filter_t *filter_)
 }
 
 FILTER_REGISTER(average, filter_average_t,
-                .name = "Average",
+                .name = "Color average",
                 .menu = "effects",
-                .submenu = "colors",
+                .submenu = "utilities",
                 .on_open = on_open,
                 .on_close = on_close,
                 .on_color_picked = on_color_picked,
