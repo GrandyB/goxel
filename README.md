@@ -26,11 +26,11 @@ additions below are specific to this fork.
 Download
 --------
 
-The latest release of **this fork** (currently **0_2r**) can be downloaded from:
+The latest release of **this fork** can be downloaded from:
 
 https://github.com/GrandyB/goxel/releases/latest
 
-Releases are typically available as a Windows `.exe`.
+Releases are typically available as a Windows `.exe`, but other formats may be available through the [build pipeline](https://github.com/GrandyB/goxel/actions/workflows/ci.yml).
 
 
 ![Lantern Ridge](.github/images/lantern_ridge_grandy.png)
