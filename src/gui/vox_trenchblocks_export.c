@@ -1039,8 +1039,22 @@ void gui_vox_trenchblocks_export_window(void)
 
 void goxel_open_vox_trenchblocks_export_popup(void)
 {
+    color_stats_summary_t summary;
+    int limit;
+
     if (!goxel.image) return;
     tb_palette_ensure_init(goxel.image);
+
+    /* Skip the settings popup when the map already fits in non-reserved
+     * palette slots (indices TB_PAL_RESERVED_LAST+1 .. 255). */
+    limit = 255 - TB_PAL_RESERVED_LAST;
+    if (image_count_unique_colors(goxel.image, false, true, true,
+                                  &summary) == 0 &&
+        summary.unique_colors <= limit) {
+        goxel_export_to_file(NULL, "vox (Trenchblocks)");
+        return;
+    }
+
     if (!goxel.gui.tb_export_win_open) {
         tb_layer_open_clear();
         g_tb_popup.palette_name[0] = '\0';
