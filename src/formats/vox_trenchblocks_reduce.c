@@ -381,6 +381,68 @@ int tb_reduce_simulate_totals(const image_t *img,
     return 0;
 }
 
+static int tb_count_volume_outstanding(const image_t *img, const volume_t *vol)
+{
+    color_stat_hash_t *colors = NULL, *el, *tmp;
+    int n = 0;
+
+    if (tb_add_volume_uniques(vol, &colors) != 0) {
+        color_stats_hash_clear(&colors);
+        return -1;
+    }
+    HASH_ITER(hh, colors, el, tmp) {
+        if (!tb_forced_map_has_rgb(img, el->color))
+            n++;
+    }
+    color_stats_hash_clear(&colors);
+    return n;
+}
+
+int tb_reduce_per_layer_after_middle(const image_t *img,
+                                     const tb_reduce_step_t *steps,
+                                     int n_steps,
+                                     int *out_layer_ids,
+                                     int *out_after,
+                                     int max_out,
+                                     int *out_global_after)
+{
+    tb_work_root_t *roots = NULL;
+    int n_roots = 0, i, n, global_after;
+
+    if (!img || !out_layer_ids || !out_after || max_out <= 0)
+        return -1;
+    if (out_global_after)
+        *out_global_after = 0;
+
+    if (tb_work_roots_build(img, &roots, &n_roots) != 0)
+        return -1;
+
+    for (i = 0; i < n_steps; i++)
+        tb_reduce_apply_step(roots, n_roots, &steps[i]);
+
+    n = n_roots < max_out ? n_roots : max_out;
+    for (i = 0; i < n; i++) {
+        int after = tb_count_volume_outstanding(img, roots[i].vol);
+        if (after < 0) {
+            tb_work_roots_free(roots, n_roots);
+            return -1;
+        }
+        out_layer_ids[i] = roots[i].layer_id;
+        out_after[i] = after;
+    }
+
+    global_after = tb_count_outstanding_uniques(img, roots, n_roots);
+    if (global_after < 0) {
+        tb_work_roots_free(roots, n_roots);
+        return -1;
+    }
+    if (out_global_after)
+        *out_global_after = global_after;
+
+    tb_work_roots_free(roots, n_roots);
+    return n;
+}
+
 int tb_reduce_prepare_export_volume(const image_t *img,
                                     uint8_t (*palette)[4], int n_forced,
                                     volume_t **out_volume)

@@ -49,6 +49,21 @@ int tb_reduce_simulate_totals(const image_t *img,
                               int *totals, int totals_len);
 
 /*
+ * After middle pipeline steps only (not the final remaining-slots fill),
+ * write per top-level visible root: layer id and unique colours still
+ * outstanding beyond the forced atlas.  If out_global_after is non-NULL,
+ * also writes the map-wide outstanding unique count (shared colours once).
+ * Returns root count, or -1.
+ */
+int tb_reduce_per_layer_after_middle(const image_t *img,
+                                     const tb_reduce_step_t *steps,
+                                     int n_steps,
+                                     int *out_layer_ids,
+                                     int *out_after,
+                                     int max_out,
+                                     int *out_global_after);
+
+/*
  * Apply middle pipeline steps to per-root working volumes, merge into a single
  * volume, and fill remaining map palette slots (median-cut, exclude forced).
  * *out_volume receives a new volume the caller must volume_delete.

@@ -156,6 +156,9 @@ void gui_text(const char *label, ...);
 void gui_text_wrapped(const char *label, ...);
 /* Faux-bold heading text (double-draw); same printf-style format as gui_text. */
 void gui_text_bold(const char *label, ...);
+/* Temporary text colour override (RGBA 0-1). Must pair with gui_text_color_pop. */
+void gui_text_color_push(float r, float g, float b, float a);
+void gui_text_color_pop(void);
 bool gui_button(const char *label, float w, int icon);
 /* Like gui_button, but styled with the theme accent (selected) color. */
 bool gui_button_primary(const char *label, float w, int icon);

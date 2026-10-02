@@ -34,7 +34,11 @@ typedef struct {
 
 typedef struct {
     color_stats_breakdown_t layers;
-    int *after_current; /* parallel to layers.layers[]; remaining uniques */
+    int *layer_ids; /* parallel to layers.layers[]; top-level layer id */
+    int *after_atlas; /* parallel; uniques not in forced atlas */
+    int *after_reduction; /* parallel; uniques beyond atlas after middle steps */
+    int after_atlas_total; /* map-wide unique outstanding beyond atlas */
+    int after_reduction_total; /* map-wide outstanding after middle steps */
     tb_after_colors_t *after_lists;
     tb_cross_bucket_t *buckets;
     int nbuckets;
@@ -48,6 +52,8 @@ typedef struct {
     int *reduce_totals;
     int reduce_totals_count;
     bool reduce_totals_valid;
+    /* Set when the reduce pipeline changed; numbers stay stale until Analyze. */
+    bool analysis_stale;
 } tb_popup_state_t;
 
 static bool *g_tb_layer_open = NULL;
@@ -81,8 +87,14 @@ static void tb_popup_clear_analysis(tb_popup_state_t *st)
         st->after_lists = NULL;
     }
     color_stats_breakdown_clear(&st->layers);
-    free(st->after_current);
-    st->after_current = NULL;
+    free(st->layer_ids);
+    st->layer_ids = NULL;
+    free(st->after_atlas);
+    st->after_atlas = NULL;
+    free(st->after_reduction);
+    st->after_reduction = NULL;
+    st->after_atlas_total = 0;
+    st->after_reduction_total = 0;
     if (st->buckets) {
         for (i = 0; i < st->nbuckets; i++)
             free(st->buckets[i].colors);
@@ -95,6 +107,7 @@ static void tb_popup_clear_analysis(tb_popup_state_t *st)
     st->reduce_totals = NULL;
     st->reduce_totals_count = 0;
     st->reduce_totals_valid = false;
+    st->analysis_stale = false;
 }
 
 static void tb_popup_clear_used(tb_popup_state_t *st)
@@ -223,8 +236,12 @@ static void tb_run_analysis(tb_popup_state_t *st)
                               &st->layers);
 
     if (st->layers.layer_count > 0) {
-        st->after_current = calloc((size_t)st->layers.layer_count,
-                                   sizeof(*st->after_current));
+        st->layer_ids = calloc((size_t)st->layers.layer_count,
+                               sizeof(*st->layer_ids));
+        st->after_atlas = calloc((size_t)st->layers.layer_count,
+                                 sizeof(*st->after_atlas));
+        st->after_reduction = calloc((size_t)st->layers.layer_count,
+                                     sizeof(*st->after_reduction));
         st->after_lists = calloc((size_t)st->layers.layer_count,
                                  sizeof(*st->after_lists));
     }
@@ -234,10 +251,13 @@ static void tb_run_analysis(tb_popup_state_t *st)
     DL_FOREACH(img->layers, layer) {
         if (layer->parent_id != 0) continue;
         if (!layer_effectively_visible(img, layer)) continue;
-        if (tb_collect_subtree_hash(img, layer, &layer_hash) != 0)
-            continue;
-        if (HASH_COUNT(layer_hash) == 0) {
-            color_stats_hash_clear(&layer_hash);
+        if (layer_idx >= st->layers.layer_count) break;
+
+        if (st->layer_ids)
+            st->layer_ids[layer_idx] = layer->id;
+
+        if (tb_collect_subtree_hash(img, layer, &layer_hash) != 0) {
+            layer_idx++;
             continue;
         }
 
@@ -246,9 +266,9 @@ static void tb_run_analysis(tb_popup_state_t *st)
             if (!tb_forced_map_has_rgb(img, el->color))
                 remaining++;
         }
-        if (st->after_current && layer_idx < st->layers.layer_count)
-            st->after_current[layer_idx] = remaining;
-        if (st->after_lists && layer_idx < st->layers.layer_count) {
+        if (st->after_atlas)
+            st->after_atlas[layer_idx] = remaining;
+        if (st->after_lists) {
             tb_after_colors_t *list = &st->after_lists[layer_idx];
             free(list->colors);
             list->colors = NULL;
@@ -266,7 +286,6 @@ static void tb_run_analysis(tb_popup_state_t *st)
                 memcpy(list->colors[list->count - 1], el->color, 4);
             }
         }
-        layer_idx++;
 
         HASH_ITER(hh, layer_hash, el, tmp) {
             /* Skip colours already forced into non-reserved swatches. */
@@ -287,6 +306,7 @@ static void tb_run_analysis(tb_popup_state_t *st)
                 max_share = ce->layer_count;
         }
         color_stats_hash_clear(&layer_hash);
+        layer_idx++;
     }
 
     for (share = 2; share <= max_share; share++) {
@@ -319,7 +339,28 @@ static void tb_run_analysis(tb_popup_state_t *st)
     }
     st->valid = true;
     tb_popup_refresh_used(st);
+    {
+        color_stat_hash_t *el, *tmp;
+        st->after_atlas_total = 0;
+        HASH_ITER(hh, st->used_colors, el, tmp) {
+            if (!tb_forced_map_has_rgb(img, el->color))
+                st->after_atlas_total++;
+        }
+    }
     tb_popup_refresh_reduce_totals(st);
+    st->analysis_stale = false;
+}
+
+static void tb_stale_color_begin(const tb_popup_state_t *st)
+{
+    if (st && st->analysis_stale)
+        gui_text_color_push(0.95f, 0.28f, 0.28f, 1.f);
+}
+
+static void tb_stale_color_end(const tb_popup_state_t *st)
+{
+    if (st && st->analysis_stale)
+        gui_text_color_pop();
 }
 
 static const char *TB_REDUCE_METHOD_NAMES[] = {
@@ -334,11 +375,17 @@ static void tb_popup_refresh_reduce_totals(tb_popup_state_t *st)
 {
     image_t *img = goxel.image;
     int n_steps, need, *totals;
+    int *ids = NULL, *after = NULL;
+    int n_roots, i, j;
 
     free(st->reduce_totals);
     st->reduce_totals = NULL;
     st->reduce_totals_count = 0;
     st->reduce_totals_valid = false;
+    if (st->after_reduction && st->layers.layer_count > 0)
+        memset(st->after_reduction, 0,
+               (size_t)st->layers.layer_count * sizeof(*st->after_reduction));
+    st->after_reduction_total = 0;
     if (!img) return;
 
     n_steps = img->tb_reduce_step_count;
@@ -353,6 +400,38 @@ static void tb_popup_refresh_reduce_totals(tb_popup_state_t *st)
     st->reduce_totals = totals;
     st->reduce_totals_count = need;
     st->reduce_totals_valid = true;
+
+    if (!st->after_reduction || !st->layer_ids || st->layers.layer_count <= 0)
+        return;
+
+    ids = calloc((size_t)st->layers.layer_count, sizeof(*ids));
+    after = calloc((size_t)st->layers.layer_count, sizeof(*after));
+    if (!ids || !after) {
+        free(ids);
+        free(after);
+        return;
+    }
+    n_roots = tb_reduce_per_layer_after_middle(img, img->tb_reduce_steps,
+                                               n_steps, ids, after,
+                                               st->layers.layer_count,
+                                               &st->after_reduction_total);
+    if (n_roots < 0) {
+        free(ids);
+        free(after);
+        return;
+    }
+    for (i = 0; i < st->layers.layer_count; i++) {
+        int lid = st->layer_ids[i];
+        st->after_reduction[i] = 0;
+        for (j = 0; j < n_roots; j++) {
+            if (ids[j] == lid) {
+                st->after_reduction[i] = after[j];
+                break;
+            }
+        }
+    }
+    free(ids);
+    free(after);
 }
 
 static bool tb_reduce_add_step(image_t *img)
@@ -604,142 +683,6 @@ static void tb_export_panel_gui(void)
     gui_row_end();
 
     gui_separator();
-    {
-        bool force_open = st->expand_analysis;
-        if (force_open)
-            st->expand_analysis = false;
-        if (gui_collapsing_header_force_open("Analysis", force_open)) {
-            if (st->valid) {
-                gui_push_id("tb_an_hdr");
-                gui_columns(3);
-                gui_text_bold("Layer");
-                gui_next_column();
-                gui_text_bold("Unique colours");
-                gui_next_column();
-                gui_text_bold("After current");
-                gui_next_column();
-                gui_columns(1);
-                gui_pop_id();
-
-                for (i = 0; i < st->layers.layer_count; i++) {
-                    char row_id[24];
-                    int n_after = st->after_current ? st->after_current[i] : 0;
-                    tb_after_colors_t *alist =
-                        st->after_lists ? &st->after_lists[i] : NULL;
-
-                    snprintf(row_id, sizeof(row_id), "tb_an_%d", i);
-                    gui_push_id(row_id);
-                    gui_columns(3);
-                    {
-                        bool fold = false;
-                        int fold_icon =
-                            (g_tb_layer_open && i < g_tb_layer_open_count &&
-                             g_tb_layer_open[i])
-                                ? ICON_ARROW_DOWNWARD
-                                : ICON_CHEVRON_RIGHT;
-
-                        if (n_after > 0 && g_tb_layer_open &&
-                            i < g_tb_layer_open_count) {
-                            char fold_id[24];
-                            snprintf(fold_id, sizeof(fold_id), "##tbfold%d", i);
-                            if (gui_condensed_selectable_icon(fold_id, &fold,
-                                                              fold_icon))
-                                g_tb_layer_open[i] = !g_tb_layer_open[i];
-                            gui_same_line();
-                        } else {
-                            gui_spacing_f(gui_icon_height(true));
-                            gui_same_line();
-                        }
-                        gui_text("%s", st->layers.layers[i].name[0]
-                                 ? st->layers.layers[i].name : "(unnamed)");
-                    }
-                    gui_next_column();
-                    gui_text("%d", st->layers.layers[i].stats.unique_colors);
-                    gui_next_column();
-                    gui_text("%d", n_after);
-                    gui_next_column();
-                    gui_columns(1);
-
-                    if (g_tb_layer_open && i < g_tb_layer_open_count &&
-                        g_tb_layer_open[i] && alist && alist->count > 0) {
-                        char grid_id[24];
-                        int clicked;
-                        /* Cap height so opening a multi-thousand colour fold
-                         * does not explode the floating window layout. */
-                        snprintf(grid_id, sizeof(grid_id), "tbaft%d", i);
-                        clicked = gui_color_swatches_scroll(
-                            grid_id, (const uint8_t (*)[4])alist->colors,
-                            alist->count, 14.f, 200.f);
-                        if (clicked >= 0 && clicked < alist->count) {
-                            if (tb_palette_add_rgb(img, alist->colors[clicked]))
-                                reanalyze = true;
-                        }
-                    }
-                    gui_pop_id();
-                }
-
-                {
-                    int available = 0;
-                    int after_total = 0;
-                    color_stat_hash_t *el, *tmp;
-
-                    for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
-                        if (img->tb_palette[i][3] != 255)
-                            available++;
-                    }
-                    HASH_ITER(hh, st->used_colors, el, tmp) {
-                        if (!tb_forced_map_has_rgb(img, el->color))
-                            after_total++;
-                    }
-                    gui_text("Total in use colours: %d",
-                             st->layers.total.unique_colors);
-                    gui_text("If current applied: %d", after_total);
-                    gui_text("Available atlas indexes: %d", available);
-                }
-
-                gui_separator();
-                gui_text_bold("Unique colours across layers");
-                gui_push_id("tb_cross");
-                gui_columns(3);
-                gui_text_bold("Across layers");
-                gui_next_column();
-                gui_text_bold("Colours");
-                gui_next_column();
-                gui_text_bold("Add");
-                gui_next_column();
-                if (st->nbuckets == 0) {
-                    gui_text("(none)");
-                    gui_next_column();
-                    gui_text("-");
-                    gui_next_column();
-                    gui_text("");
-                    gui_next_column();
-                } else {
-                    for (i = 0; i < st->nbuckets; i++) {
-                        char add_id[32];
-                        snprintf(add_id, sizeof(add_id), "Add##tbx%d", i);
-                        gui_text("%d", st->buckets[i].n_layers);
-                        gui_next_column();
-                        gui_text("%d", st->buckets[i].n_colors);
-                        gui_next_column();
-                        if (gui_button(add_id, 0, 0)) {
-                            int ci;
-                            for (ci = 0; ci < st->buckets[i].n_colors; ci++)
-                                tb_palette_add_rgb(img,
-                                                   st->buckets[i].colors[ci]);
-                            reanalyze = true;
-                        }
-                        gui_next_column();
-                    }
-                }
-                gui_columns(1);
-                gui_pop_id();
-            } else {
-                gui_text("(no analysis)");
-            }
-        }
-    }
-
     if (gui_collapsing_header("Color reduction", true)) {
         int n_steps = img->tb_reduce_step_count;
         int available = tb_reduce_available_slots(img);
@@ -769,9 +712,11 @@ static void tb_export_panel_gui(void)
         gui_next_column();
         gui_text("");
         gui_next_column();
-        if (st->reduce_totals_valid && st->reduce_totals_count >= 1)
+        if (st->reduce_totals_valid && st->reduce_totals_count >= 1) {
+            tb_stale_color_begin(st);
             gui_text("%d", st->reduce_totals[0]);
-        else
+            tb_stale_color_end(st);
+        } else
             gui_text("-");
         gui_next_column();
 
@@ -844,9 +789,11 @@ static void tb_export_panel_gui(void)
             gui_next_column();
 
             if (st->reduce_totals_valid &&
-                ri + 1 < st->reduce_totals_count)
+                ri + 1 < st->reduce_totals_count) {
+                tb_stale_color_begin(st);
                 gui_text("%d", st->reduce_totals[ri + 1]);
-            else
+                tb_stale_color_end(st);
+            } else
                 gui_text("-");
             gui_next_column();
 
@@ -870,9 +817,11 @@ static void tb_export_panel_gui(void)
         gui_text("Remaining atlas slots (%d)", available);
         gui_next_column();
         if (st->reduce_totals_valid &&
-            st->reduce_totals_count == n_steps + 2)
+            st->reduce_totals_count == n_steps + 2) {
+            tb_stale_color_begin(st);
             gui_text("%d", st->reduce_totals[n_steps + 1]);
-        else
+            tb_stale_color_end(st);
+        } else
             gui_text("-");
         gui_next_column();
 
@@ -884,7 +833,156 @@ static void tb_export_panel_gui(void)
         gui_pop_id();
 
         if (pipeline_changed)
-            reanalyze = true;
+            st->analysis_stale = true;
+    }
+
+    {
+        bool force_open = st->expand_analysis;
+        if (force_open)
+            st->expand_analysis = false;
+        if (gui_collapsing_header_force_open("Analysis", force_open)) {
+            if (st->valid) {
+                gui_push_id("tb_an_hdr");
+                gui_columns(4);
+                gui_text_bold("Layer");
+                gui_next_column();
+                gui_text_bold("Unique colours");
+                gui_next_column();
+                gui_text_bold("After atlas");
+                gui_next_column();
+                gui_text_bold("After reduction");
+                gui_next_column();
+                gui_columns(1);
+                gui_pop_id();
+
+                for (i = 0; i < st->layers.layer_count; i++) {
+                    char row_id[24];
+                    int n_after = st->after_atlas ? st->after_atlas[i] : 0;
+                    int n_after_red = st->after_reduction
+                                      ? st->after_reduction[i] : 0;
+                    tb_after_colors_t *alist =
+                        st->after_lists ? &st->after_lists[i] : NULL;
+
+                    snprintf(row_id, sizeof(row_id), "tb_an_%d", i);
+                    gui_push_id(row_id);
+                    gui_columns(4);
+                    {
+                        bool fold = false;
+                        int fold_icon =
+                            (g_tb_layer_open && i < g_tb_layer_open_count &&
+                             g_tb_layer_open[i])
+                                ? ICON_ARROW_DOWNWARD
+                                : ICON_CHEVRON_RIGHT;
+
+                        if (n_after > 0 && g_tb_layer_open &&
+                            i < g_tb_layer_open_count) {
+                            char fold_id[24];
+                            snprintf(fold_id, sizeof(fold_id), "##tbfold%d", i);
+                            if (gui_condensed_selectable_icon(fold_id, &fold,
+                                                              fold_icon))
+                                g_tb_layer_open[i] = !g_tb_layer_open[i];
+                            gui_same_line();
+                        } else {
+                            gui_spacing_f(gui_icon_height(true));
+                            gui_same_line();
+                        }
+                        gui_text("%s", st->layers.layers[i].name[0]
+                                 ? st->layers.layers[i].name : "(unnamed)");
+                    }
+                    gui_next_column();
+                    gui_text("%d", st->layers.layers[i].stats.unique_colors);
+                    gui_next_column();
+                    gui_text("%d", n_after);
+                    gui_next_column();
+                    tb_stale_color_begin(st);
+                    gui_text("%d", n_after_red);
+                    tb_stale_color_end(st);
+                    gui_next_column();
+                    gui_columns(1);
+
+                    if (g_tb_layer_open && i < g_tb_layer_open_count &&
+                        g_tb_layer_open[i] && alist && alist->count > 0) {
+                        char grid_id[24];
+                        int clicked;
+                        /* Cap height so opening a multi-thousand colour fold
+                         * does not explode the floating window layout. */
+                        snprintf(grid_id, sizeof(grid_id), "tbaft%d", i);
+                        clicked = gui_color_swatches_scroll(
+                            grid_id, (const uint8_t (*)[4])alist->colors,
+                            alist->count, 14.f, 200.f);
+                        if (clicked >= 0 && clicked < alist->count) {
+                            if (tb_palette_add_rgb(img, alist->colors[clicked]))
+                                reanalyze = true;
+                        }
+                    }
+                    gui_pop_id();
+                }
+
+                /* Totals row (map-wide uniques; after-reduction is not a
+                 * sum of per-layer counts — shared colours counted once). */
+                gui_columns(4);
+                gui_text_bold("Total");
+                gui_next_column();
+                gui_text_bold("%d", st->layers.total.unique_colors);
+                gui_next_column();
+                gui_text_bold("%d", st->after_atlas_total);
+                gui_next_column();
+                tb_stale_color_begin(st);
+                gui_text_bold("%d", st->after_reduction_total);
+                tb_stale_color_end(st);
+                gui_next_column();
+                gui_columns(1);
+
+                {
+                    int available = 0;
+                    for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
+                        if (img->tb_palette[i][3] != 255)
+                            available++;
+                    }
+                    gui_text("Available atlas indexes: %d", available);
+                }
+
+                gui_separator();
+                gui_text_bold("Unique colours across layers");
+                gui_push_id("tb_cross");
+                gui_columns(3);
+                gui_text_bold("Across layers");
+                gui_next_column();
+                gui_text_bold("Colours");
+                gui_next_column();
+                gui_text_bold("Add");
+                gui_next_column();
+                if (st->nbuckets == 0) {
+                    gui_text("(none)");
+                    gui_next_column();
+                    gui_text("-");
+                    gui_next_column();
+                    gui_text("");
+                    gui_next_column();
+                } else {
+                    for (i = 0; i < st->nbuckets; i++) {
+                        char add_id[32];
+                        snprintf(add_id, sizeof(add_id), "Add##tbx%d", i);
+                        gui_text("%d", st->buckets[i].n_layers);
+                        gui_next_column();
+                        gui_text("%d", st->buckets[i].n_colors);
+                        gui_next_column();
+                        if (gui_button(add_id, 0, 0)) {
+                            int ci;
+                            for (ci = 0; ci < st->buckets[i].n_colors; ci++)
+                                tb_palette_add_rgb(img,
+                                                   st->buckets[i].colors[ci]);
+                            reanalyze = true;
+                        }
+                        gui_next_column();
+                    }
+                }
+                gui_columns(1);
+                gui_pop_id();
+            } else {
+                gui_text("(no analysis)");
+            }
+        }
     }
 
     gui_separator();
@@ -894,7 +992,12 @@ static void tb_export_panel_gui(void)
         reanalyze = true;
     }
     gui_same_line();
-    if (gui_button("Analyze", 0, 0)) {
+    if (st->analysis_stale) {
+        if (gui_button_primary("Analyze", 0, 0)) {
+            tb_run_analysis(st);
+            st->expand_analysis = true;
+        }
+    } else if (gui_button("Analyze", 0, 0)) {
         tb_run_analysis(st);
         st->expand_analysis = true;
     }

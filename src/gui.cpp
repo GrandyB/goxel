@@ -2084,6 +2084,16 @@ void gui_text_bold(const char *label, ...)
     ImGui::TextUnformatted(buf);
 }
 
+void gui_text_color_push(float r, float g, float b, float a)
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(r, g, b, a));
+}
+
+void gui_text_color_pop(void)
+{
+    ImGui::PopStyleColor(1);
+}
+
 void gui_text_wrapped(const char *label, ...)
 {
     va_list args;
