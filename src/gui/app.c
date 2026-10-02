@@ -261,5 +261,7 @@ void gui_app(void)
 
     gui_palette_floating();
 
+    gui_vox_trenchblocks_export_window();
+
     goxel.pathtrace = goxel.pathtracer.status && PANELS[PANEL_RENDER].detached;
 }

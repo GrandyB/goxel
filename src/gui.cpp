@@ -1357,6 +1357,28 @@ void gui_floating_panel_end(void)
     ImGui::End();
 }
 
+bool gui_floating_window_begin(const char *title, bool *open, float init_w,
+                               float init_h)
+{
+    ImGuiViewport *vp;
+
+    if (!open || !*open)
+        return false;
+    vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(init_w, init_h), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(220.f, 140.f),
+                                        ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::Begin(title, open, ImGuiWindowFlags_None);
+    return true;
+}
+
+void gui_floating_window_end(void)
+{
+    ImGui::End();
+}
+
 bool gui_palette_window_begin(float init_w, float init_h)
 {
     if (!goxel.gui.palette_win_open)
@@ -2043,6 +2065,25 @@ void gui_text(const char *label, ...)
     va_end(args);
 }
 
+void gui_text_bold(const char *label, ...)
+{
+    char buf[512];
+    va_list args;
+    ImVec2 pos;
+    ImDrawList *dl;
+    ImU32 col;
+
+    va_start(args, label);
+    vsnprintf(buf, sizeof(buf), label, args);
+    va_end(args);
+    pos = ImGui::GetCursorScreenPos();
+    dl = ImGui::GetWindowDrawList();
+    col = ImGui::GetColorU32(ImGuiCol_Text);
+    /* Faux bold: draw a 1px offset copy under the normal text. */
+    dl->AddText(ImVec2(pos.x + 1.0f, pos.y), col, buf);
+    ImGui::TextUnformatted(buf);
+}
+
 void gui_text_wrapped(const char *label, ...)
 {
     va_list args;
@@ -2615,6 +2656,11 @@ bool gui_color_opacity(uint8_t color[4]) {
 }
 
 int gui_color_swatch(const char *id, const uint8_t color[4], float size) {
+    return gui_color_swatch_bordered(id, color, size, NULL);
+}
+
+int gui_color_swatch_bordered(const char *id, const uint8_t color[4],
+                              float size, const uint8_t border_rgba[4]) {
     /* ColorButton() only uses ButtonBehavior for the left button; RMB does
      * not register on the item, so we use InvisibleButton with L+R. */
     ImVec4 c((float)color[0] / 255.f, (float)color[1] / 255.f,
@@ -2637,7 +2683,11 @@ int gui_color_swatch(const char *id, const uint8_t color[4], float size) {
     } else {
         dl->AddRectFilled(a, b, col_u32, rounding);
     }
-    if (g.Style.FrameBorderSize > 0.0f) {
+    if (border_rgba) {
+        ImU32 border = IM_COL32(border_rgba[0], border_rgba[1],
+                                border_rgba[2], border_rgba[3]);
+        dl->AddRect(a, b, border, rounding, 0, 2.0f);
+    } else if (g.Style.FrameBorderSize > 0.0f) {
         dl->AddRect(a, b, ImGui::GetColorU32(ImGuiCol_Border), rounding, 0,
                     g.Style.FrameBorderSize);
     } else {

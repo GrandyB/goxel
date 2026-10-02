@@ -94,8 +94,12 @@ static void export_menu_callback(void *user, file_format_t *f)
         snprintf(label, sizeof(label), "%s", f->name);
     else
         snprintf(label, sizeof(label), "%s (%s)", f->name, ext);
-    if (gui_menu_item(0, label, true))
-        goxel_export_to_file(NULL, f->name);
+    if (!gui_menu_item(0, label, true)) return;
+    if (strcmp(f->name, "vox (Trenchblocks)") == 0) {
+        goxel_open_vox_trenchblocks_export_popup();
+        return;
+    }
+    goxel_export_to_file(NULL, f->name);
 }
 
 /* Open the filter window with the given layer scope. Re-selecting an open

@@ -2020,6 +2020,11 @@ uint32_t image_get_key(const image_t *img)
             key = XXH32(obj->p1, sizeof(obj->p1), key);
         }
     }
+    if (img->tb_palette_initialized) {
+        key = XXH32(img->tb_palette, sizeof(img->tb_palette), key);
+        key = XXH32(img->tb_palette_slot_forced,
+                    sizeof(img->tb_palette_slot_forced), key);
+    }
     return key;
 }
 

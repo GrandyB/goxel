@@ -73,6 +73,11 @@ void gui_window_resize_left_edge(float *width, float min_w, float max_w);
 void gui_floating_panel_begin(const char *title, float init_w, float init_h);
 void gui_floating_panel_end(void);
 
+/* Closable floating window; *open must stay valid until gui_floating_window_end. */
+bool gui_floating_window_begin(const char *title, bool *open, float init_w,
+                               float init_h);
+void gui_floating_window_end(void);
+
 /*
  * Standard ImGui floating palette window: closable, collapsible title bar.
  * Begins a frame only if palette_win_open; syncs palette_win_collapsed after
@@ -149,6 +154,8 @@ bool gui_collapsing_header(const char *label, bool default_opened);
 bool gui_collapsing_header_force_open(const char *label, bool force_open);
 void gui_text(const char *label, ...);
 void gui_text_wrapped(const char *label, ...);
+/* Faux-bold heading text (double-draw); same printf-style format as gui_text. */
+void gui_text_bold(const char *label, ...);
 bool gui_button(const char *label, float w, int icon);
 /* Like gui_button, but styled with the theme accent (selected) color. */
 bool gui_button_primary(const char *label, float w, int icon);
@@ -245,6 +252,9 @@ bool gui_color_small_f3(const char *label, float color[3]);
 bool gui_color_opacity(uint8_t color[4]);
 /* Color swatch: 0=none, 1=left (apply), 2=right (e.g. remove from list). */
 int gui_color_swatch(const char *id, const uint8_t color[4], float size);
+/* Like gui_color_swatch, with an optional RGBA border (NULL = default frame). */
+int gui_color_swatch_bordered(const char *id, const uint8_t color[4],
+                              float size, const uint8_t border_rgba[4]);
 bool gui_input_text(const char *label, char *buf, int size);
 /* Single-line text field with explicit width/height (e.g. condensed layer rows).
  * height <= 0 keeps the default frame height. */

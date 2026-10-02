@@ -108,7 +108,9 @@ void gui_export_panel(void)
         g_current->export_gui(g_current);
 
     if (gui_button("Export As...", 1, 0)) {
-        if (choose_export_path() == 0) {
+        if (strcmp(g_current->name, "vox (Trenchblocks)") == 0) {
+            goxel_open_vox_trenchblocks_export_popup();
+        } else if (choose_export_path() == 0) {
             goxel_export_to_file(goxel.last_export_panel_path, g_current->name);
         }
     }
@@ -121,6 +123,10 @@ void gui_export_panel(void)
     }
 
     if (gui_button(export_label, 1, 0)) {
+        if (strcmp(g_current->name, "vox (Trenchblocks)") == 0) {
+            goxel_open_vox_trenchblocks_export_popup();
+            return;
+        }
         if (!goxel.last_export_panel_path) {
             if (choose_export_path() == 1) {
                 return;

@@ -18,6 +18,8 @@
 #include "goxel.h"
 #include "file_format.h"
 #include "metadata.h"
+#include "utils/color_stats.h"
+#include "formats/vox_trenchblocks.h"
 
 #include <limits.h>
 #include <string.h>
@@ -26,8 +28,6 @@
     ({ type v_ = v; fwrite(&v_, sizeof(v_), 1, file); })
 
 #define VOX_TILE 256
-#define TB_PAL_META_FIRST 1
-#define TB_PAL_MAP_FIRST 17
 
 typedef struct {
     int ox, oy, oz;
@@ -97,11 +97,11 @@ static int tb_get_map_color_index(uint8_t v[4], uint8_t (*palette)[4])
     return have_best ? best : TB_PAL_MAP_FIRST;
 }
 
-static bool tb_palette_has_opaque_rgb(uint8_t (*palette)[4], int last_excl,
+static bool tb_palette_has_opaque_rgb(uint8_t (*palette)[4],
                                       const uint8_t rgb[3])
 {
     int i;
-    for (i = 1; i < last_excl; i++) {
+    for (i = 1; i < 256; i++) {
         if (palette[i][3] != 255) continue;
         if (palette[i][0] == rgb[0] && palette[i][1] == rgb[1] &&
             palette[i][2] == rgb[2])
@@ -110,8 +110,26 @@ static bool tb_palette_has_opaque_rgb(uint8_t (*palette)[4], int last_excl,
     return false;
 }
 
+static void tb_init_palette_slots(uint8_t (*palette)[4], bool *forced)
+{
+    int i;
+
+    memset(palette, 0, 256 * sizeof(*palette));
+    memset(forced, 0, 256 * sizeof(*forced));
+    for (i = 0; i < 8; i++) {
+        palette[TB_PAL_META_FIRST + i][0] = TB_META_RGB[i][0];
+        palette[TB_PAL_META_FIRST + i][1] = TB_META_RGB[i][1];
+        palette[TB_PAL_META_FIRST + i][2] = TB_META_RGB[i][2];
+        palette[TB_PAL_META_FIRST + i][3] = 255;
+        forced[TB_PAL_META_FIRST + i] = true;
+    }
+    for (i = TB_PAL_META_LAST + 1; i <= TB_PAL_RESERVED_LAST; i++)
+        forced[i] = true; /* 9-16 reserved empty */
+}
+
 /* Insert opaque recent colours at palette[17..], return how many were added. */
-static int tb_add_recent_colors(uint8_t (*palette)[4], const image_t *image)
+static int tb_add_recent_colors_to(uint8_t (*palette)[4], bool *forced,
+                                   const image_t *image)
 {
     int i, n = 0, slot;
     const image_recent_color_t *e;
@@ -119,17 +137,128 @@ static int tb_add_recent_colors(uint8_t (*palette)[4], const image_t *image)
     if (!image) return 0;
     for (i = 0; i < image->recent_color_count; i++) {
         e = &image->recent_colors[i];
-        /* Skip any transparency (only fully opaque colours are reserved). */
         if (e->color[3] != 255) continue;
-        slot = TB_PAL_MAP_FIRST + n;
-        if (slot >= 256) break;
-        if (tb_palette_has_opaque_rgb(palette, slot, e->color))
+        if (tb_palette_has_opaque_rgb(palette, e->color))
             continue;
+        for (slot = TB_PAL_MAP_FIRST; slot < 256; slot++) {
+            if (forced[slot] && palette[slot][3] == 255) continue;
+            if (forced[slot] && slot <= TB_PAL_RESERVED_LAST) continue;
+            if (palette[slot][3] == 255) continue;
+            break;
+        }
+        if (slot >= 256) break;
         palette[slot][0] = e->color[0];
         palette[slot][1] = e->color[1];
         palette[slot][2] = e->color[2];
         palette[slot][3] = 255;
+        forced[slot] = true;
         n++;
+    }
+    return n;
+}
+
+static void tb_palette_compact_map(uint8_t (*palette)[4], bool *forced)
+{
+    uint8_t tmp[256][4];
+    bool tmp_forced[256];
+    int i, n = TB_PAL_MAP_FIRST;
+
+    memcpy(tmp, palette, sizeof(tmp));
+    memcpy(tmp_forced, forced, sizeof(tmp_forced));
+    memset(palette + TB_PAL_MAP_FIRST, 0,
+           (256 - TB_PAL_MAP_FIRST) * sizeof(*palette));
+    memset(forced + TB_PAL_MAP_FIRST, 0,
+           (256 - TB_PAL_MAP_FIRST) * sizeof(*forced));
+    for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
+        if (!tmp_forced[i] || tmp[i][3] != 255) continue;
+        memcpy(palette[n], tmp[i], 4);
+        forced[n] = true;
+        n++;
+    }
+}
+
+void tb_palette_ensure_init(image_t *img)
+{
+    if (!img || img->tb_palette_initialized) return;
+    tb_init_palette_slots(img->tb_palette, img->tb_palette_slot_forced);
+    tb_add_recent_colors_to(img->tb_palette, img->tb_palette_slot_forced, img);
+    img->tb_palette_initialized = true;
+}
+
+void tb_palette_reset(image_t *img)
+{
+    if (!img) return;
+    tb_init_palette_slots(img->tb_palette, img->tb_palette_slot_forced);
+    tb_add_recent_colors_to(img->tb_palette, img->tb_palette_slot_forced, img);
+    img->tb_palette_initialized = true;
+}
+
+/* Returns true if a new slot was filled. */
+bool tb_palette_add_rgb(image_t *img, const uint8_t rgb[4])
+{
+    int slot;
+    uint8_t c[3];
+
+    if (!img || !rgb || rgb[3] != 255) return false;
+    tb_palette_ensure_init(img);
+    c[0] = rgb[0]; c[1] = rgb[1]; c[2] = rgb[2];
+    if (tb_palette_has_opaque_rgb(img->tb_palette, c))
+        return false;
+    for (slot = TB_PAL_MAP_FIRST; slot < 256; slot++) {
+        if (img->tb_palette_slot_forced[slot] &&
+            img->tb_palette[slot][3] == 255)
+            continue;
+        if (slot <= TB_PAL_RESERVED_LAST) continue;
+        if (img->tb_palette[slot][3] == 255) continue;
+        break;
+    }
+    if (slot >= 256) return false;
+    img->tb_palette[slot][0] = rgb[0];
+    img->tb_palette[slot][1] = rgb[1];
+    img->tb_palette[slot][2] = rgb[2];
+    img->tb_palette[slot][3] = 255;
+    img->tb_palette_slot_forced[slot] = true;
+    return true;
+}
+
+bool tb_palette_set_at(image_t *img, int idx, const uint8_t rgb[4])
+{
+    uint8_t c[3];
+
+    if (!img || !rgb || rgb[3] != 255) return false;
+    if (idx < TB_PAL_MAP_FIRST || idx > 255) return false;
+    tb_palette_ensure_init(img);
+    if (img->tb_palette[idx][3] == 255) return false; /* occupied */
+    c[0] = rgb[0]; c[1] = rgb[1]; c[2] = rgb[2];
+    if (tb_palette_has_opaque_rgb(img->tb_palette, c))
+        return false;
+    img->tb_palette[idx][0] = rgb[0];
+    img->tb_palette[idx][1] = rgb[1];
+    img->tb_palette[idx][2] = rgb[2];
+    img->tb_palette[idx][3] = 255;
+    img->tb_palette_slot_forced[idx] = true;
+    return true;
+}
+
+bool tb_palette_remove_at(image_t *img, int idx)
+{
+    if (!img) return false;
+    if (idx < TB_PAL_MAP_FIRST || idx > 255) return false;
+    tb_palette_ensure_init(img);
+    if (!img->tb_palette_slot_forced[idx] || img->tb_palette[idx][3] != 255)
+        return false;
+    memset(img->tb_palette[idx], 0, 4);
+    img->tb_palette_slot_forced[idx] = false;
+    tb_palette_compact_map(img->tb_palette, img->tb_palette_slot_forced);
+    return true;
+}
+
+static int tb_count_forced_map(const image_t *img)
+{
+    int i, n = 0;
+    for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
+        if (img->tb_palette_slot_forced[i] && img->tb_palette[i][3] == 255)
+            n++;
     }
     return n;
 }
@@ -659,24 +788,62 @@ done:
     return ok;
 }
 
-static void tb_init_palette(uint8_t (*palette)[4])
+static void tb_add_hidden_preview_layer(image_t *img, volume_t *volume,
+                                        uint8_t (*palette)[4],
+                                        tb_stamp_t *stamps, int n_stamps,
+                                        int xmin, int ymin, int zmin,
+                                        int xmax, int ymax, int zmax)
 {
-    int i;
+    volume_t *preview;
+    layer_t *layer;
+    volume_iterator_t iter;
+    int pos[3], stamp_i, color_index;
+    uint8_t v[4], out[4];
 
-    memset(palette, 0, 256 * sizeof(*palette));
-    for (i = 0; i < 8; i++) {
-        palette[TB_PAL_META_FIRST + i][0] = TB_META_RGB[i][0];
-        palette[TB_PAL_META_FIRST + i][1] = TB_META_RGB[i][1];
-        palette[TB_PAL_META_FIRST + i][2] = TB_META_RGB[i][2];
-        palette[TB_PAL_META_FIRST + i][3] = 255;
+    if (!img || !volume || !palette) return;
+    preview = volume_new();
+    if (!preview) return;
+
+    iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS);
+    while (volume_iter(&iter, pos)) {
+        if (pos[0] < xmin || pos[0] >= xmax) continue;
+        if (pos[1] < ymin || pos[1] >= ymax) continue;
+        if (pos[2] < zmin || pos[2] >= zmax) continue;
+        volume_get_at(volume, &iter, pos, v);
+        if (!voxel_is_solid(v)) continue;
+        stamp_i = tb_find_stamp_index(stamps, n_stamps, pos[0], pos[1], pos[2]);
+        if (stamp_i >= 0)
+            color_index = stamp_i;
+        else {
+            v[3] = 255;
+            color_index = tb_get_map_color_index(v, palette);
+        }
+        if (color_index < 1 || color_index > 255) continue;
+        memcpy(out, palette[color_index], 4);
+        if (out[3] != 255) {
+            out[0] = v[0]; out[1] = v[1]; out[2] = v[2]; out[3] = 255;
+        }
+        volume_set_at(preview, NULL, pos, out);
     }
-    /* 9-16 remain empty (reserved). */
+
+    image_history_push(img);
+    layer = image_add_layer(img, NULL);
+    if (!layer) {
+        volume_delete(preview);
+        return;
+    }
+    snprintf(layer->name, sizeof(layer->name), "TB export");
+    layer->visible = false;
+    volume_set(layer->volume, preview);
+    volume_delete(preview);
 }
 
+/* path == NULL: build remapped preview layer only (no file write). */
 static int vox_trenchblocks_export(const file_format_t *format,
                                    const image_t *image, const char *path)
 {
     FILE *file = NULL;
+    image_t *img;
     const volume_t *src_volume;
     volume_t *volume = NULL;
     uint8_t (*palette)[4] = NULL;
@@ -692,12 +859,15 @@ static int vox_trenchblocks_export(const file_format_t *format,
     int sx, sy, sz, nx, ny, tx, ty, ti, i, j, pos[3];
     int nb_vox = 0, nb_tiles = 0, children_size;
     int stamp_i, color_index;
+    int n_forced, quant_first, quant_count;
     uint8_t v[4], stamp_rgb[4];
     volume_iterator_t iter;
     char trans[64];
     float box[4][4];
+    bool preview_only = (path == NULL);
 
     (void)format;
+    img = goxel.image;
 
     if (box_is_null(image->box)) {
         gui_alert("vox (Trenchblocks)", "Image has no map box set.");
@@ -774,35 +944,43 @@ static int vox_trenchblocks_export(const file_format_t *format,
         gui_alert("vox (Trenchblocks)", "Out of memory.");
         goto error;
     }
-    tb_init_palette(palette);
 
-    /* Reserve opaque recent-map colours, then quantize into whatever is left. */
-    {
-        int n_recent = tb_add_recent_colors(palette, image);
-        int quant_first = TB_PAL_MAP_FIRST + n_recent;
-        int quant_count = 256 - quant_first;
+    if (img) {
+        tb_palette_ensure_init(img);
+        tb_palette_compact_map(img->tb_palette, img->tb_palette_slot_forced);
+        memcpy(palette, img->tb_palette, 256 * sizeof(*palette));
+        n_forced = tb_count_forced_map(img);
+    } else {
+        bool forced[256];
+        tb_init_palette_slots(palette, forced);
+        tb_add_recent_colors_to(palette, forced, image);
+        n_forced = 0;
+        for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
+            if (forced[i] && palette[i][3] == 255) n_forced++;
+        }
+    }
+    quant_first = TB_PAL_MAP_FIRST + n_forced;
+    quant_count = 256 - quant_first;
 
-        /* Count source voxels (for quantization) and export voxels. */
-        iter = volume_get_iterator(src_volume, VOLUME_ITER_VOXELS);
-        while (volume_iter(&iter, pos)) {
-            if (pos[0] < xmin || pos[0] >= xmax) continue;
-            if (pos[1] < ymin || pos[1] >= ymax) continue;
-            if (pos[2] < zmin || pos[2] >= zmin + dims[2]) continue;
-            volume_get_at(src_volume, &iter, pos, v);
-            if (!voxel_is_solid(v)) continue;
-            nb_vox++;
-        }
-        if (nb_vox > 0 && quant_count > 0) {
-            /* Fill remaining slots from the pre-stamp source.  Skip colours
-             * already reserved from the recent-colours bar (indices 17+), but
-             * do not exclude metadata 1-8: map voxels that reuse those RGBs
-             * still need a duplicate in the map palette range. */
-            quantization_gen_palette(
-                src_volume, quant_count,
-                (void *)(palette + quant_first),
-                (const uint8_t (*)[4])(palette + TB_PAL_MAP_FIRST),
-                n_recent);
-        }
+    /* Count source voxels then median-cut into free map slots. */
+    iter = volume_get_iterator(src_volume, VOLUME_ITER_VOXELS);
+    while (volume_iter(&iter, pos)) {
+        if (pos[0] < xmin || pos[0] >= xmax) continue;
+        if (pos[1] < ymin || pos[1] >= ymax) continue;
+        if (pos[2] < zmin || pos[2] >= zmin + dims[2]) continue;
+        volume_get_at(src_volume, &iter, pos, v);
+        if (!voxel_is_solid(v)) continue;
+        nb_vox++;
+    }
+    if (nb_vox > 0 && quant_count > 0) {
+        /* Skip colours already forced in the map range (17+). Do not exclude
+         * metadata 1-8: map voxels that reuse those RGBs still need a
+         * duplicate in the map palette range. */
+        quantization_gen_palette(
+            src_volume, quant_count,
+            (void *)(palette + quant_first),
+            (const uint8_t (*)[4])(palette + TB_PAL_MAP_FIRST),
+            n_forced);
     }
 
     nb_vox = 0;
@@ -816,8 +994,20 @@ static int vox_trenchblocks_export(const file_format_t *format,
         nb_vox++;
     }
     if (nb_vox == 0) {
-        gui_alert("vox (Trenchblocks)", "Nothing to export.");
+        gui_alert("vox (Trenchblocks)",
+                  preview_only ? "Nothing to preview." : "Nothing to export.");
         goto error;
+    }
+
+    if (preview_only) {
+        if (img)
+            tb_add_hidden_preview_layer(img, volume, palette, stamps, n_stamps,
+                                        xmin, ymin, zmin, xmax, ymax, zmax);
+        free(stamps);
+        free(heightmap);
+        free(palette);
+        volume_delete(volume);
+        return 0;
     }
 
     tiles = calloc((size_t)nx * (size_t)ny, sizeof(*tiles));

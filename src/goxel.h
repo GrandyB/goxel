@@ -654,6 +654,8 @@ typedef struct goxel
         bool palette_win_expand_once;
         /* Right-docked Layers panel; View > Layers toggles; open on startup. */
         bool layers_panel_open;
+        /* Non-modal vox (Trenchblocks) export / forced palette window. */
+        bool tb_export_win_open;
         /* Viewport overlays; independently toggled from the View menu. */
         bool view_cube_open;
         bool camera_presets_open;
@@ -673,6 +675,8 @@ extern goxel_t goxel;
 // XXX: add some doc.
 void goxel_init(void);
 void goxel_ensure_vox_trenchblocks_format(void);
+void goxel_open_vox_trenchblocks_export_popup(void);
+void gui_vox_trenchblocks_export_window(void);
 void goxel_release(void);
 void goxel_reset(void);
 

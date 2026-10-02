@@ -81,6 +81,12 @@ struct image {
     int recent_color_count;
     image_recent_color_t recent_colors[GOXEL_RECENT_COLOR_HISTORY_MAX];
 
+    /* Trenchblocks export forced palette (Magica indices 1-255).
+     * alpha 255 = occupied; tb_palette_slot_forced marks locked/user slots. */
+    uint8_t tb_palette[256][4];
+    bool    tb_palette_initialized;
+    bool    tb_palette_slot_forced[256];
+
     custom_object_t *custom_objects;
     bool custom_objects_show_when_closed;
 

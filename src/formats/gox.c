@@ -93,6 +93,12 @@
  *          4 x int32: noise_enabled, noise_intensity, noise_saturation,
  *                     noise_coverage
  *
+ *   TBPL: Trenchblocks export forced palette, binary:
+ *      1 byte: version (1)
+ *      for Magica indices 1..255:
+ *          4 bytes: color RGBA (alpha 255 = occupied, 0 = empty)
+ *          1 byte: forced flag (1 = locked/user/meta/reserved)
+ *
  *   CUST: custom objects (metadata) list, binary:
  *      legacy (version absent, first byte 0/1 = show flag):
  *          1 byte: global show flag
@@ -559,6 +565,23 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
         }
     }
 
+    if (img->tb_palette_initialized) {
+        /* version + 255 * (RGBA + forced) */
+        int w = 0, bsz = 1 + 255 * 5;
+        uint8_t *buf = (uint8_t *)calloc(1, bsz);
+        if (buf) {
+            int si;
+            buf[w++] = 1; /* version */
+            for (si = 1; si < 256; si++) {
+                memcpy(buf + w, img->tb_palette[si], 4);
+                w += 4;
+                buf[w++] = img->tb_palette_slot_forced[si] ? 1 : 0;
+            }
+            chunk_write_all(out, "TBPL", (char *)buf, w);
+            free(buf);
+        }
+    }
+
     {
         int cust_len = 0;
         uint8_t *cust_buf = custom_objects_serialize(img, &cust_len);
@@ -671,6 +694,9 @@ static void image_clear_gox_content(image_t *img)
 
     memset(&img->box, 0, sizeof(img->box));
     img->recent_color_count = 0;
+    memset(img->tb_palette, 0, sizeof(img->tb_palette));
+    memset(img->tb_palette_slot_forced, 0, sizeof(img->tb_palette_slot_forced));
+    img->tb_palette_initialized = false;
     custom_objects_free_list(&img->custom_objects);
     img->custom_objects_show_when_closed = false;
     placer_past_files_clear();
@@ -900,6 +926,30 @@ int load_from_file(const char *path, bool replace)
             goxel.image->recent_color_count = ent;
             if (c.pos < c.length)
                 chunk_read(&c, in, NULL, c.length - c.pos, __LINE__);
+        } else if (strncmp(c.type, "TBPL", 4) == 0) {
+            uint8_t *buf = malloc(c.length);
+            memset(goxel.image->tb_palette, 0,
+                   sizeof(goxel.image->tb_palette));
+            memset(goxel.image->tb_palette_slot_forced, 0,
+                   sizeof(goxel.image->tb_palette_slot_forced));
+            goxel.image->tb_palette_initialized = false;
+            if (buf) {
+                chunk_read(&c, in, (char *)buf, c.length, __LINE__);
+                if (c.length >= 1 + 255 * 5 && buf[0] == 1) {
+                    int pos = 1;
+                    int si;
+                    for (si = 1; si < 256; si++) {
+                        memcpy(goxel.image->tb_palette[si], buf + pos, 4);
+                        pos += 4;
+                        goxel.image->tb_palette_slot_forced[si] =
+                            buf[pos++] != 0;
+                    }
+                    goxel.image->tb_palette_initialized = true;
+                }
+                free(buf);
+            } else {
+                chunk_read(&c, in, NULL, c.length, __LINE__);
+            }
         } else if (strncmp(c.type, "CUST", 4) == 0) {
             char *cust_buf = malloc(c.length);
             if (cust_buf) {
