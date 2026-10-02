@@ -30,6 +30,23 @@ void quantization_gen_palette(const volume_t *volume, int nb,
                               uint8_t (*palette)[4],
                               const uint8_t (*exclude)[4], int n_exclude);
 
+// Same contract as quantization_gen_palette; octree pruning (Gervautz-Purgathofer).
+void quantization_gen_palette_octree(const volume_t *volume, int nb,
+                                     uint8_t (*palette)[4],
+                                     const uint8_t (*exclude)[4],
+                                     int n_exclude);
+
+// Same contract; Xiaolin Wu variance-minimizing quantization.
+void quantization_gen_palette_wu(const volume_t *volume, int nb,
+                                 uint8_t (*palette)[4],
+                                 const uint8_t (*exclude)[4], int n_exclude);
+
+// Same contract; k-means++ init then Lloyd iterations on weighted unique colours.
+void quantization_gen_palette_kmeans(const volume_t *volume, int nb,
+                                     uint8_t (*palette)[4],
+                                     const uint8_t (*exclude)[4],
+                                     int n_exclude);
+
 // Nearest opaque palette index by Manhattan RGB distance.  Skips slots with
 // alpha != 255.  Returns -1 if no usable slot.
 int quantization_nearest(const uint8_t c[4],
@@ -44,5 +61,11 @@ void quantization_uniform_snap(const uint8_t in[4], int step, uint8_t out[4]);
 
 // Remap every opaque voxel by uniform RGB snapping.
 void quantization_remap_volume_uniform(volume_t *volume, int step);
+
+// Replace distinct palette slots with exact `pinned` opaque RGBs.  Each pinned
+// colour takes the nearest unused slot (empty alpha-0 slots preferred).  Does
+// not change `n`.  No-op if palette/pinned is NULL or n_pinned <= 0.
+void quantization_pin_colors(uint8_t (*palette)[4], int n,
+                             const uint8_t (*pinned)[4], int n_pinned);
 
 #endif // QUANTIZATION_H

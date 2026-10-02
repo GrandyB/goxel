@@ -25,8 +25,20 @@
 
 enum {
     REDUCE_METHOD_MEDIAN_CUT = 0,
-    REDUCE_METHOD_UNIFORM = 1,
+    REDUCE_METHOD_OCTREE = 1,
+    REDUCE_METHOD_WU = 2,
+    REDUCE_METHOD_KMEANS = 3,
+    REDUCE_METHOD_UNIFORM = 4,
 };
+
+typedef void (*palette_gen_fn)(const volume_t *volume, int nb,
+                               uint8_t (*palette)[4],
+                               const uint8_t (*exclude)[4], int n_exclude);
+
+static bool method_uses_palette(int method)
+{
+    return method != REDUCE_METHOD_UNIFORM;
+}
 
 typedef struct {
     filter_t filter;
@@ -191,7 +203,7 @@ static bool layer_in_scope(const filter_reduce_colors_t *filter,
 }
 
 /*
- * Build forced median-cut colours: optional recent-bar opaques, then in-use
+ * Build forced palette colours: optional recent-bar opaques, then in-use
  * entries from the selected user palette.  Dedupes by opaque RGB.  `usage`
  * supplies block counts and palette membership; may be NULL when only the
  * recent bar is enabled.
@@ -249,14 +261,15 @@ static void collect_forced_colors(const filter_reduce_colors_t *filter,
     }
 }
 
-static void apply_median_cut(filter_reduce_colors_t *filter)
+static void apply_palette_method(filter_reduce_colors_t *filter,
+                                 palette_gen_fn gen)
 {
     layer_t *layer;
     volume_t *merged;
     uint8_t palette[256][4];
     color_stat_hash_t *usage = NULL;
     forced_colors_t forced;
-    int nb, n_forced, rem, i;
+    int nb, n_forced;
 
     nb = clamp(filter->nb_colors, 2, 256);
     filter->nb_colors = nb;
@@ -277,18 +290,16 @@ static void apply_median_cut(filter_reduce_colors_t *filter)
     collect_forced_colors(filter, usage, &forced);
     color_stats_hash_clear(&usage);
 
+    /* Build a full-size palette from all colours, then pin forced colours by
+     * replacing the nearest generated slots.  Spending forced slots up-front
+     * and excluding them from training (old behaviour) shrank the budget and
+     * pulled nearby shades toward unrelated clusters. */
     n_forced = forced.n;
     if (n_forced > nb)
         n_forced = nb;
-    for (i = 0; i < n_forced; i++)
-        memcpy(palette[i], forced.colors[i], 4);
-
-    rem = nb - n_forced;
-    if (rem > 0) {
-        quantization_gen_palette(merged, rem, palette + n_forced,
-                                 (const uint8_t (*)[4])forced.colors,
-                                 n_forced);
-    }
+    gen(merged, nb, palette, NULL, 0);
+    if (n_forced > 0)
+        quantization_pin_colors(palette, nb, forced.colors, n_forced);
     volume_delete(merged);
 
     DL_FOREACH(goxel.image->layers, layer) {
@@ -367,24 +378,28 @@ static int gui(filter_t *filter_)
     filter_reduce_colors_t *filter = (void *)filter_;
     static const char *method_names[] = {
         "Quantization (median-cut)",
+        "Quantization (octree)",
+        "Quantization (Wu)",
+        "Quantization (k-means++)",
         "Quantization (uniform)",
     };
     bool has_layer;
     bool can_apply;
     int uniform_step;
+    bool palette_method;
 
     const char *bar_help =
-        "Reduce distinct colours via median-cut or uniform quantization.";
+        "Reduce distinct colours via palette quantization or uniform snap.";
     const char *help_text =
         "Reduce the number of distinct colours.  "
-        "Median-cut builds a shared palette from layers in scope and maps "
-        "voxels to the nearest palette colour.  "
-        "Optionally reserve exact colours from the recent-colours bar and/or "
-        "in-use entries from a user palette (those take slots from the colour "
-        "budget first).  "
+        "Palette methods (median-cut, octree, Wu, k-means++) build a shared "
+        "palette from layers in scope and map voxels to the nearest palette "
+        "colour.  "
+        "Optionally pin exact colours from the recent-colours bar and/or "
+        "in-use entries from a user palette (each replaces the nearest "
+        "generated palette entry so the colour budget stays the same).  "
         "Uniform snaps each RGB channel to a fixed step in 0..255.  "
-        "One shared palette (median-cut) or step (uniform) applies to all "
-        "layers in scope.";
+        "One shared palette or step applies to all layers in scope.";
     goxel_set_help_text(bar_help);
 
     if (gui_collapsing_header("Hint", false))
@@ -392,6 +407,7 @@ static int gui(filter_t *filter_)
 
     has_layer = goxel.image && goxel.image->active_layer;
     can_apply = goxel.image && (!filter->filter.current_only || has_layer);
+    palette_method = method_uses_palette(filter->method);
 
     gui_label_size_push(130);
 
@@ -426,7 +442,7 @@ static int gui(filter_t *filter_)
     }
 
     gui_group_begin(NULL);
-    if (filter->method == REDUCE_METHOD_MEDIAN_CUT) {
+    if (palette_method) {
         bool prev_recent = filter->include_recent_colors;
         char prev_palette[128];
         const char *preview;
@@ -438,8 +454,8 @@ static int gui(filter_t *filter_)
         gui_checkbox(
             "Include recent colours",
             &filter->include_recent_colors,
-            "Reserve opaque colours from the map recent-colours bar in the "
-            "median-cut palette (they take slots from the colour budget).");
+            "Pin opaque colours from the map recent-colours bar into the "
+            "palette (each replaces the nearest generated entry).");
         if (prev_recent != filter->include_recent_colors)
             clear_analysis(filter);
 
@@ -498,7 +514,7 @@ static int gui(filter_t *filter_)
         filter->analysis_palette_blocks = 0;
         clear_covered_analysis(filter);
 
-        if (filter->method == REDUCE_METHOD_MEDIAN_CUT &&
+        if (palette_method &&
             (filter->include_recent_colors ||
              filter->include_palette_name[0])) {
             color_stat_hash_t *usage = NULL;
@@ -610,7 +626,7 @@ static int gui(filter_t *filter_)
                 }
             }
 
-            if (filter->method == REDUCE_METHOD_MEDIAN_CUT) {
+            if (palette_method) {
                 if (filter->analysis_show_recent)
                     gui_text("Recent colours bar: %d colours (%d blocks)",
                              filter->analysis_recent_colors,
@@ -628,10 +644,23 @@ static int gui(filter_t *filter_)
     gui_enabled_begin(can_apply);
     if (gui_button("Apply", -1, 0)) {
         image_history_push(goxel.image);
-        if (filter->method == REDUCE_METHOD_MEDIAN_CUT)
-            apply_median_cut(filter);
-        else
+        switch (filter->method) {
+        case REDUCE_METHOD_OCTREE:
+            apply_palette_method(filter, quantization_gen_palette_octree);
+            break;
+        case REDUCE_METHOD_WU:
+            apply_palette_method(filter, quantization_gen_palette_wu);
+            break;
+        case REDUCE_METHOD_KMEANS:
+            apply_palette_method(filter, quantization_gen_palette_kmeans);
+            break;
+        case REDUCE_METHOD_UNIFORM:
             apply_uniform(filter);
+            break;
+        default:
+            apply_palette_method(filter, quantization_gen_palette);
+            break;
+        }
     }
     gui_enabled_end();
     gui_alert_if_disabled_clicked(can_apply, "No layer selected",
