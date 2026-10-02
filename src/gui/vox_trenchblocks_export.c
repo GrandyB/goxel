@@ -28,18 +28,14 @@ typedef struct {
 } tb_cross_bucket_t;
 
 typedef struct {
-    int count;
-    uint8_t (*colors)[4];
-} tb_after_colors_t;
-
-typedef struct {
     color_stats_breakdown_t layers;
     int *layer_ids; /* parallel to layers.layers[]; top-level layer id */
     int *after_atlas; /* parallel; uniques not in forced atlas */
     int *after_reduction; /* parallel; uniques beyond atlas after middle steps */
     int after_atlas_total; /* map-wide unique outstanding beyond atlas */
     int after_reduction_total; /* map-wide outstanding after middle steps */
-    tb_after_colors_t *after_lists;
+    tb_color_list_t *after_atlas_lists; /* parallel; colours in after_atlas */
+    tb_color_list_t *after_reduction_lists; /* parallel; after middle steps */
     tb_cross_bucket_t *buckets;
     int nbuckets;
     bool valid;
@@ -58,7 +54,13 @@ typedef struct {
     bool analysis_stale;
 } tb_popup_state_t;
 
-static bool *g_tb_layer_open = NULL;
+/* Per-layer fold: atlas list and after-reduction list. */
+typedef struct {
+    bool atlas;
+    bool reduction;
+} tb_layer_fold_t;
+
+static tb_layer_fold_t *g_tb_layer_open = NULL;
 static int g_tb_layer_open_count = 0;
 
 static void tb_layer_open_ensure(int n)
@@ -82,11 +84,17 @@ static void tb_popup_clear_analysis(tb_popup_state_t *st)
     int i, n_layers;
     if (!st) return;
     n_layers = st->layers.layer_count;
-    if (st->after_lists) {
+    if (st->after_atlas_lists) {
         for (i = 0; i < n_layers; i++)
-            free(st->after_lists[i].colors);
-        free(st->after_lists);
-        st->after_lists = NULL;
+            free(st->after_atlas_lists[i].colors);
+        free(st->after_atlas_lists);
+        st->after_atlas_lists = NULL;
+    }
+    if (st->after_reduction_lists) {
+        for (i = 0; i < n_layers; i++)
+            free(st->after_reduction_lists[i].colors);
+        free(st->after_reduction_lists);
+        st->after_reduction_lists = NULL;
     }
     color_stats_breakdown_clear(&st->layers);
     free(st->layer_ids);
@@ -273,8 +281,10 @@ static void tb_run_analysis(tb_popup_state_t *st)
                                  sizeof(*st->after_atlas));
         st->after_reduction = calloc((size_t)st->layers.layer_count,
                                      sizeof(*st->after_reduction));
-        st->after_lists = calloc((size_t)st->layers.layer_count,
-                                 sizeof(*st->after_lists));
+        st->after_atlas_lists = calloc((size_t)st->layers.layer_count,
+                                       sizeof(*st->after_atlas_lists));
+        st->after_reduction_lists = calloc((size_t)st->layers.layer_count,
+                                           sizeof(*st->after_reduction_lists));
     }
     tb_layer_open_ensure(st->layers.layer_count);
 
@@ -299,8 +309,8 @@ static void tb_run_analysis(tb_popup_state_t *st)
         }
         if (st->after_atlas)
             st->after_atlas[layer_idx] = remaining;
-        if (st->after_lists) {
-            tb_after_colors_t *list = &st->after_lists[layer_idx];
+        if (st->after_atlas_lists) {
+            tb_color_list_t *list = &st->after_atlas_lists[layer_idx];
             free(list->colors);
             list->colors = NULL;
             list->count = 0;
@@ -407,6 +417,7 @@ static void tb_popup_refresh_reduce_totals(tb_popup_state_t *st)
     image_t *img = goxel.image;
     int n_steps, need, *totals;
     int *ids = NULL, *after = NULL;
+    tb_color_list_t *lists = NULL;
     int n_roots, i, j;
 
     free(st->reduce_totals);
@@ -416,6 +427,13 @@ static void tb_popup_refresh_reduce_totals(tb_popup_state_t *st)
     if (st->after_reduction && st->layers.layer_count > 0)
         memset(st->after_reduction, 0,
                (size_t)st->layers.layer_count * sizeof(*st->after_reduction));
+    if (st->after_reduction_lists && st->layers.layer_count > 0) {
+        for (i = 0; i < st->layers.layer_count; i++) {
+            free(st->after_reduction_lists[i].colors);
+            st->after_reduction_lists[i].colors = NULL;
+            st->after_reduction_lists[i].count = 0;
+        }
+    }
     st->after_reduction_total = 0;
     if (!img) return;
 
@@ -437,18 +455,27 @@ static void tb_popup_refresh_reduce_totals(tb_popup_state_t *st)
 
     ids = calloc((size_t)st->layers.layer_count, sizeof(*ids));
     after = calloc((size_t)st->layers.layer_count, sizeof(*after));
-    if (!ids || !after) {
+    if (st->after_reduction_lists)
+        lists = calloc((size_t)st->layers.layer_count, sizeof(*lists));
+    if (!ids || !after || (st->after_reduction_lists && !lists)) {
         free(ids);
         free(after);
+        free(lists);
         return;
     }
     n_roots = tb_reduce_per_layer_after_middle(img, img->tb_reduce_steps,
                                                n_steps, ids, after,
                                                st->layers.layer_count,
-                                               &st->after_reduction_total);
+                                               &st->after_reduction_total,
+                                               lists, NULL);
     if (n_roots < 0) {
         free(ids);
         free(after);
+        if (lists) {
+            for (i = 0; i < st->layers.layer_count; i++)
+                free(lists[i].colors);
+            free(lists);
+        }
         return;
     }
     for (i = 0; i < st->layers.layer_count; i++) {
@@ -457,12 +484,22 @@ static void tb_popup_refresh_reduce_totals(tb_popup_state_t *st)
         for (j = 0; j < n_roots; j++) {
             if (ids[j] == lid) {
                 st->after_reduction[i] = after[j];
+                if (lists && st->after_reduction_lists) {
+                    st->after_reduction_lists[i] = lists[j];
+                    lists[j].colors = NULL;
+                    lists[j].count = 0;
+                }
                 break;
             }
         }
     }
     free(ids);
     free(after);
+    if (lists) {
+        for (i = 0; i < st->layers.layer_count; i++)
+            free(lists[i].colors);
+        free(lists);
+    }
 }
 
 static bool tb_reduce_add_step(image_t *img)
@@ -909,58 +946,76 @@ static void tb_export_panel_gui(void)
                     int n_after = st->after_atlas ? st->after_atlas[i] : 0;
                     int n_after_red = st->after_reduction
                                       ? st->after_reduction[i] : 0;
-                    tb_after_colors_t *alist =
-                        st->after_lists ? &st->after_lists[i] : NULL;
+                    tb_color_list_t *alist = st->after_atlas_lists
+                                            ? &st->after_atlas_lists[i] : NULL;
+                    tb_color_list_t *rlist = st->after_reduction_lists
+                                            ? &st->after_reduction_lists[i]
+                                            : NULL;
+                    tb_layer_fold_t *fold = (g_tb_layer_open &&
+                                            i < g_tb_layer_open_count)
+                                           ? &g_tb_layer_open[i] : NULL;
 
                     snprintf(row_id, sizeof(row_id), "tb_an_%d", i);
                     gui_push_id(row_id);
                     gui_columns(4);
-                    {
-                        bool fold = false;
-                        int fold_icon =
-                            (g_tb_layer_open && i < g_tb_layer_open_count &&
-                             g_tb_layer_open[i])
-                                ? ICON_ARROW_DOWNWARD
-                                : ICON_CHEVRON_RIGHT;
-
-                        if (n_after > 0 && g_tb_layer_open &&
-                            i < g_tb_layer_open_count) {
-                            char fold_id[24];
-                            snprintf(fold_id, sizeof(fold_id), "##tbfold%d", i);
-                            if (gui_condensed_selectable_icon(fold_id, &fold,
-                                                              fold_icon))
-                                g_tb_layer_open[i] = !g_tb_layer_open[i];
-                            gui_same_line();
-                        } else {
-                            gui_spacing_f(gui_icon_height(true));
-                            gui_same_line();
-                        }
-                        gui_text("%s", st->layers.layers[i].name[0]
-                                 ? st->layers.layers[i].name : "(unnamed)");
-                    }
+                    gui_text("%s", st->layers.layers[i].name[0]
+                             ? st->layers.layers[i].name : "(unnamed)");
                     gui_next_column();
                     gui_text("%d", st->layers.layers[i].stats.unique_colors);
                     gui_next_column();
-                    gui_text("%d", n_after);
+                    {
+                        bool press = false;
+                        int fold_icon = (fold && fold->atlas)
+                                        ? ICON_ARROW_DOWNWARD
+                                        : ICON_CHEVRON_RIGHT;
+                        if (n_after > 0 && fold) {
+                            if (gui_condensed_selectable_icon("##tbfa", &press,
+                                                              fold_icon))
+                                fold->atlas = !fold->atlas;
+                            gui_same_line();
+                        }
+                        gui_text("%d", n_after);
+                    }
                     gui_next_column();
-                    tb_stale_color_begin(st);
-                    gui_text("%d", n_after_red);
-                    tb_stale_color_end(st);
+                    {
+                        bool press = false;
+                        int fold_icon = (fold && fold->reduction)
+                                        ? ICON_ARROW_DOWNWARD
+                                        : ICON_CHEVRON_RIGHT;
+                        if (n_after_red > 0 && fold) {
+                            if (gui_condensed_selectable_icon("##tbfr", &press,
+                                                              fold_icon))
+                                fold->reduction = !fold->reduction;
+                            gui_same_line();
+                        }
+                        tb_stale_color_begin(st);
+                        gui_text("%d", n_after_red);
+                        tb_stale_color_end(st);
+                    }
                     gui_next_column();
                     gui_columns(1);
 
-                    if (g_tb_layer_open && i < g_tb_layer_open_count &&
-                        g_tb_layer_open[i] && alist && alist->count > 0) {
+                    if (fold && fold->atlas && alist && alist->count > 0) {
                         char grid_id[24];
                         int clicked;
-                        /* Cap height so opening a multi-thousand colour fold
-                         * does not explode the floating window layout. */
                         snprintf(grid_id, sizeof(grid_id), "tbaft%d", i);
                         clicked = gui_color_swatches_scroll(
                             grid_id, (const uint8_t (*)[4])alist->colors,
                             alist->count, 14.f, 200.f);
                         if (clicked >= 0 && clicked < alist->count) {
                             if (tb_palette_add_rgb(img, alist->colors[clicked]))
+                                reanalyze = true;
+                        }
+                    }
+                    if (fold && fold->reduction && rlist && rlist->count > 0) {
+                        char grid_id[24];
+                        int clicked;
+                        snprintf(grid_id, sizeof(grid_id), "tbred%d", i);
+                        clicked = gui_color_swatches_scroll(
+                            grid_id, (const uint8_t (*)[4])rlist->colors,
+                            rlist->count, 14.f, 200.f);
+                        if (clicked >= 0 && clicked < rlist->count) {
+                            if (tb_palette_add_rgb(img, rlist->colors[clicked]))
                                 reanalyze = true;
                         }
                     }

@@ -48,11 +48,20 @@ int tb_reduce_simulate_totals(const image_t *img,
                               const tb_reduce_step_t *steps, int n_steps,
                               int *totals, int totals_len);
 
+/* Malloc'd RGBA list; caller frees colors. */
+typedef struct {
+    uint8_t (*colors)[4];
+    int count;
+} tb_color_list_t;
+
 /*
  * After middle pipeline steps only (not the final remaining-slots fill),
  * write per top-level visible root: layer id and unique colours still
  * outstanding beyond the forced atlas.  If out_global_after is non-NULL,
  * also writes the map-wide outstanding unique count (shared colours once).
+ * Optional colour lists: out_lists[i] receives a malloc'd RGBA array
+ * (caller frees each .colors).  out_global_list similarly for the map-wide
+ * set.  Pass NULL to skip list collection.
  * Returns root count, or -1.
  */
 int tb_reduce_per_layer_after_middle(const image_t *img,
@@ -61,7 +70,9 @@ int tb_reduce_per_layer_after_middle(const image_t *img,
                                      int *out_layer_ids,
                                      int *out_after,
                                      int max_out,
-                                     int *out_global_after);
+                                     int *out_global_after,
+                                     tb_color_list_t *out_lists,
+                                     tb_color_list_t *out_global_list);
 
 /*
  * Apply middle pipeline steps to per-root working volumes, merge into a single

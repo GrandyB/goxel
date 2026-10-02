@@ -402,19 +402,69 @@ int tb_reduce_simulate_totals(const image_t *img,
     return 0;
 }
 
-static int tb_count_volume_outstanding(const image_t *img, const volume_t *vol)
+/* Collect outstanding (not in forced atlas) colours from hash into list.
+ * Returns count, or -1.  If out is NULL, only counts. */
+static int tb_outstanding_from_hash(const image_t *img,
+                                    color_stat_hash_t *colors,
+                                    tb_color_list_t *out)
 {
-    color_stat_hash_t *colors = NULL, *el, *tmp;
-    int n = 0;
+    color_stat_hash_t *el, *tmp;
+    int n = 0, i;
+
+    HASH_ITER(hh, colors, el, tmp) {
+        if (!tb_forced_map_has_rgb(img, el->color))
+            n++;
+    }
+    if (!out)
+        return n;
+    out->colors = NULL;
+    out->count = 0;
+    if (n <= 0)
+        return 0;
+    out->colors = calloc((size_t)n, sizeof(*out->colors));
+    if (!out->colors)
+        return -1;
+    i = 0;
+    HASH_ITER(hh, colors, el, tmp) {
+        if (tb_forced_map_has_rgb(img, el->color))
+            continue;
+        memcpy(out->colors[i], el->color, 4);
+        i++;
+    }
+    out->count = i;
+    return i;
+}
+
+static int tb_collect_volume_outstanding(const image_t *img,
+                                         const volume_t *vol,
+                                         tb_color_list_t *out)
+{
+    color_stat_hash_t *colors = NULL;
+    int n;
 
     if (tb_add_volume_uniques(vol, &colors) != 0) {
         color_stats_hash_clear(&colors);
         return -1;
     }
-    HASH_ITER(hh, colors, el, tmp) {
-        if (!tb_forced_map_has_rgb(img, el->color))
-            n++;
+    n = tb_outstanding_from_hash(img, colors, out);
+    color_stats_hash_clear(&colors);
+    return n;
+}
+
+static int tb_collect_global_outstanding(const image_t *img,
+                                         tb_work_root_t *roots, int n_roots,
+                                         tb_color_list_t *out)
+{
+    color_stat_hash_t *colors = NULL;
+    int i, n;
+
+    for (i = 0; i < n_roots; i++) {
+        if (tb_add_volume_uniques(roots[i].vol, &colors) != 0) {
+            color_stats_hash_clear(&colors);
+            return -1;
+        }
     }
+    n = tb_outstanding_from_hash(img, colors, out);
     color_stats_hash_clear(&colors);
     return n;
 }
@@ -425,7 +475,9 @@ int tb_reduce_per_layer_after_middle(const image_t *img,
                                      int *out_layer_ids,
                                      int *out_after,
                                      int max_out,
-                                     int *out_global_after)
+                                     int *out_global_after,
+                                     tb_color_list_t *out_lists,
+                                     tb_color_list_t *out_global_list)
 {
     tb_work_root_t *roots = NULL;
     int n_roots = 0, i, n, global_after;
@@ -434,6 +486,16 @@ int tb_reduce_per_layer_after_middle(const image_t *img,
         return -1;
     if (out_global_after)
         *out_global_after = 0;
+    if (out_global_list) {
+        out_global_list->colors = NULL;
+        out_global_list->count = 0;
+    }
+    if (out_lists) {
+        for (i = 0; i < max_out; i++) {
+            out_lists[i].colors = NULL;
+            out_lists[i].count = 0;
+        }
+    }
 
     if (tb_work_roots_build(img, &roots, &n_roots) != 0)
         return -1;
@@ -443,8 +505,17 @@ int tb_reduce_per_layer_after_middle(const image_t *img,
 
     n = n_roots < max_out ? n_roots : max_out;
     for (i = 0; i < n; i++) {
-        int after = tb_count_volume_outstanding(img, roots[i].vol);
+        tb_color_list_t *list = out_lists ? &out_lists[i] : NULL;
+        int after = tb_collect_volume_outstanding(img, roots[i].vol, list);
         if (after < 0) {
+            if (out_lists) {
+                int j;
+                for (j = 0; j <= i; j++) {
+                    free(out_lists[j].colors);
+                    out_lists[j].colors = NULL;
+                    out_lists[j].count = 0;
+                }
+            }
             tb_work_roots_free(roots, n_roots);
             return -1;
         }
@@ -452,8 +523,21 @@ int tb_reduce_per_layer_after_middle(const image_t *img,
         out_after[i] = after;
     }
 
-    global_after = tb_count_outstanding_uniques(img, roots, n_roots);
+    global_after = tb_collect_global_outstanding(img, roots, n_roots,
+                                                 out_global_list);
     if (global_after < 0) {
+        if (out_lists) {
+            for (i = 0; i < n; i++) {
+                free(out_lists[i].colors);
+                out_lists[i].colors = NULL;
+                out_lists[i].count = 0;
+            }
+        }
+        if (out_global_list) {
+            free(out_global_list->colors);
+            out_global_list->colors = NULL;
+            out_global_list->count = 0;
+        }
         tb_work_roots_free(roots, n_roots);
         return -1;
     }
