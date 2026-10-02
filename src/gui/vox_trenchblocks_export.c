@@ -44,8 +44,10 @@ typedef struct {
     int nbuckets;
     bool valid;
     char palette_name[128];
-    /* Cached map colour usage for grey borders (RGB packed, opaque only). */
+    /* Cached map colour usage for grey borders + atlas hover tips
+     * (RGB packed, opaque only). */
     color_stat_hash_t *used_colors;
+    int used_voxels_total; /* solid voxels counted into used_colors */
     /* One-shot: force-open the Analysis collapsing header next frame. */
     bool expand_analysis;
     /* Color-reduction pipeline Totals cache (atlas + middle + final). */
@@ -114,6 +116,7 @@ static void tb_popup_clear_used(tb_popup_state_t *st)
 {
     if (!st) return;
     color_stats_hash_clear(&st->used_colors);
+    st->used_voxels_total = 0;
 }
 
 static int tb_pack_rgb_key(const uint8_t c[3])
@@ -149,18 +152,46 @@ static void tb_popup_refresh_used(tb_popup_state_t *st)
             memcpy(el->color, v, 4);
             el->count = 1;
             HASH_ADD_INT(st->used_colors, rgba_key, el);
+        } else {
+            el->count++;
         }
+        st->used_voxels_total++;
     }
+}
+
+static int tb_color_usage_count(tb_popup_state_t *st, const uint8_t c[4])
+{
+    color_stat_hash_t *el;
+    int key;
+    if (!st || !c || c[3] != 255) return 0;
+    key = tb_pack_rgb_key(c);
+    HASH_FIND_INT(st->used_colors, &key, el);
+    return el ? el->count : 0;
 }
 
 static bool tb_color_used_in_map(tb_popup_state_t *st, const uint8_t c[4])
 {
-    color_stat_hash_t *el;
-    int key;
-    if (!st || c[3] != 255) return false;
-    key = tb_pack_rgb_key(c);
-    HASH_FIND_INT(st->used_colors, &key, el);
-    return el != NULL;
+    return tb_color_usage_count(st, c) > 0;
+}
+
+static void tb_atlas_usage_tooltip(tb_popup_state_t *st, const uint8_t c[4],
+                                   const char *prefix)
+{
+    char tip[160];
+    int n, total;
+    double pct;
+
+    if (!st || !c || c[3] != 255) return;
+    n = tb_color_usage_count(st, c);
+    total = st->used_voxels_total;
+    pct = (total > 0) ? (100.0 * (double)n / (double)total) : 0.0;
+    if (prefix && prefix[0]) {
+        snprintf(tip, sizeof(tip), "%s\n%d blocks (%.1f%%)",
+                 prefix, n, pct);
+    } else {
+        snprintf(tip, sizeof(tip), "%d blocks (%.1f%%)", n, pct);
+    }
+    gui_tooltip_if_hovered(tip);
 }
 
 static int tb_collect_subtree_hash(const image_t *img, const layer_t *root,
@@ -586,15 +617,22 @@ static bool tb_draw_palette_grid(tb_popup_state_t *st, image_t *img)
 
             click = gui_color_swatch_bordered(id, color, size, border);
             if (idx <= TB_PAL_RESERVED_LAST) {
-                gui_tooltip_if_hovered(idx <= TB_PAL_META_LAST
-                    ? "Reserved metadata colour"
-                    : "Reserved empty slot");
+                if (img->tb_palette[idx][3] == 255)
+                    tb_atlas_usage_tooltip(st, img->tb_palette[idx],
+                        idx <= TB_PAL_META_LAST
+                            ? "Reserved metadata colour"
+                            : "Reserved empty slot");
+                else
+                    gui_tooltip_if_hovered(idx <= TB_PAL_META_LAST
+                        ? "Reserved metadata colour"
+                        : "Reserved empty slot");
+            } else if (img->tb_palette[idx][3] == 255) {
+                tb_atlas_usage_tooltip(st, img->tb_palette[idx], NULL);
+                if (click == 2)
+                    tb_palette_remove_at(img, idx);
             } else if (click == 1) {
-                if (img->tb_palette[idx][3] != 255 &&
-                    tb_palette_set_at(img, idx, goxel.painter.color))
+                if (tb_palette_set_at(img, idx, goxel.painter.color))
                     added = true;
-            } else if (click == 2) {
-                tb_palette_remove_at(img, idx);
             }
         }
     }
