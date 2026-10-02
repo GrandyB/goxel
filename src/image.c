@@ -2050,6 +2050,8 @@ uint32_t image_get_key(const image_t *img)
                         sizeof(*img->tb_reduce_steps),
                     key);
     }
+    key = XXH32(&img->tb_reduce_final_method,
+                sizeof(img->tb_reduce_final_method), key);
     return key;
 }
 

@@ -99,13 +99,20 @@
  *          4 bytes: color RGBA (alpha 255 = occupied, 0 = empty)
  *          1 byte: forced flag (1 = locked/user/meta/reserved)
  *
- *   TBQA: Trenchblocks color-reduction pipeline (middle steps only), binary:
- *      1 byte: version (1)
- *      4 bytes: count (int32)
- *      for each step:
- *          4 bytes: layer_id (int32; 0 = All layers)
- *          4 bytes: method (int32; TB_REDUCE_*)
- *          4 bytes: param (int32; colours or uniform step)
+ *   TBQA: Trenchblocks color-reduction pipeline, binary:
+ *      version 1:
+ *          1 byte: version (1)
+ *          4 bytes: count (int32)
+ *          for each middle step:
+ *              4 bytes: layer_id (int32; 0 = All layers)
+ *              4 bytes: method (int32; TB_REDUCE_*)
+ *              4 bytes: param (int32; colours or uniform step)
+ *          (final fill method implied: median-cut)
+ *      version 2:
+ *          1 byte: version (2)
+ *          4 bytes: final_method (int32; TB_REDUCE_*, not uniform)
+ *          4 bytes: count (int32)
+ *          for each middle step: same as v1
  *
  *   CUST: custom objects (metadata) list, binary:
  *      legacy (version absent, first byte 0/1 = show flag):
@@ -590,14 +597,20 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
         }
     }
 
-    if (img->tb_reduce_step_count > 0 && img->tb_reduce_steps) {
-        int w = 0, n = img->tb_reduce_step_count;
-        int bsz = 1 + 4 + n * 12;
+    if ((img->tb_reduce_step_count > 0 && img->tb_reduce_steps) ||
+        img->tb_reduce_final_method != 0) {
+        int w = 0;
+        int n = (img->tb_reduce_step_count > 0 && img->tb_reduce_steps)
+                ? img->tb_reduce_step_count : 0;
+        int bsz = 1 + 4 + 4 + n * 12;
         uint8_t *buf = (uint8_t *)calloc(1, bsz);
         if (buf) {
             int si;
             int32_t nn = n;
-            buf[w++] = 1; /* version */
+            int32_t final_method = img->tb_reduce_final_method;
+            buf[w++] = 2; /* version */
+            memcpy(buf + w, &final_method, 4);
+            w += 4;
             memcpy(buf + w, &nn, 4);
             w += 4;
             for (si = 0; si < n; si++) {
@@ -731,6 +744,10 @@ static void image_clear_gox_content(image_t *img)
     memset(img->tb_palette, 0, sizeof(img->tb_palette));
     memset(img->tb_palette_slot_forced, 0, sizeof(img->tb_palette_slot_forced));
     img->tb_palette_initialized = false;
+    free(img->tb_reduce_steps);
+    img->tb_reduce_steps = NULL;
+    img->tb_reduce_step_count = 0;
+    img->tb_reduce_final_method = 0;
     custom_objects_free_list(&img->custom_objects);
     img->custom_objects_show_when_closed = false;
     placer_past_files_clear();
@@ -989,34 +1006,51 @@ int load_from_file(const char *path, bool replace)
             free(goxel.image->tb_reduce_steps);
             goxel.image->tb_reduce_steps = NULL;
             goxel.image->tb_reduce_step_count = 0;
+            goxel.image->tb_reduce_final_method = 0; /* median-cut default */
             if (buf) {
                 chunk_read(&c, in, (char *)buf, c.length, __LINE__);
-                if (c.length >= 5 && buf[0] == 1) {
+                if (c.length >= 5 && (buf[0] == 1 || buf[0] == 2)) {
                     int32_t n = 0;
                     int pos = 1;
                     int si;
-                    memcpy(&n, buf + pos, 4);
-                    pos += 4;
-                    if (n < 0) n = 0;
-                    if (n > 256) n = 256; /* sanity cap */
-                    if (n > 0 && c.length >= 5 + n * 12) {
-                        tb_reduce_step_t *steps =
-                            calloc((size_t)n, sizeof(*steps));
-                        if (steps) {
-                            for (si = 0; si < n; si++) {
-                                int32_t lid, method, param;
-                                memcpy(&lid, buf + pos, 4);
-                                pos += 4;
-                                memcpy(&method, buf + pos, 4);
-                                pos += 4;
-                                memcpy(&param, buf + pos, 4);
-                                pos += 4;
-                                steps[si].layer_id = lid;
-                                steps[si].method = method;
-                                steps[si].param = param;
+                    int ver = buf[0];
+                    bool ok = true;
+                    if (ver == 2) {
+                        int32_t final_method = 0;
+                        if (c.length < 9) {
+                            ok = false;
+                        } else {
+                            memcpy(&final_method, buf + pos, 4);
+                            pos += 4;
+                            if (final_method < 0 || final_method > 3)
+                                final_method = 0;
+                            goxel.image->tb_reduce_final_method = final_method;
+                        }
+                    }
+                    if (ok) {
+                        memcpy(&n, buf + pos, 4);
+                        pos += 4;
+                        if (n < 0) n = 0;
+                        if (n > 256) n = 256; /* sanity cap */
+                        if (n > 0 && c.length >= pos + n * 12) {
+                            tb_reduce_step_t *steps =
+                                calloc((size_t)n, sizeof(*steps));
+                            if (steps) {
+                                for (si = 0; si < n; si++) {
+                                    int32_t lid, method, param;
+                                    memcpy(&lid, buf + pos, 4);
+                                    pos += 4;
+                                    memcpy(&method, buf + pos, 4);
+                                    pos += 4;
+                                    memcpy(&param, buf + pos, 4);
+                                    pos += 4;
+                                    steps[si].layer_id = lid;
+                                    steps[si].method = method;
+                                    steps[si].param = param;
+                                }
+                                goxel.image->tb_reduce_steps = steps;
+                                goxel.image->tb_reduce_step_count = n;
                             }
-                            goxel.image->tb_reduce_steps = steps;
-                            goxel.image->tb_reduce_step_count = n;
                         }
                     }
                 }

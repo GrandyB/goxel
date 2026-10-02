@@ -294,19 +294,39 @@ static void tb_reduce_apply_step(tb_work_root_t *roots, int n_roots,
 }
 
 static void tb_fill_remaining_slots(volume_t *merged, uint8_t (*palette)[4],
-                                    int n_forced)
+                                    int n_forced, int method)
 {
     int quant_first, quant_count;
+    const uint8_t (*exclude)[4];
 
     if (!merged || !palette) return;
     quant_first = TB_PAL_MAP_FIRST + n_forced;
     quant_count = 256 - quant_first;
     if (quant_count <= 0) return;
-    quantization_gen_palette(
-        merged, quant_count,
-        (void *)(palette + quant_first),
-        (const uint8_t (*)[4])(palette + TB_PAL_MAP_FIRST),
-        n_forced);
+    exclude = (const uint8_t (*)[4])(palette + TB_PAL_MAP_FIRST);
+    switch (method) {
+    case TB_REDUCE_OCTREE:
+        quantization_gen_palette_octree(
+            merged, quant_count, (void *)(palette + quant_first),
+            exclude, n_forced);
+        break;
+    case TB_REDUCE_WU:
+        quantization_gen_palette_wu(
+            merged, quant_count, (void *)(palette + quant_first),
+            exclude, n_forced);
+        break;
+    case TB_REDUCE_KMEANS:
+        quantization_gen_palette_kmeans(
+            merged, quant_count, (void *)(palette + quant_first),
+            exclude, n_forced);
+        break;
+    case TB_REDUCE_MEDIAN_CUT:
+    default:
+        quantization_gen_palette(
+            merged, quant_count, (void *)(palette + quant_first),
+            exclude, n_forced);
+        break;
+    }
 }
 
 static void tb_remap_roots_to_map_palette(tb_work_root_t *roots, int n_roots,
@@ -359,7 +379,7 @@ int tb_reduce_simulate_totals(const image_t *img,
         totals[1 + i] = global;
     }
 
-    /* Final: median-cut into remaining atlas slots, remap, count used. */
+    /* Final: fill remaining atlas slots, remap, count used. */
     memcpy(palette, img->tb_palette, sizeof(palette));
     n_forced = tb_count_forced_map(img);
     merged = tb_merge_work_roots(roots, n_roots);
@@ -367,7 +387,8 @@ int tb_reduce_simulate_totals(const image_t *img,
         tb_work_roots_free(roots, n_roots);
         return -1;
     }
-    tb_fill_remaining_slots(merged, palette, n_forced);
+    tb_fill_remaining_slots(merged, palette, n_forced,
+                            img->tb_reduce_final_method);
     volume_delete(merged);
     tb_remap_roots_to_map_palette(roots, n_roots, palette);
     used = tb_count_global_uniques(roots, n_roots);
@@ -468,7 +489,8 @@ int tb_reduce_prepare_export_volume(const image_t *img,
     tb_work_roots_free(roots, n_roots);
     if (!merged) return -1;
 
-    tb_fill_remaining_slots(merged, palette, n_forced);
+    tb_fill_remaining_slots(merged, palette, n_forced,
+                            img->tb_reduce_final_method);
     *out_volume = merged;
     return 0;
 }

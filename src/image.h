@@ -94,10 +94,12 @@ struct image {
     bool    tb_palette_initialized;
     bool    tb_palette_slot_forced[256];
 
-    /* Trenchblocks color-reduction pipeline (middle steps only; fixed
-     * atlas / final median-cut bookends are not stored). */
+    /* Trenchblocks color-reduction pipeline (middle steps + final method).
+     * Atlas bookend is not stored; final fill uses tb_reduce_final_method
+     * into remaining atlas slots (All layers; count fixed). */
     tb_reduce_step_t *tb_reduce_steps;
     int tb_reduce_step_count;
+    int tb_reduce_final_method; /* TB_REDUCE_*; not uniform */
 
     custom_object_t *custom_objects;
     bool custom_objects_show_when_closed;

@@ -807,23 +807,34 @@ static void tb_export_panel_gui(void)
             }
         }
 
-        /* Fixed last row: remaining atlas slots. */
-        gui_text("-");
-        gui_next_column();
-        gui_text("All layers");
-        gui_next_column();
-        gui_text("%s", TB_REDUCE_METHOD_NAMES[TB_REDUCE_MEDIAN_CUT]);
-        gui_next_column();
-        gui_text("Remaining atlas slots (%d)", available);
-        gui_next_column();
-        if (st->reduce_totals_valid &&
-            st->reduce_totals_count == n_steps + 2) {
-            tb_stale_color_begin(st);
-            gui_text("%d", st->reduce_totals[n_steps + 1]);
-            tb_stale_color_end(st);
-        } else
+        /* Fixed last row: remaining atlas slots (method editable). */
+        {
+            int final_method = img->tb_reduce_final_method;
+
             gui_text("-");
-        gui_next_column();
+            gui_next_column();
+            gui_text("All layers");
+            gui_next_column();
+            if (final_method < 0 || final_method > TB_REDUCE_KMEANS)
+                final_method = TB_REDUCE_MEDIAN_CUT;
+            /* Uniform is not offered: final fill always uses remaining
+             * atlas slot count as N. */
+            if (gui_combo("##fact", &final_method, TB_REDUCE_METHOD_NAMES, 4)) {
+                img->tb_reduce_final_method = final_method;
+                pipeline_changed = true;
+            }
+            gui_next_column();
+            gui_text("Remaining atlas slots (%d)", available);
+            gui_next_column();
+            if (st->reduce_totals_valid &&
+                st->reduce_totals_count == n_steps + 2) {
+                tb_stale_color_begin(st);
+                gui_text("%d", st->reduce_totals[n_steps + 1]);
+                tb_stale_color_end(st);
+            } else
+                gui_text("-");
+            gui_next_column();
+        }
 
         gui_columns(1);
         if (gui_button("Add action", 0, 0)) {

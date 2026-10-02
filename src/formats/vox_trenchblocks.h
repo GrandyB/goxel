@@ -40,8 +40,8 @@ int tb_reduce_available_slots(const image_t *img);
 /*
  * Simulate the color-reduction pipeline for Total column display.
  * Writes totals[0] = outstanding after atlas, totals[1..n] after each middle
- * step (global unique count), totals[n+1] after final median-cut into
- * remaining atlas slots.  totals_len must be >= n_steps + 2.
+ * step (global unique count), totals[n+1] after final fill into remaining
+ * atlas slots (img->tb_reduce_final_method).  totals_len must be >= n_steps + 2.
  * Returns 0 on success, -1 on failure.
  */
 int tb_reduce_simulate_totals(const image_t *img,
@@ -65,10 +65,10 @@ int tb_reduce_per_layer_after_middle(const image_t *img,
 
 /*
  * Apply middle pipeline steps to per-root working volumes, merge into a single
- * volume, and fill remaining map palette slots (median-cut, exclude forced).
- * *out_volume receives a new volume the caller must volume_delete.
- * palette is 256 entries already seeded with the atlas; n_forced is the count
- * of forced opaque map slots (compact layout assumed).
+ * volume, and fill remaining map palette slots (tb_reduce_final_method,
+ * exclude forced).  *out_volume receives a new volume the caller must
+ * volume_delete.  palette is 256 entries already seeded with the atlas;
+ * n_forced is the count of forced opaque map slots (compact layout assumed).
  * Returns 0 on success, -1 on failure.
  */
 int tb_reduce_prepare_export_volume(const image_t *img,
