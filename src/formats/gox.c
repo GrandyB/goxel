@@ -99,6 +99,14 @@
  *          4 bytes: color RGBA (alpha 255 = occupied, 0 = empty)
  *          1 byte: forced flag (1 = locked/user/meta/reserved)
  *
+ *   TBQA: Trenchblocks color-reduction pipeline (middle steps only), binary:
+ *      1 byte: version (1)
+ *      4 bytes: count (int32)
+ *      for each step:
+ *          4 bytes: layer_id (int32; 0 = All layers)
+ *          4 bytes: method (int32; TB_REDUCE_*)
+ *          4 bytes: param (int32; colours or uniform step)
+ *
  *   CUST: custom objects (metadata) list, binary:
  *      legacy (version absent, first byte 0/1 = show flag):
  *          1 byte: global show flag
@@ -582,6 +590,32 @@ void save_to_file(const image_t *img, const char *path, bool visible_only)
         }
     }
 
+    if (img->tb_reduce_step_count > 0 && img->tb_reduce_steps) {
+        int w = 0, n = img->tb_reduce_step_count;
+        int bsz = 1 + 4 + n * 12;
+        uint8_t *buf = (uint8_t *)calloc(1, bsz);
+        if (buf) {
+            int si;
+            int32_t nn = n;
+            buf[w++] = 1; /* version */
+            memcpy(buf + w, &nn, 4);
+            w += 4;
+            for (si = 0; si < n; si++) {
+                int32_t lid = img->tb_reduce_steps[si].layer_id;
+                int32_t method = img->tb_reduce_steps[si].method;
+                int32_t param = img->tb_reduce_steps[si].param;
+                memcpy(buf + w, &lid, 4);
+                w += 4;
+                memcpy(buf + w, &method, 4);
+                w += 4;
+                memcpy(buf + w, &param, 4);
+                w += 4;
+            }
+            chunk_write_all(out, "TBQA", (char *)buf, w);
+            free(buf);
+        }
+    }
+
     {
         int cust_len = 0;
         uint8_t *cust_buf = custom_objects_serialize(img, &cust_len);
@@ -945,6 +979,46 @@ int load_from_file(const char *path, bool replace)
                             buf[pos++] != 0;
                     }
                     goxel.image->tb_palette_initialized = true;
+                }
+                free(buf);
+            } else {
+                chunk_read(&c, in, NULL, c.length, __LINE__);
+            }
+        } else if (strncmp(c.type, "TBQA", 4) == 0) {
+            uint8_t *buf = malloc(c.length);
+            free(goxel.image->tb_reduce_steps);
+            goxel.image->tb_reduce_steps = NULL;
+            goxel.image->tb_reduce_step_count = 0;
+            if (buf) {
+                chunk_read(&c, in, (char *)buf, c.length, __LINE__);
+                if (c.length >= 5 && buf[0] == 1) {
+                    int32_t n = 0;
+                    int pos = 1;
+                    int si;
+                    memcpy(&n, buf + pos, 4);
+                    pos += 4;
+                    if (n < 0) n = 0;
+                    if (n > 256) n = 256; /* sanity cap */
+                    if (n > 0 && c.length >= 5 + n * 12) {
+                        tb_reduce_step_t *steps =
+                            calloc((size_t)n, sizeof(*steps));
+                        if (steps) {
+                            for (si = 0; si < n; si++) {
+                                int32_t lid, method, param;
+                                memcpy(&lid, buf + pos, 4);
+                                pos += 4;
+                                memcpy(&method, buf + pos, 4);
+                                pos += 4;
+                                memcpy(&param, buf + pos, 4);
+                                pos += 4;
+                                steps[si].layer_id = lid;
+                                steps[si].method = method;
+                                steps[si].param = param;
+                            }
+                            goxel.image->tb_reduce_steps = steps;
+                            goxel.image->tb_reduce_step_count = n;
+                        }
+                    }
                 }
                 free(buf);
             } else {

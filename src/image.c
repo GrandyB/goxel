@@ -889,6 +889,8 @@ static image_t *image_snap(image_t *other)
 
     /* Break shared pointer immediately - do not free the live list. */
     img->custom_objects = NULL;
+    img->tb_reduce_steps = NULL;
+    img->tb_reduce_step_count = 0;
 
     img->layers = NULL;
     img->active_layer = NULL;
@@ -924,6 +926,18 @@ static image_t *image_snap(image_t *other)
 
     custom_objects_copy_list(&img->custom_objects, other->custom_objects);
 
+    img->tb_reduce_steps = NULL;
+    img->tb_reduce_step_count = 0;
+    if (other->tb_reduce_step_count > 0 && other->tb_reduce_steps) {
+        size_t nbytes = (size_t)other->tb_reduce_step_count *
+                        sizeof(*other->tb_reduce_steps);
+        img->tb_reduce_steps = malloc(nbytes);
+        if (img->tb_reduce_steps) {
+            memcpy(img->tb_reduce_steps, other->tb_reduce_steps, nbytes);
+            img->tb_reduce_step_count = other->tb_reduce_step_count;
+        }
+    }
+
     img->history = img->history_next = img->history_prev = NULL;
     return img;
 }
@@ -958,6 +972,9 @@ void image_delete(image_t *img)
         material_delete(mat);
     }
     custom_objects_free_list(&img->custom_objects);
+    free(img->tb_reduce_steps);
+    img->tb_reduce_steps = NULL;
+    img->tb_reduce_step_count = 0;
 
     // Path is shared between images and snaps!
     // XXX: find a better way.
@@ -2024,6 +2041,14 @@ uint32_t image_get_key(const image_t *img)
         key = XXH32(img->tb_palette, sizeof(img->tb_palette), key);
         key = XXH32(img->tb_palette_slot_forced,
                     sizeof(img->tb_palette_slot_forced), key);
+    }
+    if (img->tb_reduce_step_count > 0 && img->tb_reduce_steps) {
+        key = XXH32(&img->tb_reduce_step_count,
+                    sizeof(img->tb_reduce_step_count), key);
+        key = XXH32(img->tb_reduce_steps,
+                    (size_t)img->tb_reduce_step_count *
+                        sizeof(*img->tb_reduce_steps),
+                    key);
     }
     return key;
 }

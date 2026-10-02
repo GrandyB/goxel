@@ -252,16 +252,6 @@ bool tb_palette_remove_at(image_t *img, int idx)
     return true;
 }
 
-static int tb_count_forced_map(const image_t *img)
-{
-    int i, n = 0;
-    for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
-        if (img->tb_palette_slot_forced[i] && img->tb_palette[i][3] == 255)
-            n++;
-    }
-    return n;
-}
-
 static int tb_voxel_cmp(const void *a_, const void *b_)
 {
     const uint8_t *a = a_;
@@ -843,7 +833,6 @@ static int vox_trenchblocks_export(const file_format_t *format,
 {
     FILE *file = NULL;
     image_t *img;
-    const volume_t *src_volume;
     volume_t *volume = NULL;
     uint8_t (*palette)[4] = NULL;
     int *heightmap = NULL;
@@ -858,7 +847,7 @@ static int vox_trenchblocks_export(const file_format_t *format,
     int sx, sy, sz, nx, ny, tx, ty, ti, i, j, pos[3];
     int nb_vox = 0, nb_tiles = 0, children_size;
     int stamp_i, color_index;
-    int n_forced, quant_first, quant_count;
+    int n_forced;
     uint8_t v[4], stamp_rgb[4];
     volume_iterator_t iter;
     char trans[64];
@@ -908,11 +897,49 @@ static int vox_trenchblocks_export(const file_format_t *format,
     nx = 2;
     ny = 2;
 
-    src_volume = goxel_get_layers_volume(image);
-    volume = volume_copy(src_volume);
-    if (!volume) {
+    palette = calloc(256, sizeof(*palette));
+    if (!palette) {
         gui_alert("vox (Trenchblocks)", "Out of memory.");
         return -1;
+    }
+
+    if (img) {
+        tb_palette_ensure_init(img);
+        tb_palette_compact_map(img->tb_palette, img->tb_palette_slot_forced);
+        memcpy(palette, img->tb_palette, 256 * sizeof(*palette));
+        n_forced = tb_count_forced_map(img);
+        /* Middle reduce steps + fill remaining atlas slots. */
+        if (tb_reduce_prepare_export_volume(img, palette, n_forced,
+                                            &volume) != 0 || !volume) {
+            gui_alert("vox (Trenchblocks)", "Out of memory.");
+            goto error;
+        }
+    } else {
+        bool forced[256];
+        const volume_t *src_volume;
+        int quant_first, quant_count;
+
+        tb_init_palette_slots(palette, forced);
+        tb_add_recent_colors_to(palette, forced, image);
+        n_forced = 0;
+        for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
+            if (forced[i] && palette[i][3] == 255) n_forced++;
+        }
+        src_volume = goxel_get_layers_volume(image);
+        volume = volume_copy(src_volume);
+        if (!volume) {
+            gui_alert("vox (Trenchblocks)", "Out of memory.");
+            goto error;
+        }
+        quant_first = TB_PAL_MAP_FIRST + n_forced;
+        quant_count = 256 - quant_first;
+        if (quant_count > 0) {
+            quantization_gen_palette(
+                volume, quant_count,
+                (void *)(palette + quant_first),
+                (const uint8_t (*)[4])(palette + TB_PAL_MAP_FIRST),
+                n_forced);
+        }
     }
 
     heightmap = tb_build_heightmap(volume, xmin, ymin, sx, sy, zmin, zmax);
@@ -936,50 +963,6 @@ static int vox_trenchblocks_export(const file_format_t *format,
         pos[1] = stamps[i].y;
         pos[2] = stamps[i].z;
         volume_set_at(volume, NULL, pos, stamp_rgb);
-    }
-
-    palette = calloc(256, sizeof(*palette));
-    if (!palette) {
-        gui_alert("vox (Trenchblocks)", "Out of memory.");
-        goto error;
-    }
-
-    if (img) {
-        tb_palette_ensure_init(img);
-        tb_palette_compact_map(img->tb_palette, img->tb_palette_slot_forced);
-        memcpy(palette, img->tb_palette, 256 * sizeof(*palette));
-        n_forced = tb_count_forced_map(img);
-    } else {
-        bool forced[256];
-        tb_init_palette_slots(palette, forced);
-        tb_add_recent_colors_to(palette, forced, image);
-        n_forced = 0;
-        for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
-            if (forced[i] && palette[i][3] == 255) n_forced++;
-        }
-    }
-    quant_first = TB_PAL_MAP_FIRST + n_forced;
-    quant_count = 256 - quant_first;
-
-    /* Count source voxels then median-cut into free map slots. */
-    iter = volume_get_iterator(src_volume, VOLUME_ITER_VOXELS);
-    while (volume_iter(&iter, pos)) {
-        if (pos[0] < xmin || pos[0] >= xmax) continue;
-        if (pos[1] < ymin || pos[1] >= ymax) continue;
-        if (pos[2] < zmin || pos[2] >= zmin + dims[2]) continue;
-        volume_get_at(src_volume, &iter, pos, v);
-        if (!voxel_is_solid(v)) continue;
-        nb_vox++;
-    }
-    if (nb_vox > 0 && quant_count > 0) {
-        /* Skip colours already forced in the map range (17+). Do not exclude
-         * metadata 1-8: map voxels that reuse those RGBs still need a
-         * duplicate in the map palette range. */
-        quantization_gen_palette(
-            src_volume, quant_count,
-            (void *)(palette + quant_first),
-            (const uint8_t (*)[4])(palette + TB_PAL_MAP_FIRST),
-            n_forced);
     }
 
     nb_vox = 0;

@@ -44,6 +44,10 @@ typedef struct {
     color_stat_hash_t *used_colors;
     /* One-shot: force-open the Analysis collapsing header next frame. */
     bool expand_analysis;
+    /* Color-reduction pipeline Totals cache (atlas + middle + final). */
+    int *reduce_totals;
+    int reduce_totals_count;
+    bool reduce_totals_valid;
 } tb_popup_state_t;
 
 static bool *g_tb_layer_open = NULL;
@@ -87,6 +91,10 @@ static void tb_popup_clear_analysis(tb_popup_state_t *st)
     }
     st->nbuckets = 0;
     st->valid = false;
+    free(st->reduce_totals);
+    st->reduce_totals = NULL;
+    st->reduce_totals_count = 0;
+    st->reduce_totals_valid = false;
 }
 
 static void tb_popup_clear_used(tb_popup_state_t *st)
@@ -197,20 +205,7 @@ typedef struct {
     UT_hash_handle hh;
 } tb_cross_hash_t;
 
-static bool tb_forced_map_has_rgb(const image_t *img, const uint8_t c[4])
-{
-    int i;
-    if (!img || c[3] != 255) return false;
-    for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
-        if (!img->tb_palette_slot_forced[i]) continue;
-        if (img->tb_palette[i][3] != 255) continue;
-        if (img->tb_palette[i][0] == c[0] &&
-            img->tb_palette[i][1] == c[1] &&
-            img->tb_palette[i][2] == c[2])
-            return true;
-    }
-    return false;
-}
+static void tb_popup_refresh_reduce_totals(tb_popup_state_t *st);
 
 static void tb_run_analysis(tb_popup_state_t *st)
 {
@@ -324,6 +319,139 @@ static void tb_run_analysis(tb_popup_state_t *st)
     }
     st->valid = true;
     tb_popup_refresh_used(st);
+    tb_popup_refresh_reduce_totals(st);
+}
+
+static const char *TB_REDUCE_METHOD_NAMES[] = {
+    "Quantization (median-cut)",
+    "Quantization (octree)",
+    "Quantization (Wu)",
+    "Quantization (k-means++)",
+    "Quantization (uniform)",
+};
+
+static void tb_popup_refresh_reduce_totals(tb_popup_state_t *st)
+{
+    image_t *img = goxel.image;
+    int n_steps, need, *totals;
+
+    free(st->reduce_totals);
+    st->reduce_totals = NULL;
+    st->reduce_totals_count = 0;
+    st->reduce_totals_valid = false;
+    if (!img) return;
+
+    n_steps = img->tb_reduce_step_count;
+    need = n_steps + 2;
+    totals = calloc((size_t)need, sizeof(*totals));
+    if (!totals) return;
+    if (tb_reduce_simulate_totals(img, img->tb_reduce_steps, n_steps,
+                                  totals, need) != 0) {
+        free(totals);
+        return;
+    }
+    st->reduce_totals = totals;
+    st->reduce_totals_count = need;
+    st->reduce_totals_valid = true;
+}
+
+static bool tb_reduce_add_step(image_t *img)
+{
+    tb_reduce_step_t *steps;
+    int c;
+
+    if (!img) return false;
+    c = img->tb_reduce_step_count;
+    steps = realloc(img->tb_reduce_steps, (size_t)(c + 1) * sizeof(*steps));
+    if (!steps) return false;
+    img->tb_reduce_steps = steps;
+    steps[c].layer_id = 0;
+    steps[c].method = TB_REDUCE_WU;
+    steps[c].param = 64;
+    img->tb_reduce_step_count = c + 1;
+    return true;
+}
+
+static void tb_reduce_remove_step(image_t *img, int idx)
+{
+    int c;
+    if (!img || idx < 0 || idx >= img->tb_reduce_step_count) return;
+    c = img->tb_reduce_step_count;
+    if (idx < c - 1) {
+        memmove(&img->tb_reduce_steps[idx], &img->tb_reduce_steps[idx + 1],
+                (size_t)(c - idx - 1) * sizeof(*img->tb_reduce_steps));
+    }
+    img->tb_reduce_step_count = c - 1;
+    if (img->tb_reduce_step_count == 0) {
+        free(img->tb_reduce_steps);
+        img->tb_reduce_steps = NULL;
+    } else {
+        tb_reduce_step_t *steps = realloc(
+            img->tb_reduce_steps,
+            (size_t)img->tb_reduce_step_count * sizeof(*steps));
+        if (steps)
+            img->tb_reduce_steps = steps;
+    }
+}
+
+static void tb_reduce_swap_steps(image_t *img, int a, int b)
+{
+    tb_reduce_step_t tmp;
+    if (!img || a < 0 || b < 0) return;
+    if (a >= img->tb_reduce_step_count || b >= img->tb_reduce_step_count)
+        return;
+    tmp = img->tb_reduce_steps[a];
+    img->tb_reduce_steps[a] = img->tb_reduce_steps[b];
+    img->tb_reduce_steps[b] = tmp;
+}
+
+static const char *tb_reduce_layer_label(const image_t *img, int layer_id,
+                                         char *buf, size_t buf_sz)
+{
+    layer_t *layer;
+    if (layer_id == 0)
+        return "All layers";
+    layer = layer_find(img, layer_id);
+    if (!layer || layer->parent_id != 0) {
+        snprintf(buf, buf_sz, "(missing layer)");
+        return buf;
+    }
+    if (layer->name[0])
+        return layer->name;
+    snprintf(buf, buf_sz, "(unnamed)");
+    return buf;
+}
+
+static bool tb_reduce_layer_combo(image_t *img, int *layer_id)
+{
+    layer_t *layer;
+    char miss[64];
+    const char *preview;
+    bool changed = false;
+
+    preview = tb_reduce_layer_label(img, *layer_id, miss, sizeof(miss));
+    if (!gui_combo_begin("##tb_rd_layer", preview))
+        return false;
+    if (gui_combo_item("All layers", *layer_id == 0)) {
+        *layer_id = 0;
+        changed = true;
+    }
+    DL_FOREACH_REVERSE(img->layers, layer) {
+        if (layer->parent_id != 0) continue;
+        {
+            const char *name = layer->name[0] ? layer->name : "(unnamed)";
+            if (gui_combo_item(name, *layer_id == layer->id)) {
+                *layer_id = layer->id;
+                changed = true;
+            }
+        }
+    }
+    if (*layer_id != 0 && !layer_find(img, *layer_id)) {
+        if (gui_combo_item(miss, true))
+            changed = false;
+    }
+    gui_combo_end();
+    return changed;
 }
 
 static void tb_popup_add_recent(image_t *img)
@@ -610,6 +738,153 @@ static void tb_export_panel_gui(void)
                 gui_text("(no analysis)");
             }
         }
+    }
+
+    if (gui_collapsing_header("Color reduction", true)) {
+        int n_steps = img->tb_reduce_step_count;
+        int available = tb_reduce_available_slots(img);
+        int ri;
+        bool pipeline_changed = false;
+        char row_id[32];
+
+        gui_push_id("tb_rd");
+        gui_columns(5);
+        gui_text_bold("Reorder");
+        gui_next_column();
+        gui_text_bold("Layer");
+        gui_next_column();
+        gui_text_bold("Action");
+        gui_next_column();
+        gui_text_bold("Settings");
+        gui_next_column();
+        gui_text_bold("Total");
+        gui_next_column();
+
+        /* Fixed first row: Add current atlas. */
+        gui_text("-");
+        gui_next_column();
+        gui_text("-");
+        gui_next_column();
+        gui_text("Add current atlas");
+        gui_next_column();
+        gui_text("");
+        gui_next_column();
+        if (st->reduce_totals_valid && st->reduce_totals_count >= 1)
+            gui_text("%d", st->reduce_totals[0]);
+        else
+            gui_text("-");
+        gui_next_column();
+
+        /* Middle editable rows. */
+        for (ri = 0; ri < n_steps; ri++) {
+            tb_reduce_step_t *step = &img->tb_reduce_steps[ri];
+            int method = step->method;
+            bool press = false;
+            int remove_idx = -1;
+
+            snprintf(row_id, sizeof(row_id), "rd%d", ri);
+            gui_push_id(row_id);
+
+            gui_enabled_begin(ri > 0);
+            if (gui_condensed_selectable_icon("##up", &press,
+                                              ICON_ARROW_UPWARD)) {
+                tb_reduce_swap_steps(img, ri, ri - 1);
+                pipeline_changed = true;
+            }
+            gui_enabled_end();
+            gui_same_line();
+            press = false;
+            gui_enabled_begin(ri < n_steps - 1);
+            if (gui_condensed_selectable_icon("##dn", &press,
+                                              ICON_ARROW_DOWNWARD)) {
+                tb_reduce_swap_steps(img, ri, ri + 1);
+                pipeline_changed = true;
+            }
+            gui_enabled_end();
+            gui_same_line();
+            press = false;
+            if (gui_condensed_selectable_icon("##rm", &press, ICON_REMOVE))
+                remove_idx = ri;
+            gui_next_column();
+
+            if (tb_reduce_layer_combo(img, &step->layer_id))
+                pipeline_changed = true;
+            gui_next_column();
+
+            if (method < 0 || method > TB_REDUCE_UNIFORM)
+                method = TB_REDUCE_MEDIAN_CUT;
+            if (gui_combo("##act", &method, TB_REDUCE_METHOD_NAMES, 5)) {
+                step->method = method;
+                if (method == TB_REDUCE_UNIFORM) {
+                    if (step->param < 1 || step->param > 255)
+                        step->param = 8;
+                } else if (step->param < 2 || step->param > 256) {
+                    step->param = 64;
+                }
+                pipeline_changed = true;
+            }
+            gui_next_column();
+
+            if (step->method == TB_REDUCE_UNIFORM)
+                gui_text("Var");
+            else
+                gui_text("N");
+            gui_same_line();
+            /* Skip panel label-column alignment; it uses absolute X and
+             * overflows when drawn inside gui_columns. */
+            gui_label_size_push(0);
+            if (step->method == TB_REDUCE_UNIFORM) {
+                if (gui_input_int("##var", &step->param, 1, 255))
+                    pipeline_changed = true;
+            } else {
+                if (gui_input_int("##cols", &step->param, 2, 256))
+                    pipeline_changed = true;
+            }
+            gui_label_size_pop();
+            gui_next_column();
+
+            if (st->reduce_totals_valid &&
+                ri + 1 < st->reduce_totals_count)
+                gui_text("%d", st->reduce_totals[ri + 1]);
+            else
+                gui_text("-");
+            gui_next_column();
+
+            gui_pop_id();
+
+            if (remove_idx >= 0) {
+                tb_reduce_remove_step(img, remove_idx);
+                pipeline_changed = true;
+                n_steps = img->tb_reduce_step_count;
+                break;
+            }
+        }
+
+        /* Fixed last row: remaining atlas slots. */
+        gui_text("-");
+        gui_next_column();
+        gui_text("All layers");
+        gui_next_column();
+        gui_text("%s", TB_REDUCE_METHOD_NAMES[TB_REDUCE_MEDIAN_CUT]);
+        gui_next_column();
+        gui_text("Remaining atlas slots (%d)", available);
+        gui_next_column();
+        if (st->reduce_totals_valid &&
+            st->reduce_totals_count == n_steps + 2)
+            gui_text("%d", st->reduce_totals[n_steps + 1]);
+        else
+            gui_text("-");
+        gui_next_column();
+
+        gui_columns(1);
+        if (gui_button("Add action", 0, 0)) {
+            if (tb_reduce_add_step(img))
+                pipeline_changed = true;
+        }
+        gui_pop_id();
+
+        if (pipeline_changed)
+            reanalyze = true;
     }
 
     gui_separator();

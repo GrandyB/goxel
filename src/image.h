@@ -49,6 +49,13 @@ typedef struct image image_t;
 #   define IMAGE_T_DEFINED
 #endif
 
+/* Trenchblocks color-reduction pipeline step (middle rows only). */
+typedef struct tb_reduce_step {
+    int layer_id; /* 0 = All layers; else top-level layer id */
+    int method;   /* TB_REDUCE_* in formats/vox_trenchblocks.h */
+    int param;    /* nb_colors (2-256) or uniform step (1-255) */
+} tb_reduce_step_t;
+
 /* Max layers in one nested subtree (root + descendants). Stack buffers for
  * reparent / move / duplicate / delete, and overlay label queues. */
 #ifndef LAYER_SUBTREE_MAX
@@ -86,6 +93,11 @@ struct image {
     uint8_t tb_palette[256][4];
     bool    tb_palette_initialized;
     bool    tb_palette_slot_forced[256];
+
+    /* Trenchblocks color-reduction pipeline (middle steps only; fixed
+     * atlas / final median-cut bookends are not stored). */
+    tb_reduce_step_t *tb_reduce_steps;
+    int tb_reduce_step_count;
 
     custom_object_t *custom_objects;
     bool custom_objects_show_when_closed;
