@@ -542,6 +542,25 @@ static void tb_export_panel_gui(void)
             gui_pop_id();
         }
 
+        {
+            int available = 0;
+            int after_total = 0;
+            color_stat_hash_t *el, *tmp;
+
+            for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
+                if (img->tb_palette[i][3] != 255)
+                    available++;
+            }
+            HASH_ITER(hh, st->used_colors, el, tmp) {
+                if (!tb_forced_map_has_rgb(img, el->color))
+                    after_total++;
+            }
+            gui_text("Total in use colours: %d",
+                     st->layers.total.unique_colors);
+            gui_text("If current applied: %d", after_total);
+            gui_text("Available atlas indexes: %d", available);
+        }
+
         gui_separator();
         gui_text_bold("Unique colours across layers");
         gui_push_id("tb_cross");
