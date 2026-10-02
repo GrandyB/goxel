@@ -42,6 +42,8 @@ typedef struct {
     char palette_name[128];
     /* Cached map colour usage for grey borders (RGB packed, opaque only). */
     color_stat_hash_t *used_colors;
+    /* One-shot: force-open the Analysis collapsing header next frame. */
+    bool expand_analysis;
 } tb_popup_state_t;
 
 static bool *g_tb_layer_open = NULL;
@@ -474,131 +476,140 @@ static void tb_export_panel_gui(void)
     gui_row_end();
 
     gui_separator();
-    gui_text_bold("Analysis");
-    if (st->valid) {
-        gui_push_id("tb_an_hdr");
-        gui_columns(3);
-        gui_text_bold("Layer");
-        gui_next_column();
-        gui_text_bold("Unique colours");
-        gui_next_column();
-        gui_text_bold("After current");
-        gui_next_column();
-        gui_columns(1);
-        gui_pop_id();
+    {
+        bool force_open = st->expand_analysis;
+        if (force_open)
+            st->expand_analysis = false;
+        if (gui_collapsing_header_force_open("Analysis", force_open)) {
+            if (st->valid) {
+                gui_push_id("tb_an_hdr");
+                gui_columns(3);
+                gui_text_bold("Layer");
+                gui_next_column();
+                gui_text_bold("Unique colours");
+                gui_next_column();
+                gui_text_bold("After current");
+                gui_next_column();
+                gui_columns(1);
+                gui_pop_id();
 
-        for (i = 0; i < st->layers.layer_count; i++) {
-            char row_id[24];
-            int n_after = st->after_current ? st->after_current[i] : 0;
-            tb_after_colors_t *alist =
-                st->after_lists ? &st->after_lists[i] : NULL;
+                for (i = 0; i < st->layers.layer_count; i++) {
+                    char row_id[24];
+                    int n_after = st->after_current ? st->after_current[i] : 0;
+                    tb_after_colors_t *alist =
+                        st->after_lists ? &st->after_lists[i] : NULL;
 
-            snprintf(row_id, sizeof(row_id), "tb_an_%d", i);
-            gui_push_id(row_id);
-            gui_columns(3);
-            {
-                bool fold = false;
-                int fold_icon = (g_tb_layer_open && i < g_tb_layer_open_count &&
-                                 g_tb_layer_open[i])
-                                    ? ICON_ARROW_DOWNWARD
-                                    : ICON_CHEVRON_RIGHT;
+                    snprintf(row_id, sizeof(row_id), "tb_an_%d", i);
+                    gui_push_id(row_id);
+                    gui_columns(3);
+                    {
+                        bool fold = false;
+                        int fold_icon =
+                            (g_tb_layer_open && i < g_tb_layer_open_count &&
+                             g_tb_layer_open[i])
+                                ? ICON_ARROW_DOWNWARD
+                                : ICON_CHEVRON_RIGHT;
 
-                if (n_after > 0 && g_tb_layer_open && i < g_tb_layer_open_count) {
-                    char fold_id[24];
-                    snprintf(fold_id, sizeof(fold_id), "##tbfold%d", i);
-                    if (gui_condensed_selectable_icon(fold_id, &fold,
-                                                      fold_icon))
-                        g_tb_layer_open[i] = !g_tb_layer_open[i];
-                    gui_same_line();
+                        if (n_after > 0 && g_tb_layer_open &&
+                            i < g_tb_layer_open_count) {
+                            char fold_id[24];
+                            snprintf(fold_id, sizeof(fold_id), "##tbfold%d", i);
+                            if (gui_condensed_selectable_icon(fold_id, &fold,
+                                                              fold_icon))
+                                g_tb_layer_open[i] = !g_tb_layer_open[i];
+                            gui_same_line();
+                        } else {
+                            gui_spacing_f(gui_icon_height(true));
+                            gui_same_line();
+                        }
+                        gui_text("%s", st->layers.layers[i].name[0]
+                                 ? st->layers.layers[i].name : "(unnamed)");
+                    }
+                    gui_next_column();
+                    gui_text("%d", st->layers.layers[i].stats.unique_colors);
+                    gui_next_column();
+                    gui_text("%d", n_after);
+                    gui_next_column();
+                    gui_columns(1);
+
+                    if (g_tb_layer_open && i < g_tb_layer_open_count &&
+                        g_tb_layer_open[i] && alist && alist->count > 0) {
+                        char grid_id[24];
+                        int clicked;
+                        /* Cap height so opening a multi-thousand colour fold
+                         * does not explode the floating window layout. */
+                        snprintf(grid_id, sizeof(grid_id), "tbaft%d", i);
+                        clicked = gui_color_swatches_scroll(
+                            grid_id, (const uint8_t (*)[4])alist->colors,
+                            alist->count, 14.f, 200.f);
+                        if (clicked >= 0 && clicked < alist->count) {
+                            if (tb_palette_add_rgb(img, alist->colors[clicked]))
+                                reanalyze = true;
+                        }
+                    }
+                    gui_pop_id();
+                }
+
+                {
+                    int available = 0;
+                    int after_total = 0;
+                    color_stat_hash_t *el, *tmp;
+
+                    for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
+                        if (img->tb_palette[i][3] != 255)
+                            available++;
+                    }
+                    HASH_ITER(hh, st->used_colors, el, tmp) {
+                        if (!tb_forced_map_has_rgb(img, el->color))
+                            after_total++;
+                    }
+                    gui_text("Total in use colours: %d",
+                             st->layers.total.unique_colors);
+                    gui_text("If current applied: %d", after_total);
+                    gui_text("Available atlas indexes: %d", available);
+                }
+
+                gui_separator();
+                gui_text_bold("Unique colours across layers");
+                gui_push_id("tb_cross");
+                gui_columns(3);
+                gui_text_bold("Across layers");
+                gui_next_column();
+                gui_text_bold("Colours");
+                gui_next_column();
+                gui_text_bold("Add");
+                gui_next_column();
+                if (st->nbuckets == 0) {
+                    gui_text("(none)");
+                    gui_next_column();
+                    gui_text("-");
+                    gui_next_column();
+                    gui_text("");
+                    gui_next_column();
                 } else {
-                    gui_spacing_f(gui_icon_height(true));
-                    gui_same_line();
+                    for (i = 0; i < st->nbuckets; i++) {
+                        char add_id[32];
+                        snprintf(add_id, sizeof(add_id), "Add##tbx%d", i);
+                        gui_text("%d", st->buckets[i].n_layers);
+                        gui_next_column();
+                        gui_text("%d", st->buckets[i].n_colors);
+                        gui_next_column();
+                        if (gui_button(add_id, 0, 0)) {
+                            int ci;
+                            for (ci = 0; ci < st->buckets[i].n_colors; ci++)
+                                tb_palette_add_rgb(img,
+                                                   st->buckets[i].colors[ci]);
+                            reanalyze = true;
+                        }
+                        gui_next_column();
+                    }
                 }
-                gui_text("%s", st->layers.layers[i].name[0]
-                         ? st->layers.layers[i].name : "(unnamed)");
-            }
-            gui_next_column();
-            gui_text("%d", st->layers.layers[i].stats.unique_colors);
-            gui_next_column();
-            gui_text("%d", n_after);
-            gui_next_column();
-            gui_columns(1);
-
-            if (g_tb_layer_open && i < g_tb_layer_open_count &&
-                g_tb_layer_open[i] && alist && alist->count > 0) {
-                char grid_id[24];
-                int clicked;
-                /* Cap height so opening a multi-thousand colour fold does not
-                 * explode the floating window layout / scrollbar. */
-                snprintf(grid_id, sizeof(grid_id), "tbaft%d", i);
-                clicked = gui_color_swatches_scroll(
-                    grid_id, (const uint8_t (*)[4])alist->colors,
-                    alist->count, 14.f, 200.f);
-                if (clicked >= 0 && clicked < alist->count) {
-                    if (tb_palette_add_rgb(img, alist->colors[clicked]))
-                        reanalyze = true;
-                }
-            }
-            gui_pop_id();
-        }
-
-        {
-            int available = 0;
-            int after_total = 0;
-            color_stat_hash_t *el, *tmp;
-
-            for (i = TB_PAL_MAP_FIRST; i < 256; i++) {
-                if (img->tb_palette[i][3] != 255)
-                    available++;
-            }
-            HASH_ITER(hh, st->used_colors, el, tmp) {
-                if (!tb_forced_map_has_rgb(img, el->color))
-                    after_total++;
-            }
-            gui_text("Total in use colours: %d",
-                     st->layers.total.unique_colors);
-            gui_text("If current applied: %d", after_total);
-            gui_text("Available atlas indexes: %d", available);
-        }
-
-        gui_separator();
-        gui_text_bold("Unique colours across layers");
-        gui_push_id("tb_cross");
-        gui_columns(3);
-        gui_text_bold("Across layers");
-        gui_next_column();
-        gui_text_bold("Colours");
-        gui_next_column();
-        gui_text_bold("Add");
-        gui_next_column();
-        if (st->nbuckets == 0) {
-            gui_text("(none)");
-            gui_next_column();
-            gui_text("-");
-            gui_next_column();
-            gui_text("");
-            gui_next_column();
-        } else {
-            for (i = 0; i < st->nbuckets; i++) {
-                char add_id[32];
-                snprintf(add_id, sizeof(add_id), "Add##tbx%d", i);
-                gui_text("%d", st->buckets[i].n_layers);
-                gui_next_column();
-                gui_text("%d", st->buckets[i].n_colors);
-                gui_next_column();
-                if (gui_button(add_id, 0, 0)) {
-                    int ci;
-                    for (ci = 0; ci < st->buckets[i].n_colors; ci++)
-                        tb_palette_add_rgb(img, st->buckets[i].colors[ci]);
-                    reanalyze = true;
-                }
-                gui_next_column();
+                gui_columns(1);
+                gui_pop_id();
+            } else {
+                gui_text("(no analysis)");
             }
         }
-        gui_columns(1);
-        gui_pop_id();
-    } else {
-        gui_text("(run Analyze)");
     }
 
     gui_separator();
@@ -608,8 +619,10 @@ static void tb_export_panel_gui(void)
         reanalyze = true;
     }
     gui_same_line();
-    if (gui_button("Analyze", 0, 0))
+    if (gui_button("Analyze", 0, 0)) {
         tb_run_analysis(st);
+        st->expand_analysis = true;
+    }
     gui_same_line();
     if (gui_button("Preview", 0, 0)) {
         const file_format_t *f = file_format_by_name("vox (Trenchblocks)");
@@ -651,11 +664,10 @@ void goxel_open_vox_trenchblocks_export_popup(void)
     if (!goxel.image) return;
     tb_palette_ensure_init(goxel.image);
     if (!goxel.gui.tb_export_win_open) {
-        tb_popup_clear_analysis(&g_tb_popup);
-        tb_popup_clear_used(&g_tb_popup);
         tb_layer_open_clear();
         g_tb_popup.palette_name[0] = '\0';
-        tb_popup_refresh_used(&g_tb_popup);
+        g_tb_popup.expand_analysis = true;
+        tb_run_analysis(&g_tb_popup);
     }
     goxel.gui.tb_export_win_open = true;
 }
