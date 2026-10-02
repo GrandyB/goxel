@@ -189,7 +189,6 @@ void tb_palette_reset(image_t *img)
 {
     if (!img) return;
     tb_init_palette_slots(img->tb_palette, img->tb_palette_slot_forced);
-    tb_add_recent_colors_to(img->tb_palette, img->tb_palette_slot_forced, img);
     img->tb_palette_initialized = true;
 }
 
