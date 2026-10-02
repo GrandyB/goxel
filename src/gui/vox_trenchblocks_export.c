@@ -700,7 +700,7 @@ static void tb_export_panel_gui(void)
         gui_next_column();
         gui_text_bold("Settings");
         gui_next_column();
-        gui_text_bold("Total");
+        gui_text_bold("After reduction");
         gui_next_column();
 
         /* Fixed first row: Add current atlas. */
