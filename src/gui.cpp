@@ -2702,6 +2702,66 @@ int gui_color_swatch_bordered(const char *id, const uint8_t color[4],
     return ret;
 }
 
+int gui_color_swatches_scroll(const char *id, const uint8_t (*colors)[4],
+                              int count, float size, float max_height)
+{
+    const float spacing = 2.f;
+    float avail, need_h, child_h;
+    int cols, rows, row, col, ci, clicked = -1;
+    bool use_scroll;
+    ImGuiListClipper clipper;
+    const ImGuiStyle &style = ImGui::GetStyle();
+
+    if (!colors || count <= 0 || size <= 0.f)
+        return -1;
+
+    ImGui::PushID(id);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing, spacing));
+
+    avail = ImGui::GetContentRegionAvail().x;
+    /* Reserve scrollbar width before measuring columns when the grid will
+     * scroll, so parent layout does not oscillate as the bar appears. */
+    cols = ImMax(1, (int)floorf((avail + spacing) / (size + spacing)));
+    rows = (count + cols - 1) / cols;
+    need_h = (float)rows * (size + spacing) - spacing;
+    use_scroll = (max_height > 0.f && need_h > max_height);
+    if (use_scroll) {
+        avail = ImMax(1.f, avail - style.ScrollbarSize);
+        cols = ImMax(1, (int)floorf((avail + spacing) / (size + spacing)));
+        rows = (count + cols - 1) / cols;
+        child_h = max_height;
+        ImGui::BeginChild("##swgrid", ImVec2(0.f, child_h),
+                          ImGuiChildFlags_Borders);
+        avail = ImGui::GetContentRegionAvail().x;
+        cols = ImMax(1, (int)floorf((avail + spacing) / (size + spacing)));
+        rows = (count + cols - 1) / cols;
+    }
+
+    clipper.Begin(rows);
+    while (clipper.Step()) {
+        for (row = clipper.DisplayStart; row < clipper.DisplayEnd; row++) {
+            for (col = 0; col < cols; col++) {
+                char sw_id[16];
+                ci = row * cols + col;
+                if (ci >= count)
+                    break;
+                if (col > 0)
+                    ImGui::SameLine();
+                snprintf(sw_id, sizeof(sw_id), "%d", ci);
+                if (gui_color_swatch_bordered(sw_id, colors[ci], size,
+                                              NULL) == 1)
+                    clicked = ci;
+            }
+        }
+    }
+
+    if (use_scroll)
+        ImGui::EndChild();
+    ImGui::PopStyleVar(1);
+    ImGui::PopID();
+    return clicked;
+}
+
 bool gui_checkbox(const char *label, bool *v, const char *hint)
 {
     bool ret;

@@ -255,6 +255,11 @@ int gui_color_swatch(const char *id, const uint8_t color[4], float size);
 /* Like gui_color_swatch, with an optional RGBA border (NULL = default frame). */
 int gui_color_swatch_bordered(const char *id, const uint8_t color[4],
                               float size, const uint8_t border_rgba[4]);
+/* Wrapped colour grid in a height-capped scroll child (ListClipper). Safe for
+ * thousands of swatches: avoids parent-window layout thrashing. Returns the
+ * left-clicked index, or -1. */
+int gui_color_swatches_scroll(const char *id, const uint8_t (*colors)[4],
+                              int count, float size, float max_height);
 bool gui_input_text(const char *label, char *buf, int size);
 /* Single-line text field with explicit width/height (e.g. condensed layer rows).
  * height <= 0 keeps the default frame height. */

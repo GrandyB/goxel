@@ -526,35 +526,18 @@ static void tb_export_panel_gui(void)
 
             if (g_tb_layer_open && i < g_tb_layer_open_count &&
                 g_tb_layer_open[i] && alist && alist->count > 0) {
-                int ci, drawn_on_row = 0;
-                const float sw_size = 14.f;
-                float spacing = gui_style_item_spacing_x();
-                float max_x = gui_window_content_region_max_x();
-                float row_start = 0.f;
-
-                gui_push_item_spacing(2.f, 2.f);
-                spacing = gui_style_item_spacing_x();
-                for (ci = 0; ci < alist->count; ci++) {
-                    char sw_id[32];
-                    if (drawn_on_row > 0) {
-                        float next_end = row_start +
-                            drawn_on_row * (sw_size + spacing) + sw_size;
-                        if (next_end <= max_x)
-                            gui_same_line();
-                        else
-                            drawn_on_row = 0;
-                    }
-                    if (drawn_on_row == 0)
-                        row_start = gui_get_cursor_pos_x();
-                    snprintf(sw_id, sizeof(sw_id), "tbaft%d_%d", i, ci);
-                    if (gui_color_swatch_bordered(sw_id, alist->colors[ci],
-                                                  sw_size, NULL) == 1) {
-                        if (tb_palette_add_rgb(img, alist->colors[ci]))
-                            reanalyze = true;
-                    }
-                    drawn_on_row++;
+                char grid_id[24];
+                int clicked;
+                /* Cap height so opening a multi-thousand colour fold does not
+                 * explode the floating window layout / scrollbar. */
+                snprintf(grid_id, sizeof(grid_id), "tbaft%d", i);
+                clicked = gui_color_swatches_scroll(
+                    grid_id, (const uint8_t (*)[4])alist->colors,
+                    alist->count, 14.f, 200.f);
+                if (clicked >= 0 && clicked < alist->count) {
+                    if (tb_palette_add_rgb(img, alist->colors[clicked]))
+                        reanalyze = true;
                 }
-                gui_pop_style_var(1);
             }
             gui_pop_id();
         }
@@ -636,7 +619,7 @@ static void tb_popup_on_closed(void)
 void gui_vox_trenchblocks_export_window(void)
 {
     if (!gui_floating_window_begin("vox (Trenchblocks)",
-                                   &goxel.gui.tb_export_win_open, 720.f, 640.f))
+                                   &goxel.gui.tb_export_win_open, 720.f, 690.f))
         return;
     tb_export_panel_gui();
     gui_floating_window_end();
