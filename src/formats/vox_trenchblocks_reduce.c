@@ -8,6 +8,7 @@
 
 #include "goxel.h"
 #include "formats/vox_trenchblocks.h"
+#include "quantization.h"
 #include "utils/color_stats.h"
 
 #include <string.h>
@@ -194,7 +195,56 @@ static int tb_count_outstanding_uniques(const image_t *img,
     return n;
 }
 
-static void tb_reduce_apply_to_volume(volume_t *vol, int method, int param)
+static void tb_remap_volume_uniform_preserve_forced(const image_t *img,
+                                                    volume_t *vol, int step)
+{
+    volume_iterator_t iter;
+    int pos[3];
+    uint8_t v[4], out[4];
+
+    if (!vol)
+        return;
+    step = clamp(step, 1, 255);
+    iter = volume_get_iterator(vol, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(vol, &iter, pos, v);
+        if (!voxel_is_solid(v))
+            continue;
+        v[3] = 255;
+        if (img && tb_forced_map_has_rgb(img, v))
+            continue;
+        quantization_uniform_snap(v, step, out);
+        volume_set_at(vol, &iter, pos, out);
+    }
+}
+
+static void tb_remap_volume_preserve_forced(const image_t *img, volume_t *vol,
+                                            const uint8_t (*palette)[4], int n)
+{
+    volume_iterator_t iter;
+    int pos[3], idx;
+    uint8_t v[4];
+
+    if (!vol || !palette || n <= 0)
+        return;
+    iter = volume_get_iterator(vol, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+    while (volume_iter(&iter, pos)) {
+        volume_get_at(vol, &iter, pos, v);
+        if (!voxel_is_solid(v))
+            continue;
+        v[3] = 255;
+        if (img && tb_forced_map_has_rgb(img, v))
+            continue;
+        idx = quantization_nearest(v, palette, n);
+        if (idx < 0)
+            continue;
+        memcpy(v, palette[idx], 4);
+        volume_set_at(vol, &iter, pos, v);
+    }
+}
+
+static void tb_reduce_apply_to_volume(const image_t *img, volume_t *vol,
+                                      int method, int param)
 {
     uint8_t palette[256][4];
     int nb;
@@ -202,7 +252,7 @@ static void tb_reduce_apply_to_volume(volume_t *vol, int method, int param)
     if (!vol) return;
     if (method == TB_REDUCE_UNIFORM) {
         param = clamp(param, 1, 255);
-        quantization_remap_volume_uniform(vol, param);
+        tb_remap_volume_uniform_preserve_forced(img, vol, param);
         return;
     }
     nb = clamp(param, 2, 256);
@@ -222,7 +272,7 @@ static void tb_reduce_apply_to_volume(volume_t *vol, int method, int param)
         quantization_gen_palette(vol, nb, palette, NULL, 0);
         break;
     }
-    quantization_remap_volume(vol, palette, nb);
+    tb_remap_volume_preserve_forced(img, vol, palette, nb);
 }
 
 static volume_t *tb_merge_work_roots(tb_work_root_t *roots, int n_roots)
@@ -239,8 +289,8 @@ static volume_t *tb_merge_work_roots(tb_work_root_t *roots, int n_roots)
     return merged;
 }
 
-static void tb_reduce_apply_step(tb_work_root_t *roots, int n_roots,
-                                 const tb_reduce_step_t *step)
+static void tb_reduce_apply_step(const image_t *img, tb_work_root_t *roots,
+                                 int n_roots, const tb_reduce_step_t *step)
 {
     int i;
     volume_t *merged;
@@ -256,7 +306,8 @@ static void tb_reduce_apply_step(tb_work_root_t *roots, int n_roots,
         if (method == TB_REDUCE_UNIFORM) {
             param = clamp(param, 1, 255);
             for (i = 0; i < n_roots; i++)
-                quantization_remap_volume_uniform(roots[i].vol, param);
+                tb_remap_volume_uniform_preserve_forced(img, roots[i].vol,
+                                                        param);
             return;
         }
         merged = tb_merge_work_roots(roots, n_roots);
@@ -280,14 +331,14 @@ static void tb_reduce_apply_step(tb_work_root_t *roots, int n_roots,
         }
         volume_delete(merged);
         for (i = 0; i < n_roots; i++)
-            quantization_remap_volume(roots[i].vol, palette, nb);
+            tb_remap_volume_preserve_forced(img, roots[i].vol, palette, nb);
         return;
     }
 
     for (i = 0; i < n_roots; i++) {
         if (roots[i].layer_id != step->layer_id)
             continue;
-        tb_reduce_apply_to_volume(roots[i].vol, method, param);
+        tb_reduce_apply_to_volume(img, roots[i].vol, method, param);
         return;
     }
     LOG_W("TB reduce: layer id %d not found; skipping step", step->layer_id);
@@ -329,7 +380,8 @@ static void tb_fill_remaining_slots(volume_t *merged, uint8_t (*palette)[4],
     }
 }
 
-static void tb_remap_roots_to_map_palette(tb_work_root_t *roots, int n_roots,
+static void tb_remap_roots_to_map_palette(const image_t *img,
+                                          tb_work_root_t *roots, int n_roots,
                                           uint8_t (*palette)[4])
 {
     int i, map_n;
@@ -337,9 +389,10 @@ static void tb_remap_roots_to_map_palette(tb_work_root_t *roots, int n_roots,
     map_n = 256 - TB_PAL_MAP_FIRST;
     for (i = 0; i < n_roots; i++) {
         if (!roots[i].vol) continue;
-        quantization_remap_volume(roots[i].vol,
-                                  (const uint8_t (*)[4])(palette + TB_PAL_MAP_FIRST),
-                                  map_n);
+        tb_remap_volume_preserve_forced(img, roots[i].vol,
+                                        (const uint8_t (*)[4])
+                                            (palette + TB_PAL_MAP_FIRST),
+                                        map_n);
     }
 }
 
@@ -370,7 +423,7 @@ int tb_reduce_simulate_totals(const image_t *img,
     totals[0] = outstanding;
 
     for (i = 0; i < n_steps; i++) {
-        tb_reduce_apply_step(roots, n_roots, &steps[i]);
+        tb_reduce_apply_step(img, roots, n_roots, &steps[i]);
         global = tb_count_global_uniques(roots, n_roots);
         if (global < 0) {
             tb_work_roots_free(roots, n_roots);
@@ -390,7 +443,7 @@ int tb_reduce_simulate_totals(const image_t *img,
     tb_fill_remaining_slots(merged, palette, n_forced,
                             img->tb_reduce_final_method);
     volume_delete(merged);
-    tb_remap_roots_to_map_palette(roots, n_roots, palette);
+    tb_remap_roots_to_map_palette(img, roots, n_roots, palette);
     used = tb_count_global_uniques(roots, n_roots);
     if (used < 0) {
         tb_work_roots_free(roots, n_roots);
@@ -501,7 +554,7 @@ int tb_reduce_per_layer_after_middle(const image_t *img,
         return -1;
 
     for (i = 0; i < n_steps; i++)
-        tb_reduce_apply_step(roots, n_roots, &steps[i]);
+        tb_reduce_apply_step(img, roots, n_roots, &steps[i]);
 
     n = n_roots < max_out ? n_roots : max_out;
     for (i = 0; i < n; i++) {
@@ -567,7 +620,7 @@ int tb_reduce_prepare_export_volume(const image_t *img,
     steps = img->tb_reduce_steps;
     n_steps = img->tb_reduce_step_count;
     for (i = 0; i < n_steps; i++)
-        tb_reduce_apply_step(roots, n_roots, &steps[i]);
+        tb_reduce_apply_step(img, roots, n_roots, &steps[i]);
 
     merged = tb_merge_work_roots(roots, n_roots);
     tb_work_roots_free(roots, n_roots);
