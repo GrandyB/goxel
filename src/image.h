@@ -120,6 +120,8 @@ layer_t *image_duplicate_layer(image_t *img, layer_t *layer);
 /* Clone layer (+subtree). Each new layer keeps base_id pointing at the
  * corresponding original so volumes stay live-linked. */
 layer_t *image_clone_layer(image_t *img, layer_t *layer);
+/* Rematerialize clone volumes from bases and refresh shape layers. */
+void image_update(image_t *img);
 void image_merge_visible_layers(image_t *img);
 /* Merge all descendants into parent volume and delete them. No-op if parent
  * has no children. Also flattens clone peers of the same base so linked

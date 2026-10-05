@@ -55,6 +55,8 @@ int tb_reduce_available_slots(const image_t *img)
     return available;
 }
 
+/* Merge like goxel_get_layers_volume: any visible layer with a volume,
+ * including clone layers (base_id) whose volume is transformed via mat. */
 static volume_t *tb_merge_root_subtree(const image_t *img, const layer_t *root)
 {
     layer_t *layer;
@@ -66,7 +68,6 @@ static volume_t *tb_merge_root_subtree(const image_t *img, const layer_t *root)
     DL_FOREACH(img->layers, layer) {
         if (!layer->volume) continue;
         if (!layer_effectively_visible(img, layer)) continue;
-        if (!layer_is_volume(layer)) continue;
         if (!layer_is_ancestor(img, root, layer)) continue;
         volume_merge(merged, layer->volume, MODE_OVER, NULL);
     }
@@ -92,6 +93,9 @@ static int tb_work_roots_build(const image_t *img, tb_work_root_t **out_roots,
     *out_roots = NULL;
     *out_n = 0;
     if (!img) return -1;
+
+    /* Refresh clone/shape volumes before sampling for reduce/export. */
+    image_update((image_t *)img);
 
     DL_FOREACH(img->layers, layer) {
         volume_t *merged;

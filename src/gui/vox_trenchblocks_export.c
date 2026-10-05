@@ -219,7 +219,7 @@ static int tb_collect_subtree_hash(const image_t *img, const layer_t *root,
     DL_FOREACH(img->layers, layer) {
         if (!layer->volume) continue;
         if (!layer_effectively_visible(img, layer)) continue;
-        if (!layer_is_volume(layer)) continue;
+        /* Include clone layers (same rule as tb_merge_root_subtree). */
         if (!layer_is_ancestor(img, root, layer)) continue;
         volume_merge(merged, layer->volume, MODE_OVER, NULL);
     }
@@ -271,7 +271,8 @@ static void tb_run_analysis(tb_popup_state_t *st)
     tb_popup_clear_analysis(st);
     if (!img) return;
 
-    image_analyse_color_stats(img, false, true, true, true, true, 0,
+    /* plain_voxel=false: include clone/shape volumes in Totals (matches export). */
+    image_analyse_color_stats(img, false, false, true, true, true, 0,
                               &st->layers);
 
     if (st->layers.layer_count > 0) {
