@@ -23,6 +23,7 @@
 /*
  * Combined .vxl utility filter:
  *   - Surface color permeation
+ *   - Brown non-surface blocks
  *   - Fill upwards by color
  *   - Remove by color
  */
@@ -30,6 +31,8 @@ typedef struct {
     filter_t filter;
     int depth;
     int blur;
+    int brown_min_dist;
+    uint8_t brown_color[4];
     uint8_t fill_color[4];
     uint8_t remove_color[4];
 } filter_vxlutils_t;
@@ -345,6 +348,108 @@ cleanup:
     free(queue);
 }
 
+/* Recolor non-surface solids whose Manhattan distance to the nearest
+ * surface is at least min_dist (min_dist >= 1). */
+static void apply_brown_interior(volume_t *volume, int min_dist,
+                                 const uint8_t color[4])
+{
+    float box[4][4];
+    int dimensions[3], start_pos[3];
+    int x, y, z, pos[3], idx, size, radius;
+    volume_iterator_t iter;
+    bool *solid = NULL;
+    bool *surface = NULL;
+    int *dist = NULL;
+    uint8_t *visited = NULL;
+    bfs_node_t *queue = NULL;
+    uint8_t visit_token = 1;
+    uint8_t out[4];
+    int i, dx, dy, dz, q_head, q_tail;
+    min_dist_ctx_t min_ctx;
+
+    if (min_dist < 1)
+        min_dist = 1;
+
+    mat4_copy(goxel.image->box, box);
+    if (box_is_null(box))
+        volume_get_box(volume, true, box);
+
+    box_get_dimensions(box, dimensions);
+    box_get_start_pos(box, start_pos);
+
+    if (dimensions[0] <= 0 || dimensions[1] <= 0 || dimensions[2] <= 0)
+        return;
+
+    size = dimensions[0] * dimensions[1] * dimensions[2];
+    radius = dimensions[0] + dimensions[1] + dimensions[2];
+    solid = calloc(size, sizeof(*solid));
+    surface = calloc(size, sizeof(*surface));
+    dist = malloc(size * sizeof(*dist));
+    visited = calloc(size, sizeof(*visited));
+    queue = malloc(size * sizeof(*queue));
+    if (!solid || !surface || !dist || !visited || !queue)
+        goto cleanup;
+
+    for (i = 0; i < size; i++)
+        dist[i] = INT_MAX;
+
+    iter = volume_get_iterator(volume, VOLUME_ITER_VOXELS | VOLUME_ITER_SKIP_EMPTY);
+
+    for (x = 0; x < dimensions[0]; x++) {
+        for (y = 0; y < dimensions[1]; y++) {
+            for (z = 0; z < dimensions[2]; z++) {
+                uint8_t c[4];
+                pos[0] = x + start_pos[0];
+                pos[1] = y + start_pos[1];
+                pos[2] = z + start_pos[2];
+                idx = (x * dimensions[1] + y) * dimensions[2] + z;
+                volume_get_at(volume, &iter, pos, c);
+                solid[idx] = voxel_is_solid(c);
+                surface[idx] = solid[idx] &&
+                    voxel_is_surface(volume, &iter, pos, start_pos, dimensions);
+            }
+        }
+    }
+
+    q_head = 0;
+    q_tail = 0;
+    for (idx = 0; idx < size; idx++) {
+        if (!surface[idx])
+            continue;
+        visited[idx] = visit_token;
+        dist[idx] = 0;
+        queue[q_tail].idx = idx;
+        queue[q_tail].dist = 0;
+        q_tail++;
+    }
+    min_ctx.min_dist = dist;
+    bfs_solid(queue, &q_head, &q_tail, size, radius, solid, dimensions,
+              start_pos, visited, visit_token, &min_ctx, on_visit_min_dist);
+
+    memcpy(out, color, 4);
+    for (idx = 0; idx < size; idx++) {
+        if (!solid[idx] || surface[idx])
+            continue;
+        if (dist[idx] < min_dist)
+            continue;
+
+        dz = idx % dimensions[2];
+        dy = (idx / dimensions[2]) % dimensions[1];
+        dx = idx / (dimensions[2] * dimensions[1]);
+        pos[0] = dx + start_pos[0];
+        pos[1] = dy + start_pos[1];
+        pos[2] = dz + start_pos[2];
+        volume_set_at(volume, &iter, pos, out);
+    }
+
+cleanup:
+    free(solid);
+    free(surface);
+    free(dist);
+    free(visited);
+    free(queue);
+}
+
 static void apply_fill_upwards(layer_t *layer, const uint8_t color[4])
 {
     float box[4][4];
@@ -426,6 +531,10 @@ static int gui(filter_t *filter_)
     const char *permeate_help =
         "Permeate surface colours X blocks into non-exposed blocks around them "
         "(current layer only).";
+    const char *brown_help =
+        "Recolor non-surface solids on the current layer to the chosen color "
+        "(default: classic .vxl brown). Only voxels at least Min distance "
+        "from any surface are changed.";
     const char *fill_help =
         "Fill each column from bottom upward until the first solid voxel.";
     const char *remove_help =
@@ -448,6 +557,34 @@ static int gui(filter_t *filter_)
                 image_history_push(goxel.image);
                 apply_color_permeation(layer->volume, filter->depth,
                                        filter->blur);
+            }
+            gui_enabled_end();
+            gui_alert_if_disabled_clicked(has_layer, "No layer selected",
+                                          "Select a layer first.");
+        }
+    }
+
+    if (gui_collapsing_header("Brown interior", false)) {
+        gui_text_wrapped(brown_help);
+        gui_input_int("Min distance", &filter->brown_min_dist, 1, 9999);
+        gui_group_begin(NULL);
+        gui_color_small("Color", filter->brown_color);
+        gui_group_end();
+        if (gui_button("Reset to .vxl brown", -1, 0)) {
+            uint8_t vxl_brown[4] = {103, 64, 40, 255};
+            memcpy(filter->brown_color, vxl_brown, sizeof(vxl_brown));
+        }
+        {
+            bool has_layer = goxel.image && goxel.image->active_layer;
+
+            gui_enabled_begin(has_layer);
+            if (gui_button("Apply brown interior", -1, 0)) {
+                layer_t *layer = goxel.image->active_layer;
+                if (!layer || !layer->volume)
+                    return 0;
+                image_history_push(goxel.image);
+                apply_brown_interior(layer->volume, filter->brown_min_dist,
+                                     filter->brown_color);
             }
             gui_enabled_end();
             gui_alert_if_disabled_clicked(has_layer, "No layer selected",
@@ -514,6 +651,8 @@ static void on_open(filter_t *filter_)
     uint8_t default_color[4] = {103, 64, 40, 255};
     filter->depth = 2;
     filter->blur = 0;
+    filter->brown_min_dist = 1;
+    memcpy(filter->brown_color, default_color, sizeof(default_color));
     memcpy(filter->fill_color, default_color, sizeof(default_color));
     memcpy(filter->remove_color, default_color, sizeof(default_color));
 }
