@@ -715,6 +715,39 @@ static block_hash_t *hash_find_at(block_hash_t *hash, int index)
     r; })
 
 
+/* File-id → runtime-id map used when merging a .gox into an existing image
+ * (replace=false). image_add_layer already assigns a unique id; we must not
+ * overwrite it with the file's id or we collide with pre-existing layers
+ * (ImGui PushID / focus / parent_id all key off layer->id). */
+typedef struct {
+    int from;
+    int to;
+} gox_id_remap_t;
+
+static int gox_remap_id(int id, const gox_id_remap_t *map, int n)
+{
+    int i;
+    if (!id || !map) return id;
+    for (i = 0; i < n; i++) {
+        if (map[i].from == id)
+            return map[i].to;
+    }
+    return id;
+}
+
+static void gox_id_remap_push(gox_id_remap_t **map, int *n, int *cap,
+                              int from, int to)
+{
+    if (!from || from == to) return;
+    if (*n >= *cap) {
+        *cap = *cap ? *cap * 2 : 16;
+        *map = realloc(*map, (size_t)(*cap) * sizeof(**map));
+    }
+    (*map)[*n].from = from;
+    (*map)[*n].to = to;
+    (*n)++;
+}
+
 static void image_clear_gox_content(image_t *img)
 {
     layer_t *layer, *layer_tmp;
@@ -757,6 +790,7 @@ static void image_clear_gox_content(image_t *img)
 int load_from_file(const char *path, bool replace)
 {
     layer_t *layer;
+    layer_t *import_first = NULL;
     block_hash_t *blocks_table = NULL, *data, *data_tmp;
     FILE *in;
     char magic[4] = {};
@@ -773,6 +807,8 @@ int load_from_file(const char *path, bool replace)
     int aabb[2][3];
     camera_t *camera;
     material_t *mat;
+    gox_id_remap_t *id_remap = NULL;
+    int id_remap_n = 0, id_remap_cap = 0;
 
     in = fopen(path, "rb");
     if (!in) return -1;
@@ -818,6 +854,8 @@ int load_from_file(const char *path, bool replace)
 
         } else if (strncmp(c.type, "LAYR", 4) == 0) {
             layer = image_add_layer(goxel.image, NULL);
+            if (!import_first)
+                import_first = layer;
             nb_blocks = chunk_read_int32(&c, in, __LINE__);
             if (nb_blocks < 0 || c.error) goto error;
             for (i = 0; i < nb_blocks; i++) {
@@ -848,9 +886,16 @@ int load_from_file(const char *path, bool replace)
                     layer->image = texture_new_image(dict_value, TF_NEAREST);
                 }
 
-                typeof(layer->id) id = 0;
-                if (DICT_CPY("id", id)) {
-                    if (id) layer->id = id;
+                typeof(layer->id) file_id = 0;
+                if (DICT_CPY("id", file_id) && file_id) {
+                    if (replace) {
+                        layer->id = file_id;
+                    } else {
+                        /* Keep image_add_layer's unique id; map file id onto
+                         * it so parent_id / base_id / TBQA still resolve. */
+                        gox_id_remap_push(&id_remap, &id_remap_n, &id_remap_cap,
+                                          file_id, layer->id);
+                    }
                 }
 
                 DICT_CPY("base_id", layer->base_id);
@@ -1114,6 +1159,28 @@ int load_from_file(const char *path, bool replace)
     plane_from_vectors(goxel.plane, goxel.image->box[3],
                        VEC(1, 0, 0), VEC(0, 1, 0));
 
+    /* Merge import: rewrite file-local parent/base/TBQA ids onto the unique
+     * ids assigned by image_add_layer. */
+    if (!replace && id_remap_n > 0 && import_first) {
+        bool in_import = false;
+        DL_FOREACH(goxel.image->layers, layer) {
+            if (layer == import_first)
+                in_import = true;
+            if (!in_import)
+                continue;
+            layer->parent_id = gox_remap_id(layer->parent_id, id_remap,
+                                            id_remap_n);
+            layer->base_id = gox_remap_id(layer->base_id, id_remap,
+                                          id_remap_n);
+        }
+        for (i = 0; i < goxel.image->tb_reduce_step_count; i++) {
+            goxel.image->tb_reduce_steps[i].layer_id = gox_remap_id(
+                    goxel.image->tb_reduce_steps[i].layer_id, id_remap,
+                    id_remap_n);
+        }
+    }
+    free(id_remap);
+
     image_sanitize_layer_parents(goxel.image);
 
     /* Do not leave the last loaded layer selected. */
@@ -1131,6 +1198,7 @@ error:
         free(data->v);
         free(data);
     }
+    free(id_remap);
     if (replace) {
         /* replace already cleared the image; restore a usable blank map. */
         image_delete(goxel.image);

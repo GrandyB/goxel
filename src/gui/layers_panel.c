@@ -244,7 +244,7 @@ static void render_layers_list(void)
         int icons_count, icons[8];
         bool visible, current, has_kids;
         int depth;
-        char id[32];
+        char id[64];
         float pad_top = LAYER_ROW_VPAD;
         float pad_bot = LAYER_ROW_VPAD;
 
@@ -258,7 +258,9 @@ static void render_layers_list(void)
         if (layer->base_id) icons[icons_count++] = ICON_LINK;
         if (layer->shape) icons[icons_count++] = ICON_SHAPE;
 
-        snprintf(id, sizeof(id), "lyr%d", layer->id);
+        /* Pointer keeps ImGui IDs unique even if layer->id ever collides
+         * (e.g. before a merge-import remap). Include id for readability. */
+        snprintf(id, sizeof(id), "lyr%d_%p", layer->id, (void *)layer);
         gui_push_id(id);
 
         render_layer_dnd_gaps(img, prev, prev_depth, layer, depth,
