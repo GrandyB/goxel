@@ -465,8 +465,9 @@ int tool_gui_brush_source(const char *tabsheet_id)
             if (goxel.brush_source_mode == BRUSH_SOURCE_PALETTE) {
                 if (gui_section_begin("Palette", true)) {
                     if (goxel.brush_palette_count <= 0) {
-                        gui_text("Shift+click colours in the Palette panel to "
-                                 "paint with multiple colours.");
+                        gui_text("Shift+click colours in the Palette panel or "
+                                 "recent colours bar to paint with multiple "
+                                 "colours.");
                     } else {
                         gui_text("%d colours selected (right-click to remove).",
                                  goxel.brush_palette_count);

@@ -134,34 +134,49 @@ void gui_map_colors_bar(void)
                 snprintf(
                     tip, sizeof(tip),
                     "#%02X%02X%02X%02X (A=%d)\n"
-                    "Noise: on, intensity %d, saturation %d, coverage %d",
+                    "Noise: on, intensity %d, saturation %d, coverage %d\n"
+                    "Shift+click: palette brush  |  Right-click: remove",
                     e->color[0], e->color[1], e->color[2], e->color[3], e->color[3],
                     e->noise_intensity, e->noise_saturation, e->noise_coverage);
             } else {
                 snprintf(
                     tip, sizeof(tip),
-                    "#%02X%02X%02X%02X (A=%d)", e->color[0], e->color[1],
-                    e->color[2], e->color[3], e->color[3]);
+                    "#%02X%02X%02X%02X (A=%d)\n"
+                    "Shift+click: palette brush  |  Right-click: remove",
+                    e->color[0], e->color[1], e->color[2], e->color[3],
+                    e->color[3]);
             }
         } else {
             if (e->noise_enabled) {
                 snprintf(
                     tip, sizeof(tip),
                     "#%02X%02X%02X\n"
-                    "Noise: on, intensity %d, saturation %d, coverage %d",
+                    "Noise: on, intensity %d, saturation %d, coverage %d\n"
+                    "Shift+click: palette brush  |  Right-click: remove",
                     e->color[0], e->color[1], e->color[2], e->noise_intensity,
                     e->noise_saturation, e->noise_coverage);
             } else {
-                snprintf(tip, sizeof(tip), "#%02X%02X%02X", e->color[0], e->color[1],
-                         e->color[2]);
+                snprintf(tip, sizeof(tip),
+                         "#%02X%02X%02X\n"
+                         "Shift+click: palette brush  |  Right-click: remove",
+                         e->color[0], e->color[1], e->color[2]);
             }
         }
         gui_tooltip_if_hovered(tip);
         if (click == 1) {
-            goxel_brush_palette_clear();
-            goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
-            image_recent_color_apply_to_goxel_painter(
-                    goxel.image, i, gui_pick_rgb_keep_alpha());
+            bool shift = gui_is_key_down(KEY_LEFT_SHIFT) ||
+                         gui_is_key_down(KEY_RIGHT_SHIFT);
+            bool ctrl = gui_is_key_down(KEY_CONTROL) ||
+                        gui_is_key_down(KEY_RIGHT_CONTROL);
+            /* Match palette panel: Shift(+no Ctrl) adds/toggles palette brush. */
+            if (shift && !ctrl) {
+                goxel_brush_palette_shift_click(e->color);
+            } else {
+                goxel_brush_palette_clear();
+                goxel.brush_source_mode = BRUSH_SOURCE_COLOR;
+                image_recent_color_apply_to_goxel_painter(
+                        goxel.image, i, gui_pick_rgb_keep_alpha());
+            }
         } else if (click == 2) {
             image_recent_color_remove_at(goxel.image, i);
             break;

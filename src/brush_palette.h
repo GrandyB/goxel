@@ -37,7 +37,7 @@ bool goxel_brush_palette_add(const uint8_t color[4]);
 bool goxel_brush_palette_contains(const uint8_t color[4]);
 
 /*
- * Shift+click a palette swatch:
+ * Shift+click a palette or recent-colours swatch:
  * - Already in palette mode: toggle colour in/out of the set.
  * - Otherwise enter palette mode: seed with painter.color; if `color` differs,
  *   add it too (same colour → only one entry).
